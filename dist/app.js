@@ -3539,7 +3539,7 @@
         padY:(parseFloat(cardStyle.paddingTop) || 0) + (parseFloat(cardStyle.paddingBottom) || 0) + 2
       };
     }).filter(Boolean);
-    const imageCapacity = Math.max(1,outputImageGridCapacity(context.pages),...imageLayouts.map((layout) => layout.imageWraps.length));
+    const imageCapacity = Math.max(1,Number(context.density) || 1,outputImageGridCapacity(context.pages),...imageLayouts.map((layout) => layout.imageWraps.length));
     const parts = String(context.aspectRatio || "16:9").split(":").map(Number);
     const ratio = (parts[0] || 16) / (parts[1] || 9);
     let sharedImageColumns = 1;
@@ -3551,7 +3551,8 @@
           const imageCount = layout.imageWraps.length ? imageCapacity : 0;
           layout.page.style.setProperty("--output-rows",String(outputImageGridRows(imageCount,candidate,layout.imagePreludeRows)));
         });
-        const area = imageLayouts.reduce((pageSum,layout) => pageSum + layout.imageWraps.reduce((sum,wrap) => {
+        const candidateFrameWidths = [];
+        imageLayouts.forEach((layout) => layout.imageWraps.forEach((wrap) => {
           const cellW = Math.max(1,wrap.clientWidth - layout.padX);
           const cellH = Math.max(1,wrap.clientHeight - layout.padY);
           const fields = wrap.querySelector(".output-image-fields");
@@ -3559,9 +3560,10 @@
           const card = wrap.querySelector(".output-card");
           const cardGap = card ? (parseFloat(getComputedStyle(card).rowGap) || 0) : 0;
           const minimumFrameHeight = fields ? 31 * 96 / 25.4 : 0;
-          const frameW = fittedImageOutputFrameWidth(cellW,cellH,ratio,fieldsHeight,cardGap,layout.padY,minimumFrameHeight);
-          return sum + frameW * frameW / ratio;
-        },0),0);
+          candidateFrameWidths.push(fittedImageOutputFrameWidth(cellW,cellH,ratio,fieldsHeight,cardGap,layout.padY,minimumFrameHeight));
+        }));
+        const sharedFrameWidth = candidateFrameWidths.length ? Math.min(...candidateFrameWidths) : 0;
+        const area = sharedFrameWidth * sharedFrameWidth / ratio * candidateFrameWidths.length;
         if (area > bestArea) { bestArea = area; sharedImageColumns = candidate; }
       }
       if (imageCapacity === 4 && !context.imageFieldCount) sharedImageColumns = 2;
@@ -3575,26 +3577,30 @@
       const body = page.querySelector(".output-page-body");
       if (!body || body.clientHeight <= 0) return;
       const imageLayout = imageLayouts.find((layout) => layout.page === page);
-      if (imageLayout) {
-        const imageCount = imageLayout.imageWraps.length ? imageCapacity : 0;
-        const rows = outputImageGridRows(imageCount,sharedImageColumns,imageLayout.imagePreludeRows);
-        page.style.setProperty("--output-columns",String(sharedImageColumns));
-        page.style.setProperty("--output-rows",String(rows));
-        imageLayout.imageWraps.forEach((wrap) => {
-          const art = wrap.querySelector(".output-card-art");
-          if (!art) return;
-          const localCellW = Math.max(1,wrap.clientWidth - imageLayout.padX);
-          const localCellH = Math.max(1,wrap.clientHeight - imageLayout.padY);
-          const fields = wrap.querySelector(".output-image-fields");
-          const fieldsHeight = fields ? Math.max(fields.getBoundingClientRect().height,fields.scrollHeight) : 0;
-          const card = wrap.querySelector(".output-card");
-          const cardGap = card ? (parseFloat(getComputedStyle(card).rowGap) || 0) : 0;
-          const minimumFrameHeight = fields ? 31 * 96 / 25.4 : 0;
-          const frameWidth = fittedImageOutputFrameWidth(localCellW,localCellH,ratio,fieldsHeight,cardGap,imageLayout.padY,minimumFrameHeight);
-          art.style.setProperty("--output-frame-width",String(Math.min(100,frameWidth / localCellW * 100)) + "%");
-        });
-        return;
-      }
+      if (!imageLayout) return;
+      const imageCount = imageLayout.imageWraps.length ? imageCapacity : 0;
+      const rows = outputImageGridRows(imageCount,sharedImageColumns,imageLayout.imagePreludeRows);
+      page.style.setProperty("--output-columns",String(sharedImageColumns));
+      page.style.setProperty("--output-rows",String(rows));
+    });
+    const imageFrameMeasurements = [];
+    imageLayouts.forEach((layout) => layout.imageWraps.forEach((wrap) => {
+      const art = wrap.querySelector(".output-card-art");
+      if (!art) return;
+      const localCellW = Math.max(1,wrap.clientWidth - layout.padX);
+      const localCellH = Math.max(1,wrap.clientHeight - layout.padY);
+      const fields = wrap.querySelector(".output-image-fields");
+      const fieldsHeight = fields ? Math.max(fields.getBoundingClientRect().height,fields.scrollHeight) : 0;
+      const card = wrap.querySelector(".output-card");
+      const cardGap = card ? (parseFloat(getComputedStyle(card).rowGap) || 0) : 0;
+      const minimumFrameHeight = fields ? 31 * 96 / 25.4 : 0;
+      imageFrameMeasurements.push({art:art,cellWidth:localCellW,frameWidth:fittedImageOutputFrameWidth(localCellW,localCellH,ratio,fieldsHeight,cardGap,layout.padY,minimumFrameHeight)});
+    }));
+    const sharedImageFrameWidth = imageFrameMeasurements.length ? Math.min(...imageFrameMeasurements.map((measurement) => measurement.frameWidth)) : 0;
+    imageFrameMeasurements.forEach((measurement) => measurement.art.style.setProperty("--output-frame-width",String(Math.min(100,sharedImageFrameWidth / measurement.cellWidth * 100)) + "%"));
+    pages.forEach((page) => {
+      const body = page.querySelector(".output-page-body");
+      if (!body || body.clientHeight <= 0 || imageLayouts.some((layout) => layout.page === page)) return;
       const sample = body.querySelector(".output-card");
       if (!sample) {
         page.style.setProperty("--output-columns","1");
@@ -3776,8 +3782,8 @@
       }
     } else if (scheduleMode && callsheetIndexes.length && (densityIndexes.length > 0 || callsheetIndexes.length > 1)) {
       carryLastCallsheetRecord(context.pages,overflowIndex);
-    } else if (densityIndexes.length === 1) {
-      const recordIndex = densityIndexes[0];
+    } else if (densityIndexes.length === 1 || (!scheduleMode && pageRecords.length === 1)) {
+      const recordIndex = densityIndexes.length ? densityIndexes[0] : 0;
       const split = splitOutputRecord(pageRecords[recordIndex]);
       if (split) {
         pageRecords[recordIndex] = split[0];
