@@ -2874,6 +2874,8 @@
   let outputLayoutBound = false;
   let outputStageWidth = 0;
   let activeOutputContext = null;
+  let outputDensityPreviewFrame = 0;
+  let outputDensityPreferenceSaveContext = null;
   let outputPrintPreparation = null;
   let callsheetDrag = null;
   let callsheetRowSequence = 0;
@@ -3045,6 +3047,64 @@
     checkbox.checked = outputShowEstimatedWrap;
     return checkbox;
   }
+  function adoptLatestOutputDensity(context, mode) {
+    const scheduleMode = outputType === "schedule";
+    if (!context || context.mode !== mode || context.kind !== (scheduleMode ? "schedule" : "storyboard")) return false;
+    context.density = outputItemsPerPage;
+    context.preferences.density = outputItemsPerPage;
+    context.preferences.densityByMode = Object.assign({},context.preferences.densityByMode,{[mode]:outputItemsPerPage});
+    return true;
+  }
+  function updateOutputDensityPreview(mode) {
+    const context = activeOutputContext;
+    if (context && context.version === outputCaptureVersion && !context.capturePending && adoptLatestOutputDensity(context,mode)) {
+      try { assertOutputCaptureCurrent(context); }
+      catch (_) { void renderOutput(); return null; }
+      if (!context.pages || Number(context._renderedDensity) !== context.density) {
+        context.pages = paginateOutputRecords(context.records,context.density);
+        renderPagedOutput(context);
+        context._renderedDensity = context.density;
+      }
+      return context;
+    }
+    if (!$("#print-document .output-capture-progress") && !outputCaptureError) void renderOutput();
+    return null;
+  }
+  function scheduleOutputDensityPreview(mode, immediate) {
+    if (outputDensityPreviewFrame) {
+      cancelAnimationFrame(outputDensityPreviewFrame);
+      outputDensityPreviewFrame = 0;
+    }
+    if (immediate) return updateOutputDensityPreview(mode);
+    outputDensityPreviewFrame = requestAnimationFrame(() => {
+      outputDensityPreviewFrame = 0;
+      updateOutputDensityPreview(mode);
+    });
+    return null;
+  }
+  function adoptOutputDensityPreferenceCommit(snapshot, event) {
+    const context = outputDensityPreferenceSaveContext;
+    outputDensityPreferenceSaveContext = null;
+    if (!context || currentView !== "output" || activeOutputContext !== context || context.capturePending || context.version !== outputCaptureVersion) return false;
+    if (!event || event.type !== "updateOutputPreferences" || Number(event.previousRevision) !== Number(context.projectRevision)) return false;
+    if (context.mode !== activeOutputMode() || context.kind !== (outputType === "schedule" ? "schedule" : "storyboard")) return false;
+    const project = model && typeof model.getProject === "function" ? model.getProject() : null;
+    if (!project || project.projectId !== context.projectId || Number(project.revision) !== Number(snapshot.revision)) return false;
+    const preferences = normalizeOutputPreferences(project.outputPreferences);
+    const expected = context.preferences;
+    if (preferences.mode !== expected.mode || preferences.orientation !== expected.orientation ||
+        JSON.stringify(preferences.densityByMode) !== JSON.stringify(expected.densityByMode) ||
+        JSON.stringify(preferences.fields) !== JSON.stringify(expected.fields) ||
+        JSON.stringify(preferences.schedule) !== JSON.stringify(expected.schedule)) return false;
+    context.project = project;
+    context.projectRevision = Number(project.revision);
+    context.preferenceRevision = Number(project.outputPreferences && project.outputPreferences.revision) || 0;
+    context.preferences = preferences;
+    $$("#print-document .output-page-footer > span:first-child").forEach((span) => {
+      span.textContent = span.textContent.replace(/Project revision \d+/,"Project revision " + context.projectRevision).replace(/Preference revision \d+/,"Preference revision " + context.preferenceRevision);
+    });
+    return true;
+  }
   function ensureOutputSettings(scheduleMode) {
     const estimatedWrapToggle = ensureEstimatedWrapControl();
     const slider = $("#output-items-per-page");
@@ -3053,11 +3113,26 @@
       const changeDensity = (value, persist) => {
         const limit = Number(slider.max) || 12;
         outputItemsPerPage = Math.max(1,Math.min(limit,Math.round(Number(value) || 1)));
-        outputDensityByMode[activeOutputMode()] = outputItemsPerPage;
-        renderOutput();
-        const patch = { density:outputItemsPerPage, densityByMode:{ [activeOutputMode()]:outputItemsPerPage } };
+        const mode = activeOutputMode();
+        outputDensityByMode[mode] = outputItemsPerPage;
+        ensureOutputSettings(outputType === "schedule");
+        const patch = { density:outputItemsPerPage, densityByMode:{ [mode]:outputItemsPerPage } };
         stageOutputPreference(patch);
-        if (persist) return saveOutputPreference(patch);
+        const scheduleMode = outputType === "schedule";
+        const previewContext = scheduleMode ? (renderOutput(),null) : scheduleOutputDensityPreview(mode,!!persist);
+        if (persist) {
+          if (scheduleMode) return saveOutputPreference(patch);
+          const save = () => {
+            const context = previewContext || (activeOutputContext && activeOutputContext.version === outputCaptureVersion ? activeOutputContext : null);
+            if (context && context.mode === mode && context.kind === (outputType === "schedule" ? "schedule" : "storyboard")) outputDensityPreferenceSaveContext = context;
+            return saveOutputPreference(patch).finally(() => { if (outputDensityPreferenceSaveContext === context) outputDensityPreferenceSaveContext = null; });
+          };
+          if ($("#print-document .output-capture-progress")) return outputCapturePromise.then(() => {
+            scheduleOutputDensityPreview(mode,true);
+            return save();
+          });
+          return save();
+        }
         return Promise.resolve(true);
       };
       slider.addEventListener("input", () => { void changeDensity(slider.value,false); });
@@ -3420,6 +3495,9 @@
     const prelude = Math.max(0,Number(fullWidthRows) || 0);
     return Math.max(1,Math.ceil(images / cols) + prelude);
   }
+  function outputImageGridCapacity(pages) {
+    return (pages || []).reduce((capacity,page) => Math.max(capacity,(page || []).filter((record) => record && record.kind === "shot" && record.mode === "images" && record.continuation !== true && record.densityItem !== false).length),0);
+  }
   function updateOutputPageSummary(context) {
     const activeSection = context.kind === "schedule" ? (context.activeSection || outputScheduleSection) : null;
     const visiblePages = activeSection ? context.pages.filter((page) => page.some((record) => record && record.section === activeSection)) : context.pages;
@@ -3447,70 +3525,93 @@
     pages.forEach((page) => {
       const width = page.getBoundingClientRect().width;
       if (width > 0) page.style.setProperty("--page-scale",String(Math.min(1.35,width / referenceWidth)));
+    });
+    const imageLayouts = pages.filter((page) => page.dataset.layout === "images").map((page) => {
       const body = page.querySelector(".output-page-body");
-      const sample = body.querySelector(".output-card");
-      if (body.clientHeight <= 0) return;
-      if (!sample) {
-        page.style.setProperty("--output-columns","1");
-        page.style.setProperty("--output-rows",String(Math.max(1,body.children.length)));
-        return;
-      }
-      const imageOnly = page.dataset.layout === "images";
-      const parts = String(context.aspectRatio || "16:9").split(":").map(Number);
-      const ratio = (parts[0] || 16) / (parts[1] || 9);
-      const bodyStyle = getComputedStyle(body), cardStyle = getComputedStyle(sample);
-      const gap = parseFloat(bodyStyle.rowGap) || 0, colGap = parseFloat(bodyStyle.columnGap) || 0;
-      const padX = (parseFloat(cardStyle.paddingLeft) || 0) + (parseFloat(cardStyle.paddingRight) || 0) + 2;
-      const padY = (parseFloat(cardStyle.paddingTop) || 0) + (parseFloat(cardStyle.paddingBottom) || 0) + 2;
-      let columns = 1;
-      let imageCount = 0, imagePreludeRows = 0;
-      if (imageOnly) {
-        const imageWraps = Array.from(body.querySelectorAll(".output-record-wrap.is-image-only:not(.is-image-only-continuation)"));
-        imageCount = imageWraps.length;
-        imagePreludeRows = body.querySelectorAll(".output-record-wrap.is-image-only-continuation").length;
-        let bestArea = -1;
-        for (let candidate = 1; candidate <= Math.min(Math.max(1,imageCount),6); candidate++) {
-          const rows = outputImageGridRows(imageCount,candidate,imagePreludeRows);
-          page.style.setProperty("--output-columns",String(candidate));
-          page.style.setProperty("--output-rows",String(rows));
-          const area = imageWraps.reduce((sum,wrap) => {
-            const cellW = Math.max(1,wrap.clientWidth - padX);
-            const cellH = Math.max(1,wrap.clientHeight - padY);
-            const fields = wrap.querySelector(".output-image-fields");
-            const fieldsHeight = fields ? Math.max(fields.getBoundingClientRect().height,fields.scrollHeight) : 0;
-            const card = wrap.querySelector(".output-card");
-            const cardGap = card ? (parseFloat(getComputedStyle(card).rowGap) || 0) : 0;
-            const minimumFrameHeight = fields ? 31 * 96 / 25.4 : 0;
-            const frameW = fittedImageOutputFrameWidth(cellW,cellH,ratio,fieldsHeight,cardGap,padY,minimumFrameHeight);
-            return sum + frameW * frameW / ratio;
-          },0);
-          if (area > bestArea) { bestArea = area; columns = candidate; }
-        }
-        if (imageCount === 4 && !context.imageFieldCount) columns = 2;
-      }
-      const rows = imageOnly ? outputImageGridRows(imageCount,columns,imagePreludeRows) : Math.max(1,body.children.length);
-      page.style.setProperty("--output-columns",String(columns));
-      page.style.setProperty("--output-rows",String(rows));
-      const cellW = Math.max(1,(body.clientWidth - colGap * (columns - 1)) / columns - padX);
-      const cellH = Math.max(1,(body.clientHeight - gap * (rows - 1)) / rows - padY);
-      if (imageOnly) {
-        const imageWraps = Array.from(body.querySelectorAll(".output-record-wrap.is-image-only:not(.is-image-only-continuation)"));
-        imageWraps.forEach((wrap) => {
-          const art = wrap.querySelector(".output-card-art");
-          if (!art) return;
-          const localCellW = Math.max(1,wrap.clientWidth - padX);
-          const localCellH = Math.max(1,wrap.clientHeight - padY);
+      const imageWraps = Array.from(body.querySelectorAll(".output-record-wrap.is-image-only:not(.is-image-only-continuation)"));
+      const sample = imageWraps[0] && imageWraps[0].querySelector(".output-card") || body.querySelector(".output-card");
+      if (!sample || body.clientHeight <= 0) return null;
+      const cardStyle = getComputedStyle(sample);
+      return {
+        page:page,body:body,imageWraps:imageWraps,
+        imagePreludeRows:body.querySelectorAll(".output-record-wrap.is-image-only-continuation, .output-day-heading").length,
+        padX:(parseFloat(cardStyle.paddingLeft) || 0) + (parseFloat(cardStyle.paddingRight) || 0) + 2,
+        padY:(parseFloat(cardStyle.paddingTop) || 0) + (parseFloat(cardStyle.paddingBottom) || 0) + 2
+      };
+    }).filter(Boolean);
+    const imageCapacity = Math.max(1,outputImageGridCapacity(context.pages),...imageLayouts.map((layout) => layout.imageWraps.length));
+    const parts = String(context.aspectRatio || "16:9").split(":").map(Number);
+    const ratio = (parts[0] || 16) / (parts[1] || 9);
+    let sharedImageColumns = 1;
+    if (imageLayouts.length) {
+      let bestArea = -1;
+      for (let candidate = 1; candidate <= Math.min(imageCapacity,6); candidate++) {
+        imageLayouts.forEach((layout) => {
+          layout.page.style.setProperty("--output-columns",String(candidate));
+          const imageCount = layout.imageWraps.length ? imageCapacity : 0;
+          layout.page.style.setProperty("--output-rows",String(outputImageGridRows(imageCount,candidate,layout.imagePreludeRows)));
+        });
+        const area = imageLayouts.reduce((pageSum,layout) => pageSum + layout.imageWraps.reduce((sum,wrap) => {
+          const cellW = Math.max(1,wrap.clientWidth - layout.padX);
+          const cellH = Math.max(1,wrap.clientHeight - layout.padY);
           const fields = wrap.querySelector(".output-image-fields");
           const fieldsHeight = fields ? Math.max(fields.getBoundingClientRect().height,fields.scrollHeight) : 0;
           const card = wrap.querySelector(".output-card");
           const cardGap = card ? (parseFloat(getComputedStyle(card).rowGap) || 0) : 0;
           const minimumFrameHeight = fields ? 31 * 96 / 25.4 : 0;
-          const frameWidth = fittedImageOutputFrameWidth(localCellW,localCellH,ratio,fieldsHeight,cardGap,padY,minimumFrameHeight);
+          const frameW = fittedImageOutputFrameWidth(cellW,cellH,ratio,fieldsHeight,cardGap,layout.padY,minimumFrameHeight);
+          return sum + frameW * frameW / ratio;
+        },0),0);
+        if (area > bestArea) { bestArea = area; sharedImageColumns = candidate; }
+      }
+      if (imageCapacity === 4 && !context.imageFieldCount) sharedImageColumns = 2;
+      imageLayouts.forEach((layout) => {
+        const imageCount = layout.imageWraps.length ? imageCapacity : 0;
+        layout.page.style.setProperty("--output-columns",String(sharedImageColumns));
+        layout.page.style.setProperty("--output-rows",String(outputImageGridRows(imageCount,sharedImageColumns,layout.imagePreludeRows)));
+      });
+    }
+    pages.forEach((page) => {
+      const body = page.querySelector(".output-page-body");
+      if (!body || body.clientHeight <= 0) return;
+      const imageLayout = imageLayouts.find((layout) => layout.page === page);
+      if (imageLayout) {
+        const imageCount = imageLayout.imageWraps.length ? imageCapacity : 0;
+        const rows = outputImageGridRows(imageCount,sharedImageColumns,imageLayout.imagePreludeRows);
+        page.style.setProperty("--output-columns",String(sharedImageColumns));
+        page.style.setProperty("--output-rows",String(rows));
+        imageLayout.imageWraps.forEach((wrap) => {
+          const art = wrap.querySelector(".output-card-art");
+          if (!art) return;
+          const localCellW = Math.max(1,wrap.clientWidth - imageLayout.padX);
+          const localCellH = Math.max(1,wrap.clientHeight - imageLayout.padY);
+          const fields = wrap.querySelector(".output-image-fields");
+          const fieldsHeight = fields ? Math.max(fields.getBoundingClientRect().height,fields.scrollHeight) : 0;
+          const card = wrap.querySelector(".output-card");
+          const cardGap = card ? (parseFloat(getComputedStyle(card).rowGap) || 0) : 0;
+          const minimumFrameHeight = fields ? 31 * 96 / 25.4 : 0;
+          const frameWidth = fittedImageOutputFrameWidth(localCellW,localCellH,ratio,fieldsHeight,cardGap,imageLayout.padY,minimumFrameHeight);
           art.style.setProperty("--output-frame-width",String(Math.min(100,frameWidth / localCellW * 100)) + "%");
         });
         return;
       }
-      if (!imageOnly && page.classList.contains("is-portrait") && page.dataset.layout === "details") {
+      const sample = body.querySelector(".output-card");
+      if (!sample) {
+        page.style.setProperty("--output-columns","1");
+        page.style.setProperty("--output-rows",String(Math.max(1,body.children.length)));
+        return;
+      }
+      const bodyStyle = getComputedStyle(body), cardStyle = getComputedStyle(sample);
+      const gap = parseFloat(bodyStyle.rowGap) || 0, colGap = parseFloat(bodyStyle.columnGap) || 0;
+      const padX = (parseFloat(cardStyle.paddingLeft) || 0) + (parseFloat(cardStyle.paddingRight) || 0) + 2;
+      const padY = (parseFloat(cardStyle.paddingTop) || 0) + (parseFloat(cardStyle.paddingBottom) || 0) + 2;
+      let columns = 1;
+      const rows = Math.max(1,body.children.length);
+      page.style.setProperty("--output-columns",String(columns));
+      page.style.setProperty("--output-rows",String(rows));
+      const cellW = Math.max(1,(body.clientWidth - colGap * (columns - 1)) / columns - padX);
+      const cellH = Math.max(1,(body.clientHeight - gap * (rows - 1)) / rows - padY);
+      if (page.classList.contains("is-portrait") && page.dataset.layout === "details") {
         const cardGap = parseFloat(cardStyle.rowGap) || 0;
         Array.from(body.children).forEach((wrap) => {
           const art = wrap.querySelector(".output-card-art");
@@ -3524,7 +3625,7 @@
         });
         return;
       }
-      const frameW = Math.max(1,Math.min(cellW * (imageOnly ? 1 : .46),cellH * ratio));
+      const frameW = Math.max(1,Math.min(cellW * .46,cellH * ratio));
       page.style.setProperty("--output-frame-width",String(Math.min(100,frameW / cellW * 100)) + "%");
     });
     return pages;
@@ -4071,6 +4172,7 @@
     host.innerHTML='<strong>列印已暫停</strong><ul>'+blockers.map((item)=>'<li>'+escapeHtml((item.code?item.code+" · ":"")+item.message)+'</li>').join("")+'</ul><button type="button" class="outline-button" data-output-retry>重新驗證輸出</button>';
   }
   function renderOutput() {
+    if (outputDensityPreviewFrame) { cancelAnimationFrame(outputDensityPreviewFrame); outputDensityPreviewFrame = 0; }
     if (outputPrintPreparation && outputPrintPreparation.context) cancelOutputPrintPreparation();
     if (!state || !model || typeof model.getProject !== "function") return Promise.resolve(null);
     outputType=$("#output-type").value || outputType; const scheduleMode=outputType === "schedule"; ensureOutputSettings(scheduleMode);
@@ -4094,10 +4196,11 @@
     outputCapturePromise=(async()=>{
       try {
         if (context.kind === "schedule") await buildScheduleOutputContext(context); else await buildStoryboardOutputContext(context);
-        context.capturePending=false; assertOutputCaptureCurrent(context);
         if (version!==outputCaptureVersion) { releaseOutputObjectUrls(context.objectUrls); return null; }
+        adoptLatestOutputDensity(context,context.mode);
+        context.capturePending=false; assertOutputCaptureCurrent(context);
         activeOutputObjectUrls=context.objectUrls; activeOutputContext=context; outputCaptureStatus(context,null); $("#scope-note").textContent=context.noteBase;
-        renderPagedOutput(context); return context;
+        renderPagedOutput(context); context._renderedDensity=context.density; return context;
       } catch (error) {
         releaseOutputObjectUrls(context.objectUrls); if (version!==outputCaptureVersion) return null;
         outputCaptureError=error; outputCaptureStatus(null,error);
@@ -4787,9 +4890,17 @@
     if (!selectedShotId && state.shots.length) selectedShotId = state.shots[0].id;
     if (!selectedDayId && state.days.length) selectedDayId = state.days[0].id;
     const type = event && event.type;
-    if (type === "init" || type === "updateOutputPreferences") {
+    if (type === "init") {
       if (!pendingPreferencePatch) hydrateOutputPreferences(state.outputPreferences);
       renderAll(event && event.saveStatus); reconcileSavedDrafts(); refreshLifecycle(modelLifecycle()); return;
+    }
+    if (type === "updateOutputPreferences") {
+      if (!pendingPreferencePatch) hydrateOutputPreferences(state.outputPreferences);
+      const retainedDensityPreview = adoptOutputDensityPreferenceCommit(snapshot,event);
+      if (retainedDensityPreview) {
+        saveStatus(event && event.saveStatus); updateHistoryButtons(); renderDurableStatus(); applyReadonlyControls();
+      } else renderAll(event && event.saveStatus);
+      reconcileSavedDrafts(); refreshLifecycle(modelLifecycle()); return;
     }
     if (type === "reorderShots" && syncReorderedShotList(previousState)) {
       renderInspector();
