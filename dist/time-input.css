@@ -1,0 +1,4 @@
+.storyboard-time-input{font-variant-numeric:tabular-nums;letter-spacing:.03em}
+.storyboard-time-input-invalid{border-color:#bb6958!important;box-shadow:0 0 0 2px rgba(187,105,88,.13)!important}
+.storyboard-time-input-error{display:block;margin-top:4px;color:#a94d40;font-size:9px;line-height:1.45}
+.timing-controls .storyboard-time-input{min-height:44px}

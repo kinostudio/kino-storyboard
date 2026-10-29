@@ -1,0 +1,233 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="light">
+  <meta name="theme-color" content="#18243b">
+  <title>Director Storyboard Editor｜光落下的地方</title>
+  <link rel="stylesheet" href="styles.css?v=20261029v46">
+  <link rel="stylesheet" href="output.css?v=20261029v38">
+  <link rel="stylesheet" href="drawing-editor.css?v=20261029d">
+  <link rel="stylesheet" href="photo-crop-editor.css?v=20261029v38">
+  <link rel="stylesheet" href="production-timeline.css?v=20261029g">
+  <link rel="stylesheet" href="project-metadata.css?v=20261028b">
+  <link rel="stylesheet" href="time-input.css">
+  <script defer src="project-schema.js?v=20261029v48"></script>
+  <script defer src="history-engine.js?v=20261029v36"></script>
+  <script defer src="storage-contract.js"></script>
+  <script defer src="project-migrations.js?v=20261028b"></script>
+  <script defer src="project-bootstrap.js"></script>
+  <script defer src="idb-repository.js?v=20261029c"></script>
+  <script defer src="project-bridge.js?v=20261029v44"></script>
+  <script defer src="photo-import.js?v=20261028l"></script>
+  <script defer src="vendor/fflate/fflate-0.8.3.umd.js"></script>
+  <script defer src="zip-adapter.js?v=20261028k"></script>
+  <script defer src="project-package.js?v=20261029v48"></script>
+  <script defer src="package-copy.js?v=20261029v48"></script>
+  <script defer src="model.js?v=20261029v44"></script>
+  <script defer src="storyboard-renderer.js?v=20261029drawingcrop1"></script>
+  <script defer src="photo-crop-renderer.js?v=20261029v38"></script>
+  <script defer src="photo-crop-editor.js?v=20261029v38"></script>
+  <script defer src="drawing-editor.js?v=20261029v47"></script>
+  <script defer src="production-timeline.js?v=20261029g"></script>
+  <script defer src="time-input.js"></script>
+  <script defer src="app.js?v=20261029v47"></script>
+</head>
+<body>
+  <section class="lifecycle-gate" id="lifecycle-gate" aria-live="polite" aria-labelledby="lifecycle-title">
+    <div class="lifecycle-card">
+      <div class="lifecycle-brand"><span class="brand-mark" aria-hidden="true"><svg viewBox="0 0 40 40"><rect x="2" y="2" width="36" height="36" rx="12" fill="currentColor"/><path d="M13 12.5h7.2c5.2 0 8.8 3.1 8.8 7.6s-3.6 7.4-8.8 7.4H13v-15Zm6.9 11.4c2.9 0 4.7-1.4 4.7-3.8s-1.8-3.9-4.7-3.9h-2.3v7.7h2.3Z" fill="#f7f6f2"/></svg></span><span>DIRECTOR STORYBOARD EDITOR</span></div>
+      <div id="lifecycle-content"><p class="lifecycle-kicker">本機專案</p><h1 id="lifecycle-title">正在讀取本機專案</h1><p>請稍候，正在開啟專案資料庫。</p><div class="loading-indicator" aria-hidden="true"></div></div>
+    </div>
+  </section>
+  <div class="app-shell">
+    <aside class="app-rail" aria-label="主要導覽">
+      <div class="brand-mark" role="img" aria-label="Director Storyboard Editor 標誌">
+        <svg viewBox="0 0 40 40" aria-hidden="true"><rect x="2" y="2" width="36" height="36" rx="12" fill="currentColor"/><path d="M13 12.5h7.2c5.2 0 8.8 3.1 8.8 7.6s-3.6 7.4-8.8 7.4H13v-15Zm6.9 11.4c2.9 0 4.7-1.4 4.7-3.8s-1.8-3.9-4.7-3.9h-2.3v7.7h2.3Z" fill="#f7f6f2"/><circle cx="11" cy="11" r="2" fill="#c4a873"/></svg>
+      </div>
+      <div class="rail-rule"></div>
+      <button class="rail-button is-active" data-view="storyboard" aria-label="分鏡" title="分鏡">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3.5" y="4" width="17" height="16" rx="2.2"/><path d="M8.5 4v16M15.5 4v16M4 8h4M16 8h4M4 16h4M16 16h4"/></svg>
+        <span>分鏡</span>
+      </button>
+      <button class="rail-button" data-view="schedule" aria-label="拍攝安排" title="拍攝安排">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3.5" y="5" width="17" height="16" rx="2.2"/><path d="M7.5 3.5v4M16.5 3.5v4M4 9.5h16M8 13h2M13 13h3M8 17h2"/></svg>
+        <span>安排</span>
+      </button>
+      <button class="rail-button" data-view="output" aria-label="輸出" title="輸出">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 3.5h7l4.5 4.6v12.4H7a2 2 0 0 1-2-2v-13a2 2 0 0 1 2-2Z"/><path d="M14 3.8v4.7h4.3M8.5 13h7M8.5 16.5h7"/></svg>
+        <span>輸出</span>
+      </button>
+      <div class="rail-spacer"></div>
+      <button class="rail-button rail-help" id="info-open" aria-label="原型說明" title="原型說明">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="8.5"/><path d="M9.8 9a2.3 2.3 0 1 1 4.1 1.4c-.7.8-1.9 1.1-1.9 2.6M12 16.5v.1"/></svg>
+        <span>說明</span>
+      </button>
+      <div class="rail-profile" aria-label="本機工作區">本機</div>
+    </aside>
+
+    <main class="app-main">
+      <header class="topbar">
+        <div class="project-identity">
+          <div class="project-kicker"><span class="tiny-film-icon"><svg viewBox="0 0 20 20" aria-hidden="true"><rect x="3" y="4" width="14" height="12" rx="2"/><path d="M7 4v12M13 4v12M3 8h4m6 0h4M3 12h4m6 0h4"/></svg></span> 導演工作室 <span class="crumb-sep">/</span> 專案工作區</div>
+        <div class="project-title-line"><h1 id="project-title">—</h1><span class="project-kind" id="project-kind">未設定類型</span><button class="project-metadata-edit" id="project-metadata-edit" type="button" aria-label="編輯專案名稱與類型" title="編輯專案名稱與類型"><svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M12 20h9"/><path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L8 18l-4 1 1-4Z"/></svg></button></div>
+        </div>
+        <div class="topbar-actions">
+          <span class="prototype-pill"><span class="status-dot"></span>本機專案</span>
+          <span class="save-state" id="save-state">載入中…</span>
+          <div class="toolbar-divider"></div>
+          <button class="icon-button" id="undo-btn" aria-label="復原" title="復原 Ctrl+Z"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 7 4.5 11 9 15M5 11h8a6 6 0 0 1 6 6v1"/></svg></button>
+          <button class="icon-button" id="redo-btn" aria-label="重做" title="重做 Ctrl+Shift+Z"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m15 7 4.5 4-4.5 4m4-4h-8a6 6 0 0 0-6 6v1"/></svg></button>
+          <div class="toolbar-divider"></div>
+          <button class="avatar-button" aria-label="本機工作區">A</button>
+        </div>
+      </header>
+      <section class="durable-status" id="durable-status" aria-live="polite" hidden>
+        <div class="durable-status-copy"><strong id="durable-status-title">已儲存</strong><span id="durable-status-detail"></span></div>
+        <div class="durable-status-actions" id="durable-status-actions"></div>
+      </section>
+
+      <nav class="workspace-tabs" aria-label="專案工作區">
+        <button class="workspace-tab is-active" data-view="storyboard"><span class="tab-icon"><svg viewBox="0 0 20 20" aria-hidden="true"><rect x="2.5" y="3" width="15" height="14" rx="2"/><path d="M7 3v14m6-14v14M3 7h4m6 0h4M3 13h4m6 0h4"/></svg></span>分鏡 <span class="tab-count" id="shot-count">—</span></button>
+        <button class="workspace-tab" data-view="schedule"><span class="tab-icon"><svg viewBox="0 0 20 20" aria-hidden="true"><rect x="3" y="4" width="14" height="13" rx="2"/><path d="M6.5 2.5v3M13.5 2.5v3M3 8h14M6.5 11h2m3 0h2m-6 3h2"/></svg></span>拍攝安排 <span class="tab-count" id="day-count">—</span></button>
+        <button class="workspace-tab" data-view="output"><span class="tab-icon"><svg viewBox="0 0 20 20" aria-hidden="true"><path d="M5 2.8h6l4 4v10.4H5a1.7 1.7 0 0 1-1.7-1.7v-11A1.7 1.7 0 0 1 5 2.8Z"/><path d="M11 3v4h3.8M6.5 11h7m-7 3h7"/></svg></span>輸出</button>
+        <div class="tabs-fill"></div>
+        <button class="quiet-button" id="project-menu" title="專案設定與備份"><svg viewBox="0 0 20 20" aria-hidden="true"><circle cx="4" cy="10" r="1"/><circle cx="10" cy="10" r="1"/><circle cx="16" cy="10" r="1"/></svg><span>專案</span></button>
+      </nav>
+
+      <section class="workspace-view is-active" id="view-storyboard" aria-label="分鏡工作區">
+        <aside class="chapter-sidebar" aria-label="場次導覽">
+          <div class="side-head scene-side-head"><div><span class="eyebrow">SCENE STRUCTURE</span><h2>場次 <span class="count-chip" id="chapter-count">—</span></h2></div><button class="scene-add-button" data-action="add-scene" aria-label="新增場次">＋ 新增場次</button></div>
+          <label class="search-field chapter-search"><svg viewBox="0 0 20 20" aria-hidden="true"><circle cx="8.5" cy="8.5" r="5.2"/><path d="m12.5 12.5 4 4"/></svg><input id="chapter-search" type="search" placeholder="搜尋場次或鏡頭" autocomplete="off"><kbd>/</kbd></label>
+          <div class="chapter-list" id="chapter-list"></div>
+          <div class="side-foot"><span class="foot-dot"></span><span>場次順序即敘事順序</span></div>
+        </aside>
+        <section class="storyboard-panel">
+          <div class="panel-heading">
+            <div><div class="eyebrow" id="chapter-eyebrow">ALL SCENES</div><h2 id="storyboard-heading">全部分鏡</h2><p class="panel-subtitle" id="storyboard-subtitle">以鏡頭為單位，整理畫面、節奏與聲音。</p></div>
+            <div class="panel-actions"><button class="outline-button reorder-mode-toggle" id="shot-reorder-mode" type="button" aria-pressed="false">多選鏡頭</button><button class="outline-button" id="add-shot"><svg viewBox="0 0 20 20" aria-hidden="true"><path d="M10 4v12M4 10h12"/></svg>新增鏡頭</button><div class="view-switch shot-view-switch" role="group" aria-label="分鏡檢視方式"><button type="button" class="is-active" data-shot-view="list" aria-pressed="true"><svg viewBox="0 0 20 20" aria-hidden="true"><path d="M7 5h10M7 10h10M7 15h10"/><circle cx="3.5" cy="5" r=".6"/><circle cx="3.5" cy="10" r=".6"/><circle cx="3.5" cy="15" r=".6"/></svg><span>清單</span></button><button type="button" data-shot-view="gallery" aria-pressed="false"><svg viewBox="0 0 20 20" aria-hidden="true"><rect x="2.5" y="2.5" width="6" height="6" rx="1"/><rect x="11.5" y="2.5" width="6" height="6" rx="1"/><rect x="2.5" y="11.5" width="6" height="6" rx="1"/><rect x="11.5" y="11.5" width="6" height="6" rx="1"/></svg><span>圖庫</span></button></div></div>
+          </div>
+          <button type="button" class="outline-button voiceover-toggle" data-voiceover-action="open">檢視全片台詞／旁白稿</button>
+          <div class="storyboard-meta"><div class="meta-chips"><span class="soft-chip" id="visible-count">— 個鏡頭</span><span class="soft-chip"><span class="meta-mark"></span><span id="runtime-label">預估片長 —</span></span></div><div class="reorder-hints"><span class="hint-text" id="shot-reorder-status" aria-live="polite">按下卡片空白並移動即可拖曳排序；捲頁請從卡片間隙開始 · Ctrl／⌘ 加選、Shift 範圍</span><span class="reorder-selection-status" id="shot-reorder-selection-status" aria-live="polite" hidden></span></div></div>
+          <section class="shot-photo-import-banner" id="shot-photo-import-banner" aria-live="polite" aria-label="照片匯入暫存" hidden></section>
+          <div class="shot-list is-list" id="shot-list" data-shot-view="list"></div>
+          <div class="list-footer"><span>分鏡順序</span><span>按下卡片空白並移動即可排序 · 鍵盤可選取鏡頭後用方向鍵</span></div>
+        </section>
+        <aside class="inspector" id="inspector"></aside>
+      </section>
+
+      <section class="workspace-view voiceover-view" id="view-voiceover" aria-label="全片台詞與旁白稿" hidden>
+        <div class="voiceover-page">
+          <header class="voiceover-header">
+            <div><span class="eyebrow">VOICE-OVER SCRIPT</span><h2>全片台詞／旁白稿</h2><p id="voiceover-summary">依場次與鏡次排列的唯讀整理。</p></div>
+            <button type="button" class="outline-button voiceover-back" data-voiceover-action="return">返回分鏡</button>
+          </header>
+          <div class="voiceover-transcript" id="voiceover-transcript" aria-live="polite"></div>
+        </div>
+      </section>
+
+      <section class="workspace-view schedule-view" id="view-schedule" aria-label="拍攝安排工作區" hidden>
+        <aside class="schedule-pool">
+          <div class="side-head"><div><span class="eyebrow">UNSCHEDULED</span><h2>待排鏡頭</h2></div><span class="count-chip" id="unscheduled-count">—</span></div>
+          <p class="side-description">將分鏡加入拍攝日；這裡的順序不影響敘事。</p>
+          <label class="search-field pool-search"><svg viewBox="0 0 20 20" aria-hidden="true"><circle cx="8.5" cy="8.5" r="5.2"/><path d="m12.5 12.5 4 4"/></svg><input id="pool-search" type="search" placeholder="搜尋待排鏡頭" autocomplete="off"></label>
+          <div id="shot-pool" class="shot-pool"></div>
+        </aside>
+        <section class="schedule-board">
+          <section class="production-timeline-panel" aria-labelledby="production-timeline-label">
+            <div class="production-timeline-bar">
+              <div class="production-timeline-intro"><strong id="production-timeline-label">互動製作時程</strong><span id="production-timeline-status" role="status" aria-live="polite">拍攝日標記可直接切換下方日期分頁。</span></div>
+              <button type="button" class="outline-button production-timeline-toggle" id="production-timeline-toggle" aria-expanded="false" aria-controls="production-timeline-mount">展開製作時程</button>
+            </div>
+            <div id="production-timeline-mount" class="production-timeline-mount" hidden></div>
+          </section>
+          <div class="panel-heading schedule-heading"><div><div class="eyebrow">SHOOTING PLAN</div><h2>拍攝安排</h2><p class="panel-subtitle">獨立安排現場順序，分鏡內容與時間規則保持一致。</p></div><div class="panel-actions"><button class="outline-button reorder-mode-toggle" id="schedule-reorder-mode" type="button" aria-pressed="false">多選項目</button><button class="day-create-button" id="day-create" type="button"><svg viewBox="0 0 20 20" aria-hidden="true"><path d="M10 4v12M4 10h12"/></svg>新增拍攝日</button></div></div>
+          <div class="shoot-day-tabs" id="shoot-day-tabs" role="tablist" aria-label="拍攝日"></div>
+          <div class="day-summary" id="day-summary"></div>
+          <section class="day-callsheet-panel" id="day-callsheet-fields" aria-labelledby="day-callsheet-title" hidden></section>
+          <div class="schedule-reorder-status" id="schedule-reorder-status" aria-live="polite">按下項目空白並移動即可拖曳排序；捲頁請從項目間隙開始 · Ctrl／⌘ 或 Shift 多選</div><div class="schedule-selection-status" id="schedule-reorder-selection-status" aria-live="polite" hidden></div><div class="schedule-list" id="schedule-list"></div>
+          <div class="schedule-add-row"><button class="text-action" id="add-break"><svg viewBox="0 0 20 20" aria-hidden="true"><path d="M10 4v12M4 10h12"/></svg>加入休息時間</button><span class="schedule-helper">鏡頭分鐘與影片秒數分開計算</span></div>
+        </section>
+        <aside class="schedule-inspector" id="schedule-inspector"></aside>
+      </section>
+
+      <section class="workspace-view output-view" id="view-output" aria-label="輸出工作區" hidden>
+        <div class="output-layout">
+          <section class="output-settings">
+            <div class="eyebrow">DOCUMENT SETUP</div><h2>準備輸出</h2><p class="panel-subtitle">預覽這份工作副本的閱讀範圍與版面。</p>
+            <div class="form-divider"></div>
+            <label class="field-label" for="output-type">文件類型</label><select id="output-type" class="select-control"><option value="storyboard">分鏡文件</option><option value="schedule">拍攝安排</option></select>
+            <div class="field-gap"></div>
+            <div id="storyboard-scope-group"><label class="field-label" for="output-scope">輸出範圍</label><select id="output-scope" class="select-control"><option value="all">全部分鏡</option><option value="chapter">目前場次</option><option value="selected">目前選取鏡頭</option></select><span class="field-note">搜尋條件不會自動縮減輸出內容。</span></div>
+            <div id="schedule-scope-group" hidden><label class="field-label" for="output-day-scope">拍攝日範圍</label><select id="output-day-scope" class="select-control"><option value="selected">單一拍攝日</option><option value="all">全部拍攝日</option></select><div id="output-selected-day-group"><label class="field-label" for="output-day">拍攝日</label><select id="output-day" class="select-control"></select></div><span class="field-note">全部拍攝日依已保存日序分組；項目仍依各日現場順序輸出。</span><div class="schedule-output-options" id="schedule-output-options"><div class="field-label">Rundown 選項</div><label class="schedule-output-option"><input type="checkbox" data-schedule-pref="rundownThumbnails"><span>顯示 Shot 縮圖</span></label><label class="schedule-output-option"><input type="checkbox" data-schedule-pref="rundownNotes"><span>顯示現場備註</span></label><label class="schedule-output-option"><input type="checkbox" data-schedule-pref="rundownStatus"><span>顯示拍攝狀態</span></label><div class="field-label">分鏡圖標籤</div><label class="schedule-output-option"><input type="checkbox" data-schedule-pref="storyboardShotNumber"><span>顯示鏡次</span></label><label class="schedule-output-option"><input type="checkbox" data-schedule-pref="storyboardTitle"><span>顯示標題</span></label></div></div>
+            <div class="field-gap"></div>
+            <div id="output-content-settings">
+              <div class="field-label">輸出模式</div>
+              <label class="output-toggle-row"><span><strong>包含鏡頭細項</strong><small>關閉後顯示純圖欄位選項</small></span><input type="checkbox" role="switch" id="output-include-details" checked><span class="toggle-track" aria-hidden="true"></span></label>
+              <details class="output-detail-disclosure" id="output-image-field-options"><summary>純圖附加欄位 <span id="output-image-field-count">0 項</span></summary><div class="output-field-options"><label><input type="checkbox" data-output-field="images.shotNumber">鏡次</label><label><input type="checkbox" data-output-field="images.title">標題</label><label><input type="checkbox" data-output-field="images.voiceover">VO／台詞旁白</label><label><input type="checkbox" data-output-field="images.super">SUPER</label><label><input type="checkbox" data-output-field="images.duration">秒數</label></div></details>
+              <details class="output-detail-disclosure" id="output-field-options"><summary>細項欄位 <span id="output-selected-field-count">6 項</span></summary><div class="output-field-options"><label><input type="checkbox" data-output-field="details.visual" checked>畫面描述</label><label><input type="checkbox" data-output-field="details.script" checked>台詞／旁白</label><label><input type="checkbox" data-output-field="details.super">SUPER</label><label><input type="checkbox" data-output-field="details.sound" checked>聲音設計</label><label><input type="checkbox" data-output-field="details.move" checked>景別／運鏡</label><label><input type="checkbox" data-output-field="details.duration" checked>影片秒數</label></div></details>
+            </div><p class="field-note" id="output-layout-hint"></p>
+            <div class="output-image-source-panel" id="output-image-source-panel" hidden><div class="field-label">分鏡圖來源</div><p class="field-note">有多張照片或 Drawing 的鏡頭需明確選擇；選擇只套用本次輸出。</p><div id="output-image-source-list"></div></div>
+            <div class="field-gap"></div>
+            <div class="field-label">紙張方向</div><div class="orientation-control" role="group" aria-label="紙張方向"><button class="orientation-button" data-orientation="auto"><span class="paper-icon auto"></span><span>自動</span></button><button class="orientation-button is-active" data-orientation="landscape"><span class="paper-icon landscape"></span><span>橫式</span></button><button class="orientation-button" data-orientation="portrait"><span class="paper-icon portrait"></span><span>直式</span></button></div>
+            <div class="field-gap"></div>
+            <div class="output-density-heading"><label class="field-label" id="output-page-density-label" for="output-items-per-page">每頁鏡數</label><output id="output-density-value" for="output-items-per-page">4 鏡／頁</output></div>
+            <div class="output-density-control"><button type="button" class="density-step" id="output-density-less" aria-label="每頁減少一鏡">−</button><input type="range" id="output-items-per-page" min="1" max="12" step="1" value="4" aria-label="每頁鏡數" aria-describedby="output-density-hint output-density-limit-note"><button type="button" class="density-step" id="output-density-more" aria-label="每頁增加一鏡">＋</button></div><div class="output-range-limits"><span>1</span><span id="output-density-limit-value">12</span></div><span class="field-note" id="output-density-hint">上限依模式、方向、畫幅與實際文字估算；長文會依版面減少本頁鏡數並續頁，不會裁字。</span><span class="output-density-limit-note" id="output-density-limit-note" aria-live="polite"></span>
+            <div class="form-divider"></div>
+            <div class="output-scope-note" id="scope-note"></div>
+            <button class="primary-button print-button" id="print-output" disabled><svg viewBox="0 0 20 20" aria-hidden="true"><path d="M6 7V3.5h8V7M5 14H3.5V8.5h13V14H15M6 11.5h8v5H6z"/><path d="M14 10.5h.1"/></svg><span>列印 / 另存 PDF</span></button>
+            <p class="print-note">輸出採 A4 分頁；瀏覽器列印建議設為 100% 並關閉瀏覽器頁首頁尾。PDF 由瀏覽器產生。</p>
+          </section>
+          <section class="preview-column">
+            <div class="preview-toolbar"><div><span class="eyebrow">LIVE PREVIEW</span><h3 id="preview-title">分鏡文件</h3></div><span class="preview-page-count" id="preview-count">— 鏡</span></div>
+            <div class="schedule-output-tabs" id="schedule-output-tabs" role="tablist" aria-label="通告內容" hidden><button type="button" role="tab" aria-selected="true" tabindex="0" aria-controls="print-document" data-output-section="timeline">通告時間軸</button><button type="button" role="tab" aria-selected="false" tabindex="-1" aria-controls="print-document" data-output-section="rundown">Rundown</button><button type="button" role="tab" aria-selected="false" tabindex="-1" aria-controls="print-document" data-output-section="storyboard">分鏡圖</button></div>
+            <div class="output-capture-status" id="output-capture-status" role="status" aria-live="polite" hidden></div>
+            <div class="preview-stage" id="preview-stage"><article class="print-document" id="print-document"></article></div>
+          </section>
+        </div>
+      </section>
+
+      <section class="workspace-view drawing-view" id="view-drawing" aria-label="手繪畫布工作區" hidden>
+        <div class="drawing-workspace">
+          <div class="drawing-route-status" id="drawing-route-status" role="status" aria-live="polite" hidden></div>
+          <div id="drawing-editor-mount"></div>
+        </div>
+      </section>
+    </main>
+  </div>
+
+  <dialog class="app-dialog drawing-choice-dialog" id="drawing-choice-dialog" aria-labelledby="drawing-choice-title"><div class="dialog-top"><span class="dialog-mark"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m5 17-.8 3.1 3.1-.8L19 7.6a2 2 0 0 0-2.8-2.8L5 17Z"/><path d="m14.8 6 2.8 2.8"/></svg></span><button class="dialog-close" data-close="drawing-choice-dialog" aria-label="關閉"><svg viewBox="0 0 20 20" aria-hidden="true"><path d="m5 5 10 10M15 5 5 15"/></svg></button></div><h2 id="drawing-choice-title">選擇手繪 Drawing</h2><p class="dialog-lead" id="drawing-choice-heading">這個鏡頭有多個手繪版本，請選擇要開啟的項目。</p><div class="drawing-choice-list" id="drawing-choice-list"></div></dialog>
+  <dialog class="app-dialog drawing-background-choice-dialog" id="drawing-background-choice-dialog" aria-labelledby="drawing-background-choice-title" aria-describedby="drawing-background-choice-copy">
+    <div class="dialog-top"><span class="dialog-mark" aria-hidden="true"><svg viewBox="0 0 20 20"><path d="M3 4.5h14v11H3z"/><path d="M3 12.5 7 9l2.3 2 2.2-2 5.5 4.5"/><circle cx="12.8" cy="7.5" r="1.2"/></svg></span><button class="dialog-close" type="button" data-close="drawing-background-choice-dialog" aria-label="取消建立手繪"><svg viewBox="0 0 20 20" aria-hidden="true"><path d="m5 5 10 10M15 5 5 15"/></svg></button></div>
+    <h2 id="drawing-background-choice-title">新手繪的照片底圖</h2>
+    <p class="dialog-lead" id="drawing-background-choice-copy">選擇主圖裁切範圍。這只套用於新手繪，不會修改原照片、裁切設定或既有手繪。</p>
+    <div class="drawing-background-shot" id="drawing-background-choice-shot"></div>
+    <fieldset class="drawing-background-options" aria-label="新手繪照片底圖範圍">
+      <label class="drawing-background-option"><input type="radio" name="drawing-background-choice" value="crop" checked><span><strong>使用目前裁切</strong><small>沿用這張主圖已保存的裁切範圍。</small></span></label>
+      <label class="drawing-background-option"><input type="radio" name="drawing-background-choice" value="original"><span><strong>完整原圖</strong><small>手繪底圖顯示完整照片，不套用目前裁切。</small></span></label>
+    </fieldset>
+    <div class="dialog-actions"><button class="outline-button" type="button" data-close="drawing-background-choice-dialog">取消</button><button class="primary-button" type="button" data-drawing-action="confirm-background-choice">建立手繪</button></div>
+  </dialog>
+  <dialog class="app-dialog" id="info-dialog"><div class="dialog-top"><span class="dialog-mark"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M10 9.1a2.1 2.1 0 1 1 3.7 1.4c-.7.8-1.7 1-1.7 2.3M12 16.2v.1"/></svg></span><button class="dialog-close" data-close="info-dialog" aria-label="關閉"><svg viewBox="0 0 20 20" aria-hidden="true"><path d="m5 5 10 10M15 5 5 15"/></svg></button></div><h2>工作區說明</h2><p class="dialog-lead">整理分鏡、拍攝安排與文件交付。專案在明確建立或選取後，才會進入可編輯畫面。</p><div class="dialog-details"><div><span class="detail-label">本機保存</span><span>使用瀏覽器 IndexedDB 專案資料庫；頁面狀態會顯示保存、唯讀或錯誤。</span></div><div><span class="detail-label">可操作範圍</span><span>分鏡文字編輯、照片新增、排序、主圖切換與移除、手繪畫布與筆畫、圖層顯示／鎖定／清空、場次與拍攝安排、輸出偏好及復原／重做。</span></div><div><span class="detail-label">尚未提供</span><span>多人即時協作；完整專案 ZIP 與文件輸出仍在驗證中。</span></div></div><p class="dialog-footnote">JSON 快照只包含已保存的 canonical 專案資料；救援 JSON 不包含完整圖片檔案。</p><div class="dialog-actions"><button class="outline-button" data-close="info-dialog">了解</button></div></dialog>
+
+  <dialog class="app-dialog confirm-dialog" id="confirm-dialog"><div class="dialog-top"><span class="dialog-mark danger-mark"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3.5 21 20H3L12 3.5Z"/><path d="M12 9v5m0 2.8v.1"/></svg></span><button class="dialog-close" data-close="confirm-dialog" aria-label="關閉"><svg viewBox="0 0 20 20" aria-hidden="true"><path d="m5 5 10 10M15 5 5 15"/></svg></button></div><h2 id="confirm-title">確認刪除</h2><p class="dialog-lead" id="confirm-copy"></p><div class="dialog-actions"><button class="outline-button" data-close="confirm-dialog">取消</button><button class="danger-button" id="confirm-accept">刪除鏡頭</button></div></dialog>
+  <div id="photo-crop-editor-mount"></div>
+  <input id="shot-photo-picker" type="file" multiple hidden aria-label="選取照片">
+  <input id="complete-package-picker" type="file" accept=".storyboard.zip,.zip,application/zip" hidden aria-label="選取完整專案 ZIP">
+  <dialog class="app-dialog package-import-dialog" id="complete-package-import-dialog" aria-labelledby="complete-package-import-title" aria-describedby="complete-package-import-description">
+    <div class="dialog-top"><span class="dialog-mark" aria-hidden="true">ZIP</span><button class="dialog-close" type="button" data-package-import-action="cancel" aria-label="取消匯入">×</button></div>
+    <h2 id="complete-package-import-title">匯入完整專案包</h2>
+    <p class="dialog-lead" id="complete-package-import-description">先檢查封包內容與本機 ID 衝突；確認後只新增專案，不會切換目前工作專案。</p>
+    <div class="package-import-content" id="complete-package-import-content" aria-live="polite"></div>
+    <div class="dialog-actions package-import-actions" id="complete-package-import-actions"></div>
+  </dialog>
+  <div class="toast-region" id="toast-region" aria-live="polite" aria-atomic="true"></div>
+  <div class="print-only-header" id="print-header"></div>
+</body>
+</html>
+
+
+
+
+

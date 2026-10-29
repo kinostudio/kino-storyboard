@@ -1,0 +1,34 @@
+.project-metadata-edit{
+  display:inline-grid;
+  flex:0 0 44px;
+  place-items:center;
+  width:44px;
+  min-width:44px;
+  height:44px;
+  min-height:44px;
+  padding:0;
+  border:0;
+  border-radius:6px;
+  background:transparent;
+  color:#64718a;
+  cursor:pointer;
+  touch-action:manipulation;
+}
+.project-metadata-edit svg{
+  display:block;
+  width:16px;
+  height:16px;
+  fill:none;
+  stroke:currentColor;
+  stroke-linecap:round;
+  stroke-linejoin:round;
+  stroke-width:1.7;
+}
+.project-metadata-edit:hover,
+.project-metadata-edit:focus-visible{
+  color:#35486f;
+}
+.project-metadata-edit:focus-visible{
+  outline:2px solid #7185ad;
+  outline-offset:1px;
+}

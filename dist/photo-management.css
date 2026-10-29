@@ -1,0 +1,131 @@
+/* The photo manager is a focused card control; it does not add a frame to the storyboard card. */
+.shot-photo-manager {
+  flex: 1 1 100%;
+  min-width: 0;
+  color: #465875;
+  font-size: 10px;
+}
+.shot-photo-manager > summary {
+  display: inline-flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  min-width: 132px;
+  min-height: 44px;
+  padding: 0 11px;
+  border-radius: 6px;
+  color: #4d5d77;
+  font-weight: 650;
+  line-height: 1.35;
+  cursor: pointer;
+  list-style: none;
+  touch-action: manipulation;
+}
+.shot-photo-manager > summary::-webkit-details-marker { display: none; }
+.shot-photo-manager > summary::after { content: "＋"; color: #8a96a8; font-size: 13px; }
+.shot-photo-manager[open] > summary::after { content: "−"; }
+.shot-photo-manager > summary:hover { color: #35486f; background: #f3f5f8; }
+.shot-photo-manager > summary:focus-visible {
+  outline: 3px solid #496bac;
+  outline-offset: 2px;
+}
+.shot-photo-manager-panel {
+  display: grid;
+  gap: 7px;
+  min-width: 0;
+  padding: 8px 0 2px;
+}
+.shot-photo-manager-help {
+  margin: 0;
+  color: #7b8591;
+  font-size: 10px;
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+}
+.shot-photo-manager-list {
+  display: grid;
+  gap: 6px;
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.shot-photo-manager-item {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 7px 10px;
+  min-width: 0;
+  padding: 7px 0;
+  border-top: 1px solid #eceeea;
+}
+.shot-photo-manager-copy {
+  display: flex;
+  align-items: flex-start;
+  gap: 6px 8px;
+  flex-wrap: wrap;
+  min-width: 0;
+  line-height: 1.4;
+}
+.shot-photo-manager-copy strong {
+  min-width: 0;
+  color: #48566b;
+  font-size: 10px;
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+.shot-photo-manager-position {
+  display: inline-flex;
+  align-items: center;
+  min-height: 22px;
+  padding: 1px 6px;
+  border-radius: 4px;
+  background: #eff1f2;
+  color: #737f8d;
+  font-size: 9px;
+  white-space: nowrap;
+}
+.shot-photo-manager-cropped {
+  display: inline-flex;
+  align-items: center;
+  min-height: 22px;
+  padding: 1px 6px;
+  border-radius: 4px;
+  background: #edf3ef;
+  color: #557263;
+  font-size: 9px;
+  white-space: nowrap;
+}
+.shot-photo-manager-item:first-child .shot-photo-manager-position {
+  background: #f3eddf;
+  color: #806d47;
+  font-weight: 650;
+}
+.shot-photo-manager-controls {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 5px;
+  flex-wrap: wrap;
+}
+.shot-photo-manager-controls .shot-photo-action {
+  min-width: 52px;
+  min-height: 44px;
+  padding: 0 8px;
+}
+.shot-photo-manager-controls .shot-photo-remove-action {
+  color: #835d57;
+}
+.shot-photo-manager-controls .shot-photo-remove-action:hover:not(:disabled) {
+  border-color: #d4b6b1;
+  background: #fff8f6;
+  color: #8d4942;
+}
+@media (max-width: 540px) {
+  .shot-photo-manager-item { grid-template-columns: minmax(0, 1fr); }
+  .shot-photo-manager-controls { justify-content: flex-start; }
+  .shot-photo-manager-controls .shot-photo-action { flex: 1 1 72px; }
+}
+@media (hover: none), (pointer: coarse) {
+  .shot-photo-manager > summary { background: #f6f7f7; }
+}
