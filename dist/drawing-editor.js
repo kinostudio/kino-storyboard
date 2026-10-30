@@ -201,6 +201,7 @@
     this.unsubscribeLifecycle = null;
     this.resizeObserver = null;
     this.listeners = [];
+    this.closeBusy = false;
     this.build();
     this.bind();
     this.refreshLifecycle();
@@ -281,6 +282,8 @@
     const header = create("header", "ds-de-header");
     this.backButton = button("返回鏡頭", "ds-de-back");
     this.backButton.hidden = !this.onBack;
+    this.saveCloseButton = button("儲存並關閉", "ds-de-save-close");
+    this.saveCloseButton.hidden = !this.onBack;
     this.title = create("div", "ds-de-title");
     this.title.appendChild(create("h2", "", "分鏡手繪"));
     this.context = create("p", "", this.shotLabel);
@@ -296,8 +299,7 @@
     this.discardButton.hidden = true;
     this.reloadButton.hidden = true;
     this.headerActions = create("div", "ds-de-header-actions");
-    this.headerActions.hidden = true;
-    this.headerActions.append(this.retryButton, this.discardButton, this.reloadButton);
+    this.headerActions.append(this.retryButton, this.discardButton, this.reloadButton, this.saveCloseButton);
     header.append(this.backButton, this.title, this.status, this.headerActions);
     shell.appendChild(header);
 
@@ -539,6 +541,22 @@
     this.backgroundChangeActions.append(this.backgroundChangeCancelButton, this.backgroundChangeConfirmButton);
     this.backgroundChangeDialog.append(this.backgroundChangeDialogTitle, this.backgroundChangeDescription, this.backgroundAssetSelect, this.backgroundChangePanels, this.backgroundChangeStatus, this.backgroundChangeActions);
     shell.appendChild(this.backgroundChangeDialog);
+
+    this.closeDialog = create("dialog", "ds-de-close-dialog");
+    this.closeDialog.setAttribute("aria-labelledby", "ds-de-close-heading");
+    this.closeDialogTitle = create("h3", "", "要儲存手繪後關閉嗎？");
+    this.closeDialogTitle.id = "ds-de-close-heading";
+    this.closeDialogCopy = create("p", "", "已完成的筆畫會逐筆自動保存。選擇「儲存並關閉」會先完成待處理的保存；空白畫布不會另建 Drawing。");
+    this.closeDialogStatus = create("p", "ds-de-close-status", "");
+    this.closeDialogStatus.setAttribute("role", "status");
+    this.closeDialogStatus.setAttribute("aria-live", "polite");
+    this.closeDialogActions = create("div", "ds-de-close-actions");
+    this.closeDialogContinueButton = button("繼續編輯", "ds-de-utility");
+    this.closeDialogBackButton = button("返回關閉", "ds-de-utility");
+    this.closeDialogSaveButton = button("儲存並關閉", "ds-de-save-close");
+    this.closeDialogActions.append(this.closeDialogContinueButton, this.closeDialogBackButton, this.closeDialogSaveButton);
+    this.closeDialog.append(this.closeDialogTitle, this.closeDialogCopy, this.closeDialogStatus, this.closeDialogActions);
+    shell.appendChild(this.closeDialog);
     shell.appendChild(this.canvasInstructions);
 
     this.featureNote = create("p", "ds-de-feature-note", "圖層設定會自動保存，並可復原。");
@@ -551,12 +569,15 @@
 
   DrawingEditor.prototype.bind = function () {
     const self = this;
-    this.listen(this.backButton, "click", function () {
-      if (self.pendingOperation || self.drawingBusy) return;
-      if (self.activeStroke) self.cancelActiveStroke("返回鏡頭時取消未完成筆畫。");
-      self.clearTouchInteraction(true);
-      if (self.onBack) self.onBack({ drawingId: self.isDraft ? null : self.drawing && self.drawing.id, shotId: self.capturedShotId, projectId: self.capturedProjectId });
+    this.listen(this.backButton, "click", function () { self.closeWithoutSaving(); });
+    this.listen(this.saveCloseButton, "click", function () { self.saveAndClose(); });
+    this.listen(this.closeDialogContinueButton, "click", function () { self.dismissCloseDialog(); });
+    this.listen(this.closeDialogBackButton, "click", function () { self.closeWithoutSaving(); });
+    this.listen(this.closeDialogSaveButton, "click", function () { self.saveAndClose(); });
+    this.listen(this.closeDialog, "click", function (event) {
+      if (event.target === self.closeDialog && self.closeDialog.open) self.closeDialog.close();
     });
+    this.listen(this.closeDialog, "cancel", function (event) { event.preventDefault(); self.dismissCloseDialog(); });
     this.listen(this.retryButton, "click", function () { self.retry(); });
     this.listen(this.discardButton, "click", function () { self.discardFailedCandidate(); });
     this.listen(this.reloadButton, "click", function () { self.refreshDrawing().catch(self.showLoadError.bind(self)); });
@@ -938,7 +959,8 @@
 
   DrawingEditor.prototype.canWriteHistory = function (kind) {
     const method = kind === "redo" ? "redo" : "undo";
-    return Boolean(!this.isDraft && this.writable && this.canQueueCommand() && this.drawing && this.backgroundReady && !this.backgroundFailure && Number.isInteger(this.currentProjectRevision()) && !this.pendingOperation && !this.drawingBusy && this.model && typeof this.model[method] === "function");
+    const canRedoDraft = this.isDraft && kind === "redo";
+    return Boolean((!this.isDraft || canRedoDraft) && this.writable && this.canQueueCommand() && this.drawing && this.backgroundReady && !this.backgroundFailure && Number.isInteger(this.currentProjectRevision()) && !this.pendingOperation && !this.drawingBusy && this.model && typeof this.model[method] === "function");
   };
 
   DrawingEditor.prototype.getCurrentProjectSnapshot = function () {
@@ -1558,6 +1580,8 @@
     this.discardButton.hidden = !this.canDiscardFailedCandidate();
     this.discardButton.disabled = this.drawingBusy;
     this.reloadButton.hidden = !this.readDrawing || Boolean(this.drawing && !(this.pendingOperation && (this.pendingOperation.readFailed || this.pendingOperation.reloadRequired)));
+    this.saveCloseButton.hidden = !this.onBack;
+    this.saveCloseButton.disabled = this.closeBusy;
     this.changeBackgroundButton.hidden = !this.model || !this.canCreateFromDraft() && typeof this.model.setDrawingBackground !== "function" || typeof this.model.getProject !== "function";
     this.changeBackgroundButton.disabled = !this.canOpenBackgroundChange();
     this.changeBackgroundButton.title = this.writable
@@ -1570,7 +1594,7 @@
     }
     this.retryBackgroundButton.disabled = this.drawingBusy;
     this.featureNote.hidden = false;
-    this.headerActions.hidden = this.retryButton.hidden && this.discardButton.hidden && this.reloadButton.hidden;
+    this.updateCloseDialogControls();
     const missingCommands = [];
     if (!this.model || typeof this.model.appendDrawingStroke !== "function" || typeof this.model.eraseDrawingStroke !== "function") missingCommands.push("筆畫與橡皮功能尚未就緒");
     if (!this.model || typeof this.model.getDrawing !== "function" && typeof this.model.getProject !== "function") missingCommands.push("手繪內容讀取功能尚未就緒");
@@ -1655,6 +1679,98 @@
     this.status.textContent = text;
     this.status.dataset.kind = this.statusKind;
     this.notifyState();
+  };
+
+  DrawingEditor.prototype.requestClose = function () {
+    if (this.destroyed || !this.onBack) return false;
+    if (this.activeStroke) this.cancelActiveStroke("離開手繪畫布時取消未完成筆畫。");
+    this.clearTouchInteraction(true);
+    this.closeDialogStatus.textContent = this.pendingOperation || this.drawingBusy
+      ? "目前有保存作業進行中；可選擇儲存並關閉，等待結果確認。"
+      : this.isDraft ? "空白畫布尚未建立 Drawing。" : "已完成的筆畫會逐筆自動保存。";
+    this.updateCloseDialogControls();
+    if (this.closeDialog.open) return true;
+    if (typeof this.closeDialog.showModal === "function") this.closeDialog.showModal();
+    else this.closeDialog.setAttribute("open", "");
+    this.closeDialogContinueButton.focus({ preventScroll: true });
+    return true;
+  };
+
+  DrawingEditor.prototype.updateCloseDialogControls = function () {
+    if (!this.closeDialog) return;
+    const busy = Boolean(this.drawingBusy || this.closeBusy);
+    if (this.saveCloseButton) this.saveCloseButton.disabled = Boolean(this.closeBusy);
+    this.closeDialogBackButton.disabled = busy || Boolean(this.pendingOperation);
+    this.closeDialogSaveButton.disabled = Boolean(this.closeBusy);
+    if (this.closeBusy) {
+      this.closeDialogStatus.textContent = "正在確認保存狀態…";
+      this.closeDialogContinueButton.disabled = true;
+      this.closeDialogBackButton.disabled = true;
+    } else {
+      this.closeDialogContinueButton.disabled = false;
+    }
+  };
+
+  DrawingEditor.prototype.dismissCloseDialog = function () {
+    if (this.closeBusy) return false;
+    if (this.closeDialog.open) this.closeDialog.close();
+    else this.closeDialog.removeAttribute("open");
+    this.backButton.focus({ preventScroll: true });
+    return true;
+  };
+
+  DrawingEditor.prototype.finishClose = function () {
+    if (this.destroyed || !this.onBack || this.drawingBusy || this.pendingOperation) return false;
+    if (this.closeDialog.open) this.closeDialog.close();
+    else this.closeDialog.removeAttribute("open");
+    this.clearTouchInteraction(true);
+    this.onBack({ drawingId: this.isDraft ? null : this.drawing && this.drawing.id, shotId: this.capturedShotId, projectId: this.capturedProjectId });
+    return true;
+  };
+
+  DrawingEditor.prototype.closeWithoutSaving = function () {
+    if (this.destroyed || !this.onBack) return false;
+    if (this.drawingBusy || this.pendingOperation) {
+      this.closeDialogStatus.textContent = "尚有保存作業待確認；請先選擇「儲存並關閉」或返回處理保存。";
+      this.updateCloseDialogControls();
+      return false;
+    }
+    return this.finishClose();
+  };
+
+  DrawingEditor.prototype.saveAndClose = async function () {
+    if (this.destroyed || !this.onBack || this.closeBusy) return false;
+    if (this.activeStroke) this.cancelActiveStroke("準備保存並關閉時取消未完成筆畫。");
+    this.clearTouchInteraction(true);
+    this.closeBusy = true;
+    this.updateCloseDialogControls();
+    const startedAt = Date.now();
+    try {
+      while (this.drawingBusy && Date.now() - startedAt < 20000) {
+        await new Promise(function (resolve) { setTimeout(resolve, 25); });
+      }
+      if (this.drawingBusy) {
+        this.closeDialogStatus.textContent = "保存仍在進行中；畫布保持開啟，請稍候再試。";
+        return false;
+      }
+      if (this.pendingOperation) await this.retry();
+      if (this.drawingBusy) {
+        while (this.drawingBusy && Date.now() - startedAt < 20000) {
+          await new Promise(function (resolve) { setTimeout(resolve, 25); });
+        }
+      }
+      if (this.drawingBusy || this.pendingOperation) {
+        this.closeDialogStatus.textContent = "目前操作尚未確認保存；畫布仍保持開啟，請重試保存或重新載入確認。";
+        return false;
+      }
+      return this.finishClose();
+    } catch (error) {
+      this.closeDialogStatus.textContent = "保存未完成：" + (error && error.message || "請留在畫布重試。");
+      return false;
+    } finally {
+      this.closeBusy = false;
+      if (!this.destroyed) this.updateCloseDialogControls();
+    }
   };
 
   DrawingEditor.prototype.notifyState = function () {
@@ -2350,6 +2466,16 @@
         throw error;
       }
     }
+    if (pending.kind === "history" && pending.historyKind === "redo" && this.isDraft) {
+      const project = this.getCurrentProjectSnapshot();
+      const shot = project && project.shots.find(function (item) { return item.id === pending.shotId; });
+      if (!project || project.revision !== pending.baseRevision || this.currentProjectRevision() !== pending.baseRevision || !shot || !Array.isArray(shot.drawingIds) || shot.drawingIds.length) {
+        const error = new Error("專案或鏡頭已更新；此重做尚未送出，請重新載入後再試。");
+        error.code = "DRAWING_TARGET_REVISION_CHANGED";
+        throw error;
+      }
+      return;
+    }
     if (pending.kind === "createDrawing") {
       const project = this.getCurrentProjectSnapshot();
       const shot = project && project.shots.find(function (item) { return item.id === pending.shotId; });
@@ -2570,6 +2696,8 @@
     const projectRevision = this.currentProjectRevision();
     const layer = this.activeLayer();
     if (!Number.isInteger(projectRevision) || !layer) return;
+    const wasDraft = this.isDraft;
+    const activeLayerKind = layer.kind;
     this.pendingOperation = { kind: "history", projectId: this.capturedProjectId, shotId: this.capturedShotId, baseRevision: projectRevision, drawingRevision: this.drawing.revision, historyKind: kind, drawingId: this.drawing.id, layerId: layer.id, originalStrokeIds: this.collectStrokeIds() };
     this.drawingBusy = true;
     this.setStatus(kind === "undo" ? "正在復原…" : "正在重做…", "saving");
@@ -2592,6 +2720,32 @@
         this.pendingOperation = null;
         this.setStatus("已復原；空白畫布尚未保存。", "info");
         return;
+      }
+      if (kind === "redo" && wasDraft) {
+        const restoredDrawings = this.model && typeof this.model.getDrawingsForShot === "function"
+          ? this.model.getDrawingsForShot(this.capturedShotId)
+          : projectAfterHistory && Array.isArray(projectAfterHistory.drawings)
+            ? projectAfterHistory.drawings.filter(function (item) { return item.shotId === this.capturedShotId; }, this)
+            : null;
+        if (!Array.isArray(restoredDrawings)) throw new Error("無法確認重做後此鏡頭的 Drawing；請重新載入後再操作。");
+        if (restoredDrawings.length > 1) throw new Error("重做後此鏡頭有多個 Drawing；請重新開啟鏡頭並選擇要編輯的版本。");
+        if (restoredDrawings.length === 1) {
+          const restored = restoredDrawings[0];
+          if (!restored || restored.projectId !== this.capturedProjectId || restored.shotId !== this.capturedShotId || !restored.id) {
+            throw new Error("重做後 Drawing 的專案或鏡頭關係不符；請重新載入後再操作。");
+          }
+          this.isDraft = false;
+          this.initialDrawing = { id: restored.id };
+          this.drawing = clone(restored);
+          const restoredLayer = this.findLayer(activeLayerKind) || this.findLayer("scene") || this.drawing.layers[0];
+          this.layerId = restoredLayer ? restoredLayer.id : null;
+          this.stage.style.aspectRatio = this.drawing.canvas.width + " / " + this.drawing.canvas.height;
+        } else {
+          await this.refreshBackground();
+          this.pendingOperation = null;
+          this.setStatus("已重做；此鏡頭目前仍為空白畫布。", "info");
+          return;
+        }
       }
       const fresh = await this.readCurrentDrawing();
       this.drawing = fresh;
@@ -2777,6 +2931,7 @@
     if (typeof next.onBack === "function" || next.onBack === null) {
       this.onBack = next.onBack;
       this.backButton.hidden = !this.onBack;
+      this.saveCloseButton.hidden = !this.onBack;
     }
     if (typeof next.onStateChange === "function" || next.onStateChange === null) this.onStateChange = next.onStateChange;
     this.refreshLifecycle();
@@ -2791,6 +2946,8 @@
         destroy: editor.destroy.bind(editor),
         refresh: editor.refreshDrawing.bind(editor),
         update: editor.update.bind(editor),
+        requestClose: editor.requestClose.bind(editor),
+        saveAndClose: editor.saveAndClose.bind(editor),
         editor: editor
       });
     },

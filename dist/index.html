@@ -6,9 +6,9 @@
   <meta name="color-scheme" content="light">
   <meta name="theme-color" content="#18243b">
   <title>Director Storyboard Editor｜光落下的地方</title>
-  <link rel="stylesheet" href="styles.css?v=20261029v46">
-  <link rel="stylesheet" href="output.css?v=20261029v38">
-  <link rel="stylesheet" href="drawing-editor.css?v=20261029d">
+  <link rel="stylesheet" href="styles.css?v=20261030ui2">
+  <link rel="stylesheet" href="output.css?v=20261030ui2">
+  <link rel="stylesheet" href="drawing-editor.css?v=20261030ui2">
   <link rel="stylesheet" href="photo-crop-editor.css?v=20261029v38">
   <link rel="stylesheet" href="production-timeline.css?v=20261029g">
   <link rel="stylesheet" href="project-metadata.css?v=20261028b">
@@ -19,20 +19,20 @@
   <script defer src="project-migrations.js?v=20261028b"></script>
   <script defer src="project-bootstrap.js"></script>
   <script defer src="idb-repository.js?v=20261029c"></script>
-  <script defer src="project-bridge.js?v=20261029v44"></script>
+  <script defer src="project-bridge.js?v=20261030ui2"></script>
   <script defer src="photo-import.js?v=20261028l"></script>
   <script defer src="vendor/fflate/fflate-0.8.3.umd.js"></script>
   <script defer src="zip-adapter.js?v=20261028k"></script>
   <script defer src="project-package.js?v=20261029v48"></script>
   <script defer src="package-copy.js?v=20261029v48"></script>
-  <script defer src="model.js?v=20261030photo1"></script>
+  <script defer src="model.js?v=20261030ui2"></script>
   <script defer src="storyboard-renderer.js?v=20261029drawingcrop1"></script>
   <script defer src="photo-crop-renderer.js?v=20261029v38"></script>
   <script defer src="photo-crop-editor.js?v=20261029v38"></script>
-  <script defer src="drawing-editor.js?v=20261029v47"></script>
+  <script defer src="drawing-editor.js?v=20261030ui2"></script>
   <script defer src="production-timeline.js?v=20261029g"></script>
   <script defer src="time-input.js"></script>
-  <script defer src="app.js?v=20261030photo1"></script>
+  <script defer src="app.js?v=20261030ui2"></script>
 </head>
 <body>
   <section class="lifecycle-gate" id="lifecycle-gate" aria-live="polite" aria-labelledby="lifecycle-title">
@@ -160,13 +160,13 @@
             <label class="field-label" for="output-type">文件類型</label><select id="output-type" class="select-control"><option value="storyboard">分鏡文件</option><option value="schedule">拍攝安排</option></select>
             <div class="field-gap"></div>
             <div id="storyboard-scope-group"><label class="field-label" for="output-scope">輸出範圍</label><select id="output-scope" class="select-control"><option value="all">全部分鏡</option><option value="chapter">目前場次</option><option value="selected">目前選取鏡頭</option></select><span class="field-note">搜尋條件不會自動縮減輸出內容。</span></div>
-            <div id="schedule-scope-group" hidden><label class="field-label" for="output-day-scope">拍攝日範圍</label><select id="output-day-scope" class="select-control"><option value="selected">單一拍攝日</option><option value="all">全部拍攝日</option></select><div id="output-selected-day-group"><label class="field-label" for="output-day">拍攝日</label><select id="output-day" class="select-control"></select></div><span class="field-note">全部拍攝日依已保存日序分組；項目仍依各日現場順序輸出。</span><div class="schedule-output-options" id="schedule-output-options"><div class="field-label">Rundown 選項</div><label class="schedule-output-option"><input type="checkbox" data-schedule-pref="rundownThumbnails"><span>顯示 Shot 縮圖</span></label><label class="schedule-output-option"><input type="checkbox" data-schedule-pref="rundownNotes"><span>顯示現場備註</span></label><label class="schedule-output-option"><input type="checkbox" data-schedule-pref="rundownStatus"><span>顯示拍攝狀態</span></label><div class="field-label">分鏡圖標籤</div><label class="schedule-output-option"><input type="checkbox" data-schedule-pref="storyboardShotNumber"><span>顯示鏡次</span></label><label class="schedule-output-option"><input type="checkbox" data-schedule-pref="storyboardTitle"><span>顯示標題</span></label></div></div>
+            <div id="schedule-scope-group" hidden><label class="field-label" for="output-day-scope">拍攝日範圍</label><select id="output-day-scope" class="select-control"><option value="selected">單一拍攝日</option><option value="all">全部拍攝日</option></select><div id="output-selected-day-group"><label class="field-label" for="output-day">拍攝日</label><select id="output-day" class="select-control"></select></div><span class="field-note">全部拍攝日依已保存日序分組；項目仍依各日現場順序輸出。</span><div class="schedule-output-options" id="schedule-output-options"><div class="field-label">Rundown 選項</div><label class="schedule-output-option"><span>顯示 Shot 縮圖</span><input type="checkbox" role="switch" data-schedule-pref="rundownThumbnails"><span class="toggle-track" aria-hidden="true"></span></label><label class="schedule-output-option"><span>顯示現場備註</span><input type="checkbox" role="switch" data-schedule-pref="rundownNotes"><span class="toggle-track" aria-hidden="true"></span></label><label class="schedule-output-option"><span>顯示拍攝狀態</span><input type="checkbox" role="switch" data-schedule-pref="rundownStatus"><span class="toggle-track" aria-hidden="true"></span></label><div class="field-label">分鏡圖標籤</div><label class="schedule-output-option"><span>顯示鏡次</span><input type="checkbox" role="switch" data-schedule-pref="storyboardShotNumber"><span class="toggle-track" aria-hidden="true"></span></label><label class="schedule-output-option"><span>顯示標題</span><input type="checkbox" role="switch" data-schedule-pref="storyboardTitle"><span class="toggle-track" aria-hidden="true"></span></label></div></div>
             <div class="field-gap"></div>
             <div id="output-content-settings">
               <div class="field-label">輸出模式</div>
               <label class="output-toggle-row"><span><strong>包含鏡頭細項</strong><small>關閉後顯示純圖欄位選項</small></span><input type="checkbox" role="switch" id="output-include-details" checked><span class="toggle-track" aria-hidden="true"></span></label>
-              <details class="output-detail-disclosure" id="output-image-field-options"><summary>純圖附加欄位 <span id="output-image-field-count">0 項</span></summary><div class="output-field-options"><label><input type="checkbox" data-output-field="images.shotNumber">鏡次</label><label><input type="checkbox" data-output-field="images.title">標題</label><label><input type="checkbox" data-output-field="images.voiceover">VO／台詞旁白</label><label><input type="checkbox" data-output-field="images.super">SUPER</label><label><input type="checkbox" data-output-field="images.duration">秒數</label></div></details>
-              <details class="output-detail-disclosure" id="output-field-options"><summary>細項欄位 <span id="output-selected-field-count">6 項</span></summary><div class="output-field-options"><label><input type="checkbox" data-output-field="details.visual" checked>畫面描述</label><label><input type="checkbox" data-output-field="details.script" checked>台詞／旁白</label><label><input type="checkbox" data-output-field="details.super">SUPER</label><label><input type="checkbox" data-output-field="details.sound" checked>聲音設計</label><label><input type="checkbox" data-output-field="details.move" checked>景別／運鏡</label><label><input type="checkbox" data-output-field="details.duration" checked>影片秒數</label></div></details>
+              <details class="output-detail-disclosure" id="output-image-field-options"><summary>純圖附加欄位 <span id="output-image-field-count">0 項</span></summary><div class="output-field-options"><label class="output-field-switch"><span>鏡次</span><input type="checkbox" role="switch" data-output-field="images.shotNumber"><span class="toggle-track" aria-hidden="true"></span></label><label class="output-field-switch"><span>標題</span><input type="checkbox" role="switch" data-output-field="images.title"><span class="toggle-track" aria-hidden="true"></span></label><label class="output-field-switch"><span>VO／台詞旁白</span><input type="checkbox" role="switch" data-output-field="images.voiceover"><span class="toggle-track" aria-hidden="true"></span></label><label class="output-field-switch"><span>SUPER</span><input type="checkbox" role="switch" data-output-field="images.super"><span class="toggle-track" aria-hidden="true"></span></label><label class="output-field-switch"><span>秒數</span><input type="checkbox" role="switch" data-output-field="images.duration"><span class="toggle-track" aria-hidden="true"></span></label></div></details>
+              <details class="output-detail-disclosure" id="output-field-options"><summary>細項欄位 <span id="output-selected-field-count">6 項</span></summary><div class="output-field-options"><label class="output-field-switch"><span>畫面描述</span><input type="checkbox" role="switch" data-output-field="details.visual" checked><span class="toggle-track" aria-hidden="true"></span></label><label class="output-field-switch"><span>台詞／旁白</span><input type="checkbox" role="switch" data-output-field="details.script" checked><span class="toggle-track" aria-hidden="true"></span></label><label class="output-field-switch"><span>SUPER</span><input type="checkbox" role="switch" data-output-field="details.super"><span class="toggle-track" aria-hidden="true"></span></label><label class="output-field-switch"><span>聲音設計</span><input type="checkbox" role="switch" data-output-field="details.sound" checked><span class="toggle-track" aria-hidden="true"></span></label><label class="output-field-switch"><span>景別／運鏡</span><input type="checkbox" role="switch" data-output-field="details.move" checked><span class="toggle-track" aria-hidden="true"></span></label><label class="output-field-switch"><span>影片秒數</span><input type="checkbox" role="switch" data-output-field="details.duration" checked><span class="toggle-track" aria-hidden="true"></span></label></div></details>
             </div><p class="field-note" id="output-layout-hint"></p>
             <div class="output-image-source-panel" id="output-image-source-panel" hidden><div class="field-label">分鏡圖來源</div><p class="field-note">有多張照片或 Drawing 的鏡頭需明確選擇；選擇只套用本次輸出。</p><div id="output-image-source-list"></div></div>
             <div class="field-gap"></div>
@@ -213,7 +213,7 @@
 
   <dialog class="app-dialog confirm-dialog" id="confirm-dialog"><div class="dialog-top"><span class="dialog-mark danger-mark"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3.5 21 20H3L12 3.5Z"/><path d="M12 9v5m0 2.8v.1"/></svg></span><button class="dialog-close" data-close="confirm-dialog" aria-label="關閉"><svg viewBox="0 0 20 20" aria-hidden="true"><path d="m5 5 10 10M15 5 5 15"/></svg></button></div><h2 id="confirm-title">確認刪除</h2><p class="dialog-lead" id="confirm-copy"></p><div class="dialog-actions"><button class="outline-button" data-close="confirm-dialog">取消</button><button class="danger-button" id="confirm-accept">刪除鏡頭</button></div></dialog>
   <div id="photo-crop-editor-mount"></div>
-  <input id="shot-photo-picker" type="file" multiple hidden aria-label="選取照片">
+  <input id="shot-photo-picker" type="file" hidden aria-label="選取照片">
   <input id="complete-package-picker" type="file" accept=".storyboard.zip,.zip,application/zip" hidden aria-label="選取完整專案 ZIP">
   <dialog class="app-dialog package-import-dialog" id="complete-package-import-dialog" aria-labelledby="complete-package-import-title" aria-describedby="complete-package-import-description">
     <div class="dialog-top"><span class="dialog-mark" aria-hidden="true">ZIP</span><button class="dialog-close" type="button" data-package-import-action="cancel" aria-label="取消匯入">×</button></div>

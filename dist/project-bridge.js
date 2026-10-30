@@ -505,6 +505,8 @@
     const shot = findById(project.shots, shotId, "SHOT_NOT_FOUND", "分鏡");
     assertShotHasPhotoOnlyReferences(project, shot);
     if (!Array.isArray(args[1])) fail("INVALID_ARGUMENT", "照片 metadata 必須是陣列。", "$.args[1]");
+    if (args[1].length > 1) fail("SHOT_PHOTO_LIMIT", "每個鏡次只能有一張照片。", "$.args[1]");
+    if (args[1].length && shot.assetIds.length) fail("SHOT_PHOTO_LIMIT", "每個鏡次只能有一張照片；請替換現有照片。", "$.shots." + shot.id + ".assetIds");
 
     const addedAssetIds = [];
     const duplicateAssetIds = [];
@@ -555,6 +557,7 @@
     const previousAssetId = text(args[1], "$.args[1]", false);
     const shot = findById(project.shots, shotId, "SHOT_NOT_FOUND", "分鏡");
     assertShotHasPhotoOnlyReferences(project, shot);
+    if (shot.assetIds.length > 1) fail("LEGACY_MULTIPLE_SHOT_PHOTOS", "此舊鏡次有多張照片；請先在照片管理中保留一張，再替換。", "$.shots." + shot.id + ".assetIds");
     const previousIndex = shot.assetIds.indexOf(previousAssetId);
     if (previousIndex < 0) fail("SHOT_ASSET_NOT_FOUND", "此分鏡目前沒有要替換的照片。", "$.args[1]");
     const previousAsset = findById(project.assets, previousAssetId, "ASSET_NOT_FOUND", "照片 Asset");

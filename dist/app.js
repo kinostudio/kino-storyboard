@@ -13,6 +13,32 @@
   const model = window.StoryModel;
   const $ = (selector, root) => (root || document).querySelector(selector);
   const $$ = (selector, root) => Array.from((root || document).querySelectorAll(selector));
+  let drawingPopup = null;
+  function requestDrawingPopupClose() {
+    if (drawingEditorHandle && typeof drawingEditorHandle.requestClose === "function") {
+      drawingEditorHandle.requestClose("backdrop");
+      return;
+    }
+    message("手繪畫布仍在載入或尚未就緒，請稍候再關閉。", true);
+  }
+  function ensureDrawingPopup() {
+    if (drawingPopup) return drawingPopup;
+    const drawingView = $("#view-drawing");
+    if (!drawingView) return null;
+    drawingPopup = document.createElement("dialog");
+    drawingPopup.className = "ds-drawing-popup";
+    drawingPopup.setAttribute("aria-label", "手繪畫布");
+    drawingPopup.appendChild(drawingView);
+    document.body.appendChild(drawingPopup);
+    drawingPopup.addEventListener("click", (event) => {
+      if (event.target === drawingPopup) requestDrawingPopupClose();
+    });
+    drawingPopup.addEventListener("cancel", (event) => {
+      event.preventDefault();
+      requestDrawingPopupClose();
+    });
+    return drawingPopup;
+  }
   const escapeHtml = (value) => String(value == null ? "" : value).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]);
   const icon = (name, size) => {
     const paths = {
@@ -901,7 +927,7 @@
     if (snapshot.revision !== shotNumberPreviewSession.preview.baseRevision) shotNumberPreviewSession.stale = true;
     renderShotNumberPreviewDialog();
   }
-  function sceneTitle(chapter) { return sceneNumber(chapter.id) + "／" + chapter.title; }
+  function sceneTitle(chapter) { return sceneNumber(chapter.id) + (chapter.title ? "／" + chapter.title : ""); }
   function applyProjectAspectRatio(value) {
     const ratio = value || "16:9";
     const cssValues = {"16:9":"16 / 9","1:1":"1 / 1","4:3":"4 / 3","2.35:1":"2.35 / 1"};
@@ -1223,16 +1249,12 @@
     const assetId = Array.isArray(shot.assetIds) ? shot.assetIds[0] : null;
     const shotName = shotNumberWithQuotedTitle(shot);
     const available = !!(photoImportPolicy() && model && typeof model.addShotPhotos === "function" && typeof model.getShotPhoto === "function");
-    const add = available ? '<button type="button" class="shot-photo-action shot-photo-write-action" data-shot-photo-action="add" data-shot-id="' + escapeHtml(shot.id) + '" aria-label="為' + escapeHtml(shotName) + '新增照片">＋ 新增照片</button>' : '';
-    const replace = assetId && photoImportPolicy() && model && typeof model.replaceShotPhoto === "function"
-      ? '<button type="button" class="shot-photo-action shot-photo-write-action" data-shot-photo-action="replace" data-shot-id="' + escapeHtml(shot.id) + '" data-asset-id="' + escapeHtml(assetId) + '" aria-label="替換' + escapeHtml(shotName) + '的主圖">替換主圖</button>'
-      : '';
     const reload = assetId && shotPhotoReadErrors.has(photoReadKey(state && state.projectId, shot.id, assetId))
       ? '<button type="button" class="shot-photo-action" data-shot-photo-action="reload" data-shot-id="' + escapeHtml(shot.id) + '" data-asset-id="' + escapeHtml(assetId) + '" aria-label="重新載入' + escapeHtml(shotName) + '的照片">重新載入</button>'
       : '';
     const manager = renderShotPhotoManager(shot);
     const readonlyNote = '<span class="shot-photo-readonly-note">' + READ_ONLY_HELP + '</span>';
-    return '<div class="shot-photo-actions">' + add + replace + reload + manager + readonlyNote + '</div><span class="shot-photo-card-status" data-photo-status-shot="' + escapeHtml(shot.id) + '" hidden></span>';
+    return '<div class="shot-photo-actions">' + reload + manager + readonlyNote + '</div><span class="shot-photo-card-status" data-photo-status-shot="' + escapeHtml(shot.id) + '" hidden></span>';
   }
   function shotPhotoManagerKey(projectId, shotId) {
     return String(projectId || "") + "\u0000" + String(shotId || "");
@@ -2321,7 +2343,7 @@
       const visualValue = visualDraft ? visualDraft.value : shot.visual || "";
       const scriptValue = String(scriptDraft ? scriptDraft.value : shot.script || "");
       const superValue = String(superDraft ? superDraft.value : shot.super || "");
-      const durationValue = durationDraft ? durationDraft.value : shot.duration == null ? "0" : String(shot.duration);
+      const durationValue = durationDraft ? durationDraft.value : Number(shot.duration) === 0 || shot.duration == null ? "" : String(shot.duration);
       const modeClass = shotView === "gallery" ? "is-gallery" : "is-list";
       const durationIsUnknown = durationDraft ? String(durationDraft.value).trim() !== "" && Number(durationDraft.value) === 0 : Number(shot.duration) === 0;
       const artwork = shotArtworkSource(shot);
@@ -2372,7 +2394,7 @@
     if (!shot) { container.dataset.shotId = ""; container.innerHTML = '<div class="empty-state"><div class="empty-icon">' + icon("info", 16) + '</div><strong>尚未選取鏡頭</strong><p>從分鏡清單選擇一個鏡頭，即可在這裡編輯。</p></div>'; applyReadonlyControls(); return; }
     const shotIndex = state.shots.indexOf(shot); const group = inChapter(shot.chapterId); const groupIndex = group.findIndex((item) => item.id === shot.id); const linked = state.entries.filter((entry) => entry.type === "shot" && entry.shotId === shot.id);
     if (container.dataset.shotId === shot.id && container.querySelector("[data-shot-field]")) {
-      const valueOf = (key) => shot[key] == null ? "" : String(shot[key]);
+      const valueOf = (key) => shot[key] == null || (key === "duration" && Number(shot[key]) === 0) ? "" : String(shot[key]);
       container.querySelector(".inspector-number").innerHTML = shotLabel(shot) + ' <span style="color:#a8adb2;font-weight:400">· ' + (shotIndex + 1) + ' / ' + state.shots.length + '</span>';
       syncShotNumberManagement(shot, container);
       ["title","visual","script","super","sound","move","duration","tags","art","chapterId"].forEach((key) => {
@@ -2413,7 +2435,7 @@
     if (fieldDrafts.has(key)) return false;
     const shot = state.shots.find((item) => item.id === shotId);
     if (!shot || !Object.prototype.hasOwnProperty.call(shot, fieldName)) return false;
-    const value = shot[fieldName] == null ? "" : String(shot[fieldName]);
+    const value = shot[fieldName] == null || (fieldName === "duration" && Number(shot[fieldName]) === 0) ? "" : String(shot[fieldName]);
     let updated = false;
     $$('[data-shot-field="' + fieldName + '"]').forEach((field) => {
       if (field.dataset.entityId !== shotId || !field.isConnected || document.activeElement === field || composingFields.has(field) || fieldDraftFor(field)) return;
@@ -4686,15 +4708,31 @@
     const previousView = currentView;
     if (currentView !== view && outputPrintPreparation && !outputPrintPreparation.printInvoked && !outputPrintPreparation.allowOutputViewTransition) cancelOutputPrintPreparation();
     if (currentView !== view) cancelReorderGesture();
-    if (currentView === "storyboard" && view !== "storyboard") releaseAllShotPhotoUrls();
+    if (currentView === "storyboard" && view !== "storyboard" && view !== "drawing") releaseAllShotPhotoUrls();
     if (currentView === "drawing" && view !== "drawing") {
       if (!(options && options.force) && drawingRouteIsBusy()) { message("Drawing 仍有保存命令待處理；請先完成重試或明確處理候選。", true); return false; }
       destroyDrawingEditor(); drawingRoute = null; $("#view-drawing").classList.remove("has-drawing-editor");
     }
     currentView = view;
-    const navView = view === "voiceover" ? "storyboard" : view;
+    const popup = view === "drawing" ? ensureDrawingPopup() : drawingPopup;
+    const navView = view === "voiceover" || view === "drawing" ? "storyboard" : view;
     $$('[data-view]').forEach((button) => button.classList.toggle("is-active", button.dataset.view === navView));
-    ["storyboard","schedule","output","drawing","voiceover"].forEach((key) => { const section = $("#view-" + key); section.hidden = key !== view; section.classList.toggle("is-active", key === view); });
+    const backgroundView = view === "drawing" ? "storyboard" : view;
+    ["storyboard","schedule","output","drawing","voiceover"].forEach((key) => {
+      const section = $("#view-" + key);
+      const visible = key === view || view === "drawing" && key === backgroundView;
+      section.hidden = !visible;
+      section.classList.toggle("is-active", key === view || view === "drawing" && key === backgroundView);
+    });
+    if (popup) {
+      if (view === "drawing" && !popup.open) {
+        if (typeof popup.showModal === "function") popup.showModal();
+        else popup.setAttribute("open", "");
+      } else if (view !== "drawing" && popup.open) {
+        if (typeof popup.close === "function") popup.close();
+        else popup.removeAttribute("open");
+      }
+    }
     if (view !== previousView || options && options.force) {
       if (view === "storyboard") renderStoryboard();
       if (view === "schedule") renderSchedule();
@@ -4774,7 +4812,7 @@
         const field = card.querySelector('[data-shot-field="' + key + '"]');
         if (!field) return;
         const draft = fieldDraftFor(field);
-        if (document.activeElement !== field && !draft) field.value = shot[key] == null ? "" : String(shot[key]);
+        if (document.activeElement !== field && !draft) field.value = shot[key] == null || (key === "duration" && Number(shot[key]) === 0) ? "" : String(shot[key]);
         if (draft) renderDraftError(field, draft);
         if (shotView === "gallery" && key === "visual" && field !== document.activeElement && !draft) committedVisualFields.push(field);
         if (key === "duration") {
@@ -6834,7 +6872,7 @@
           if (draft && draft.submittedVersion === draft.version) { message("這筆修改已送出保存，無法在完成前取消。", true); return; }
           if (draft) { fieldDrafts.delete(draft.key); syncDraftSnapshot(); renderDurableStatus(); }
           const shot = state.shots.find((item) => item.id === shotField.dataset.entityId);
-          if (shot) shotField.value = shot[shotField.dataset.shotField] == null ? "" : String(shot[shotField.dataset.shotField]);
+          if (shot) shotField.value = shot[shotField.dataset.shotField] == null || (shotField.dataset.shotField === "duration" && Number(shot.duration) === 0) ? "" : String(shot[shotField.dataset.shotField]);
           clearFieldError(shotField);
           if (shotField.matches(".shot-inline-visual")) { shotField.style.height = "auto"; shotField.style.height = Math.max(shotField.scrollHeight, 48) + "px"; }
           if (shotField.matches(".shot-inline-duration")) {

@@ -1885,12 +1885,17 @@
           demoProject.projectType = spec.projectType;
           item.candidate = validateNewCandidate(demoProject, "示範專案");
         } else {
-          item.candidate = validateNewCandidate(deps.bridge.makeEmptyProject({
+          const blankProject = deps.bridge.makeEmptyProject({
             projectId: spec.projectId,
             title: spec.title,
             projectType: spec.projectType,
             now: getNowIso()
-          }), "空白專案");
+          });
+          const sceneId = makeUniqueId("scene");
+          blankProject.scenes.push({ projectId: spec.projectId, id: sceneId, title: "" });
+          blankProject.sceneOrder.push(sceneId);
+          blankProject.shotOrderByScene[sceneId] = [];
+          item.candidate = validateNewCandidate(blankProject, "空白專案");
         }
       }
       const projectId = item.candidate.projectId;
@@ -2267,6 +2272,7 @@
           catch (cause) { throw makeError("INVALID_ARGUMENT", "新增照片需要 File 陣列或 FileList。", cause); }
           if (!files || typeof files.length !== "number") throw makeError("INVALID_ARGUMENT", "新增照片需要 File 陣列或 FileList。");
           if (files.length === 0) return Promise.resolve({ addedAssetIds: [], duplicateAssetIds: [], revision: currentProject.revision });
+          if (files.length > 1) throw makeError("SHOT_PHOTO_LIMIT", "每個鏡次只能有一張照片。");
         } else {
           files = [fileInput];
         }
