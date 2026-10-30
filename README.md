@@ -2,9 +2,11 @@
 
 KINO Storyboard 是分鏡創作、拍攝安排與文件交付工具。程式碼保存在 GitHub，網站使用 Cloudflare Workers Static Assets 提供靜態前端。此版本仍未完成產品驗收；不能視為已完成 MVP。
 
+網站：[KINO Storyboard](https://kino-storyboard.film-kinostudio.workers.dev/)
+
 ## 部署與 Google Drive 規劃
 
-靜態網站的部署設定位於 `wrangler.jsonc`，網站資產位於 `dist/`。完整專案 ZIP 的 Google Drive 匯入／匯出尚未實作；操作與驗收規劃見 [Google Drive ZIP 規劃](docs/google-drive-zip-plan.md)。
+靜態網站的部署設定位於 `wrangler.jsonc`，網站資產位於 `dist/`；目前以 Wrangler 手動部署，GitHub 推送尚不會自動發布。完整專案 ZIP 的 Google Drive 匯入／匯出尚未實作；操作與驗收規劃見 [Google Drive ZIP 規劃](docs/google-drive-zip-plan.md)。
 
 ## 本機資料與備份
 

@@ -3,6 +3,8 @@
 狀態：規劃稿（尚未實作或驗收）  
 日期：2026-10-31
 
+目前 Cloudflare 網站 origin：`https://kino-storyboard.film-kinostudio.workers.dev`。Google Cloud OAuth、Picker 和 Drive API 尚未設定；資料夾選取及 `drive.file` 權限行為須在真實帳號驗證。
+
 ## 目標與界線
 
 讓使用者在一次明確操作中，把一個完整專案 ZIP 從 Google Drive 匯入目前裝置，或把目前專案 ZIP 上傳到 Google Drive。每次操作都由使用者開始、選擇檔案或目的資料夾，並收到完成或失敗結果。
