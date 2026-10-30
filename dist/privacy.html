@@ -37,7 +37,7 @@
 
     <aside class="notice" aria-labelledby="drive-status-heading">
       <h2 id="drive-status-heading">Google Drive 功能狀態</h2>
-      <p>目前版本包含 Google Drive 匯入／匯出介面，但尚未設定必要的 Google OAuth 與專案設定，因此 Drive 操作目前不可用。本版本不會要求 Google 授權，也不會讀取您的 Google 帳戶或 Drive 資料。下方 Drive 資料處理說明僅在營運者完成設定並啟用該功能後適用。</p>
+      <p>Google Drive 匯入／匯出目前處於測試階段，僅限獲准的測試帳號使用。Google 使用者資料的處理方式如下。</p>
     </aside>
 
     <div class="layout">
@@ -81,7 +81,7 @@
 
         <section id="google">
           <h2>4. Google Drive 資料（僅於功能啟用後適用）</h2>
-          <p>目前本服務尚未設定 Google Drive 整合，因此尚未透過 Google OAuth 或 Drive API 存取 Google 使用者資料。若日後啟用此功能，您必須自行開始操作、完成 Google 授權並在 Google Picker 選擇檔案或資料夾，才會進行該次傳輸。</p>
+          <p>您必須自行開始操作、完成 Google 授權並在 Google Picker 選擇檔案或資料夾，才會進行該次專案 ZIP 傳輸。</p>
           <h3>資料及權限範圍</h3>
           <p>已實作的整合程式請求 <code>https://www.googleapis.com/auth/drive.file</code> 權限，用於建立本服務匯出的檔案，以及處理由您透過本服務選取或分享給本服務的檔案。這不是讀取或管理整個 Google Drive 的權限。功能啟用時，匯入會讀取您選取的 ZIP 及完成操作所需的檔案資訊；匯出會建立 ZIP，並使用您選取的目的資料夾資訊。</p>
           <p>Google Drive 匯入的 ZIP 會在瀏覽器中下載、驗證及預覽；只有您確認還原或另存副本後，才會寫入目前瀏覽器的 IndexedDB。匯出時，瀏覽器會將您要求匯出的 ZIP 直接傳送至 Google Drive，並在所選位置建立新檔。此功能設計為逐次手動操作，不會背景同步或自動合併不同裝置的專案。</p>
@@ -93,7 +93,7 @@
 
         <section id="providers">
           <h2>5. 網站託管與第三方服務</h2>
-          <p>Cloudflare 提供本網站的靜態檔案託管與傳送服務。若 Google Drive 功能日後啟用，瀏覽器會在該次操作中連線至 Google Identity、Google Picker 及 Google Drive API。各服務供應商依其自身條款與隱私政策處理相關請求資訊；本服務不控制其獨立處理方式。</p>
+          <p>Cloudflare 提供本網站的靜態檔案託管與傳送服務。瀏覽器可能載入 Google Identity 和 Google Picker 元件，並在您授權與操作時連線至 Google Drive API。各服務供應商依其自身條款與隱私政策處理相關請求資訊；本服務不控制其獨立處理方式。</p>
           <ul>
             <li><a href="https://www.cloudflare.com/privacypolicy/" target="_blank" rel="noopener noreferrer">Cloudflare 隱私權政策</a></li>
             <li><a href="https://policies.google.com/privacy" target="_blank" rel="noopener noreferrer">Google 隱私權政策</a></li>
