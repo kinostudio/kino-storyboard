@@ -411,6 +411,14 @@
     return makeError(code, message, { status: response.status, retryable: response.status === 429 || response.status >= 500 });
   }
 
+  async function uploadErrorReason(response) {
+    try {
+      const body = await response.clone().json();
+      const reason = body && body.error && Array.isArray(body.error.errors) && body.error.errors[0] && body.error.errors[0].reason;
+      return typeof reason === "string" && /^[A-Za-z][A-Za-z0-9_]{0,63}$/.test(reason) ? reason : null;
+    } catch (_) { return null; }
+  }
+
   async function fetchForOperation(operation, url, init, keepController) {
     assertActive(operation);
     const controller = new AbortController();
@@ -630,7 +638,10 @@
         { retryable: false, possibleDuplicate: true }
       );
     }
-    throw httpError(response, "上傳狀態查詢");
+    const error = httpError(response, "上傳狀態查詢");
+    const reason = await uploadErrorReason(response);
+    if (reason) error.message += "（原因：" + reason + "）";
+    throw error;
   }
 
   function completeUpload(metadata, pending) {
@@ -738,10 +749,11 @@
         }
       }
       const uploadError = httpError(response, "ZIP 上傳");
+      const reason = await uploadErrorReason(response);
       pending.state = "result-unknown";
       throw makeError(
         "DRIVE_UPLOAD_RESULT_UNKNOWN",
-        "Drive 回傳 " + uploadError.code + "；上傳 session 的實際接收位置尚未確認。請按「續傳／查詢」，不要重新建立檔案。",
+        "Drive 回傳 " + uploadError.code + (reason ? "（原因：" + reason + "）" : "") + "；上傳 session 的實際接收位置尚未確認。請按「續傳／查詢」，不要重新建立檔案。",
         { retryable: true, outcomeUnknown: true, causeCode: uploadError.code, status: response.status }
       );
     }
