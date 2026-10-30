@@ -128,6 +128,11 @@
   let completePackageImportSequence = 0;
   let completePackageImportOrigin = "project-menu";
   let completePackageExportBusy = false;
+  let googleDriveOperation = null;
+  let googleDriveStatus = null;
+  let googleDriveResumeAvailable = false;
+  let googleDriveReadyState = "unknown";
+  let googleDriveReadyStarted = false;
   let drawingRoute = null;
   let drawingEditorHandle = null;
   let drawingChooserContext = null;
@@ -5405,6 +5410,279 @@
     if (bytes < 1024 * 1024) return Math.ceil(bytes / 1024) + " KB";
     return (bytes / (1024 * 1024)).toFixed(1) + " MB";
   }
+  function ensureKinoDriveReady(api) {
+    if (googleDriveReadyStarted) return;
+    googleDriveReadyStarted = true;
+    const readiness = api && api.ready;
+    if (!readiness || typeof readiness.then !== "function") { googleDriveReadyState = "ready"; return; }
+    googleDriveReadyState = "loading";
+    Promise.resolve(readiness).then((ready) => {
+      googleDriveReadyState = ready === false ? "failed" : "ready";
+      renderGoogleDriveControls();
+    }, () => {
+      googleDriveReadyState = "failed";
+      renderGoogleDriveControls();
+    });
+  }
+  function kinoDriveCapability() {
+    const api = window.KinoDrive;
+    if (!api || typeof api.importZip !== "function" || typeof api.exportZip !== "function") {
+      return { api: null, available: false, message: "Google Drive 整合模組尚未載入；本機 ZIP 匯入與下載仍可使用。" };
+    }
+    const config = window.KinoDriveConfig;
+    if (!config || !config.clientId || !config.apiKey || !config.appId) {
+      return { api: api, available: false, message: "Google Drive 尚未設定。請設定 window.KinoDriveConfig.clientId、apiKey 和 appId（Google Cloud Project number）後重載。" };
+    }
+    ensureKinoDriveReady(api);
+    if (googleDriveReadyState === "loading" || googleDriveReadyState === "unknown") return { api: api, available: false, message: "正在準備 Google Drive 授權與選取器，請稍候。" };
+    if (googleDriveReadyState === "failed") {
+      let status = null;
+      try { status = typeof api.getStatus === "function" ? api.getStatus() : null; } catch (_) {}
+      const detail = status && (status.configError || status.error);
+      return { api: api, available: false, message: detail && (detail.message || detail.code) || "Google Drive 元件尚未就緒，請檢查設定與網路後重載。" };
+    }
+    return { api: api, available: true, message: "" };
+  }
+  function hasPendingGoogleDriveUpload(api) {
+    try { return !!(api && typeof api.getStatus === "function" && api.getStatus().pendingUpload); }
+    catch (_) { return false; }
+  }
+  function pendingGoogleDriveUpload(api) {
+    try { return api && typeof api.getStatus === "function" ? api.getStatus().pendingUpload : null; }
+    catch (_) { return null; }
+  }
+  function googleDriveUploadCanResume(api, error) {
+    if (!api || typeof api.resumeUpload !== "function" || (error && error.code === "DRIVE_UPLOAD_SESSION_EXPIRED")) return false;
+    return hasPendingGoogleDriveUpload(api);
+  }
+  function safeDriveWebViewLink(value) {
+    try {
+      const url = new URL(String(value || ""), window.location.href);
+      return url.protocol === "https:" && url.hostname === "drive.google.com" ? url.href : "";
+    } catch (_) { return ""; }
+  }
+  function setGoogleDriveStatus(text, options) {
+    const opts = options || {};
+    googleDriveStatus = { text: String(text || ""), kind: opts.kind || "info", link: safeDriveWebViewLink(opts.link) };
+    renderGoogleDriveControls();
+  }
+  function renderGoogleDriveControls(root) {
+    const menu = root || $("#project-popover");
+    if (!menu) return;
+    const capability = kinoDriveCapability();
+    const unavailableMessage = capability.available ? "" : capability.message;
+    const statusNode = $("#google-drive-status", menu);
+    const importButton = $("[data-drive-action='import']", menu);
+    const exportButton = $("[data-drive-action='export']", menu);
+    const cancelButton = $("[data-drive-action='cancel']", menu);
+    const resumeButton = $("[data-drive-action='resume']", menu);
+    const discardButton = $("[data-drive-action='discard-pending']", menu);
+    const pendingUpload = pendingGoogleDriveUpload(capability.api);
+    const exportBlock = completePackageExportBlockReason();
+    if (importButton) importButton.disabled = !capability.available || !!googleDriveOperation || !!(completePackageImportSession && completePackageImportSession.status === "importing");
+    if (exportButton) exportButton.disabled = !capability.available || !!googleDriveOperation || !!exportBlock;
+    if (cancelButton) cancelButton.hidden = !googleDriveOperation || !googleDriveOperation.cancelable;
+    if (resumeButton) resumeButton.hidden = !googleDriveResumeAvailable || !!googleDriveOperation || !capability.available;
+    if (discardButton) discardButton.hidden = !pendingUpload || !pendingUpload.possibleDuplicate || !!pendingUpload.canResume || !!googleDriveOperation || !capability.available;
+    if (statusNode) {
+      const status = googleDriveStatus && googleDriveStatus.text ? googleDriveStatus : null;
+      statusNode.replaceChildren();
+      statusNode.dataset.kind = status && status.kind || (unavailableMessage ? "error" : "info");
+      const text = status ? status.text : unavailableMessage || "只在你點選 Drive 動作並選擇檔案／資料夾後才傳輸 ZIP；不會自動同步。首次授權只要求 drive.file。";
+      statusNode.appendChild(document.createTextNode(text));
+      const link = status && status.link;
+      if (link) {
+        const anchor = document.createElement("a");
+        anchor.href = link;
+        anchor.target = "_blank";
+        anchor.rel = "noopener noreferrer";
+        anchor.textContent = "在 Google Drive 開啟檔案";
+        statusNode.appendChild(document.createElement("br"));
+        statusNode.appendChild(anchor);
+      }
+      if (!status && capability.available && exportBlock && exportButton) exportButton.title = exportBlock;
+    }
+  }
+  function formatDriveProgress(detail) {
+    const progress = detail || {};
+    const phase = progress.phase === "upload" ? "上傳" : "下載";
+    const loaded = Math.max(0, Number(progress.loaded) || 0);
+    const total = Math.max(0, Number(progress.total) || 0);
+    return total > 0
+      ? "Google Drive ZIP " + phase + "中：" + formatPackageByteLength(loaded) + " / " + formatPackageByteLength(total)
+      : "Google Drive ZIP " + phase + "中：" + formatPackageByteLength(loaded);
+  }
+  function driveUploadCompletionText(result) {
+    const hasSize = result && result.size != null && Number.isFinite(Number(result.size));
+    const sizeText = hasSize ? formatPackageByteLength(result.size) : "大小未回傳";
+    const sizeMatches = !!(result && result.sizeMatches === true) || !!(result && result.sizeMatches == null && hasSize && Number(result.size) > 0);
+    const verification = sizeMatches
+      ? "Drive 回傳的檔案大小符合封包；內容尚未從 Drive 回讀驗證。"
+      : "Drive 未提供可核對的檔案大小；內容尚未從 Drive 回讀驗證。";
+    return sizeText + "。" + verification;
+  }
+  function handleGoogleDriveProgress(event) {
+    const detail = event && event.detail || {};
+    if (!googleDriveOperation || !["download", "upload"].includes(detail.phase)) return;
+    if (googleDriveOperation.kind === "import" && detail.phase !== "download") return;
+    if (googleDriveOperation.kind === "export" && detail.phase !== "upload") return;
+    setGoogleDriveStatus(formatDriveProgress(detail));
+  }
+  function beginGoogleDriveOperation(kind, cancelable) {
+    googleDriveOperation = { kind: kind, cancelable: cancelable !== false };
+    window.addEventListener("kinodrive:progress", handleGoogleDriveProgress);
+    renderGoogleDriveControls();
+  }
+  function endGoogleDriveOperation() {
+    window.removeEventListener("kinodrive:progress", handleGoogleDriveProgress);
+    googleDriveOperation = null;
+    renderGoogleDriveControls();
+  }
+  async function cancelGoogleDriveOperation() {
+    const capability = kinoDriveCapability();
+    if (!googleDriveOperation || !capability.api || typeof capability.api.cancelCurrent !== "function") return;
+    googleDriveOperation.cancelable = false;
+    setGoogleDriveStatus("正在取消 Google Drive 操作；遠端狀態將依 Drive 回應確認。");
+    renderGoogleDriveControls();
+    try {
+      const cancelled = capability.api.cancelCurrent();
+      if (!cancelled) {
+        if (googleDriveOperation) googleDriveOperation.cancelable = true;
+        setGoogleDriveStatus("目前階段無法取消；操作仍在進行。", { kind: "error" });
+      }
+    } catch (error) {
+      if (googleDriveOperation) googleDriveOperation.cancelable = true;
+      setGoogleDriveStatus((error && error.code ? error.code + " · " : "") + (error && error.message || "無法取消 Drive 操作。"), { kind: "error" });
+    }
+  }
+  function openDrivePackageImport(bytes, fileName, origin) {
+    completePackageImportOrigin = origin || "project-menu";
+    return startCompletePackageImport(bytes, fileName, bytes.byteLength, completePackageImportOrigin, "google-drive");
+  }
+  async function importCompletePackageFromGoogleDrive() {
+    const capability = kinoDriveCapability();
+    if (!capability.available) { setGoogleDriveStatus(capability.message, { kind: "error" }); return; }
+    if (googleDriveOperation) return;
+    if (completePackageImportSession && completePackageImportSession.status === "importing") return;
+    googleDriveResumeAvailable = false;
+    beginGoogleDriveOperation("import");
+    setGoogleDriveStatus("正在開啟 Google 授權與 ZIP 選取器；目前專案尚未變更。");
+    try {
+      const result = await capability.api.importZip();
+      if (!result || !(result.bytes instanceof Uint8Array)) throw Object.assign(new Error("Google Drive 未回傳有效的 ZIP bytes。"), { code: "DRIVE_IMPORT_RESULT_INVALID" });
+      const fileName = String(result.name || "").trim();
+      if (!/\.zip$/i.test(fileName)) throw Object.assign(new Error("選取的 Google Drive 檔案名稱不是 .zip。"), { code: "DRIVE_FILE_NOT_ZIP" });
+      const actualSize = result.bytes.byteLength;
+      if (!actualSize) throw Object.assign(new Error("Google Drive 回傳空白 ZIP。"), { code: "DRIVE_ARCHIVE_EMPTY" });
+      if (result.size != null && Number(result.size) !== actualSize) throw Object.assign(new Error("Google Drive 檔案 metadata 大小與下載 bytes 不符；沒有寫入本機專案。"), { code: "DRIVE_SIZE_MISMATCH" });
+      if (actualSize > 516 * 1024 * 1024) throw Object.assign(new Error("ZIP 超過目前完整專案包上限 516 MiB。"), { code: "ARCHIVE_SIZE_LIMIT" });
+      endGoogleDriveOperation();
+      setGoogleDriveStatus("ZIP 已下載；正在使用既有完整封包驗證流程，確認前不會寫入本機。");
+      const session = await openDrivePackageImport(result.bytes, fileName, "project-menu");
+      if (session && session.preview) setGoogleDriveStatus("Google Drive ZIP 完整預覽驗證通過；請在預覽視窗確認還原或另存副本。");
+      else if (session && session.error) setGoogleDriveStatus("Google Drive ZIP 驗證未通過 · " + (session.error.code ? session.error.code + " · " : "") + (session.error.message || "封包無法驗證。"), { kind: "error" });
+    } catch (error) {
+      endGoogleDriveOperation();
+      if (error && (error.cancelled || error.code === "DRIVE_CANCELLED")) { setGoogleDriveStatus("已取消 Google Drive 匯入；本機專案未變更。"); return; }
+      setGoogleDriveStatus((error && error.code ? error.code + " · " : "") + (error && error.message || "Google Drive ZIP 匯入失敗；本機專案未變更。"), { kind: "error" });
+      message((error && error.code ? error.code + " · " : "") + (error && error.message || "Google Drive ZIP 匯入失敗；本機專案未變更。"), true);
+    } finally { endGoogleDriveOperation(); }
+  }
+  async function exportCompletePackageToGoogleDrive() {
+    const capability = kinoDriveCapability();
+    if (!capability.available) { setGoogleDriveStatus(capability.message, { kind: "error" }); return; }
+    const blocker = completePackageExportBlockReason();
+    if (blocker) { setGoogleDriveStatus(blocker, { kind: "error" }); message(blocker, true); return; }
+    if (googleDriveOperation) return;
+    googleDriveResumeAvailable = false;
+    completePackageExportBusy = true;
+    beginGoogleDriveOperation("export");
+    setGoogleDriveStatus("正在確認保存狀態、固定 revision 並建立 ZIP。");
+    try {
+      let archive = null;
+      const resultPromise = capability.api.exportZip(async function () {
+        await new Promise((resolve) => requestAnimationFrame(resolve));
+        archive = await model.exportCompletePackage();
+        if (!archive || !(archive.archiveBytes instanceof Uint8Array) || !archive.archiveBytes.byteLength || !archive.fileName) throw Object.assign(new Error("Model 未回傳有效的完整專案 ZIP bytes。"), { code: "PACKAGE_EXPORT_RESULT_INVALID" });
+        setGoogleDriveStatus("本機 ZIP 已驗證；正在選擇 Google Drive 資料夾並上傳新檔。");
+        return archive;
+      }, undefined, {
+        onProgress: function (progress) { if (progress && progress.phase === "upload") setGoogleDriveStatus(formatDriveProgress(progress)); }
+      });
+      const result = await resultPromise;
+      if (!result || !result.id || !result.name || (result.size != null && Number(result.size) !== archive.archiveBytes.byteLength)) {
+        googleDriveResumeAvailable = hasPendingGoogleDriveUpload(capability.api);
+        throw Object.assign(new Error("Drive 未回傳可核對的檔案 ID、檔名與相符大小。請先檢查 Drive，再決定是否續傳；不要直接重送。"), { code: "DRIVE_UPLOAD_RESULT_UNCONFIRMED" });
+      }
+      googleDriveResumeAvailable = false;
+      const folder = result.folderName ? " · 資料夾：" + result.folderName : "";
+      const completion = driveUploadCompletionText(result);
+      setGoogleDriveStatus("上傳完成：" + result.name + folder + " · " + completion, { kind: "success", link: result.webViewLink });
+      message("完整專案 ZIP 已上傳至 Google Drive。" + completion, false);
+    } catch (error) {
+      googleDriveResumeAvailable = googleDriveUploadCanResume(capability.api, error);
+      if (error && (error.cancelled || error.code === "DRIVE_CANCELLED")) setGoogleDriveStatus("已取消 Google Drive 上傳；若有待確認傳輸，可按「續傳上傳」先查詢遠端結果，不會直接建立新檔。" + (googleDriveResumeAvailable ? "" : " 請先檢查 Drive 再決定後續操作。"), { kind: "error" });
+      else if (error && error.code === "DRIVE_UPLOAD_SESSION_EXPIRED") setGoogleDriveStatus("上傳工作階段已過期，遠端結果需人工確認；請先檢查 Drive，直接重試可能建立重複檔案。", { kind: "error" });
+      else {
+        const code = error && error.code ? error.code + " · " : "";
+        const detail = error && error.message || "Google Drive 上傳失敗。";
+        setGoogleDriveStatus(code + detail + (googleDriveResumeAvailable ? " 可按「續傳上傳」查詢／恢復本次傳輸。" : ""), { kind: "error" });
+        message(code + detail, true);
+      }
+    } finally {
+      completePackageExportBusy = false;
+      endGoogleDriveOperation();
+    }
+  }
+  async function resumeGoogleDriveUpload() {
+    const capability = kinoDriveCapability();
+    if (!capability.available || !googleDriveResumeAvailable || typeof capability.api.resumeUpload !== "function" || googleDriveOperation) return;
+    beginGoogleDriveOperation("export");
+    setGoogleDriveStatus("正在查詢並續傳本次 Google Drive ZIP 上傳；不會建立另一個新檔。");
+    try {
+      const result = await capability.api.resumeUpload({ onProgress: function (progress) { if (progress && progress.phase === "upload") setGoogleDriveStatus(formatDriveProgress(progress)); } });
+      if (!result || !result.id || !result.name) {
+        googleDriveResumeAvailable = hasPendingGoogleDriveUpload(capability.api);
+        throw Object.assign(new Error("Drive 未回傳可核對的檔案 ID、檔名與大小；請先檢查 Drive，不要直接重送。"), { code: "DRIVE_UPLOAD_RESULT_UNCONFIRMED" });
+      }
+      googleDriveResumeAvailable = false;
+      setGoogleDriveStatus("上傳完成：" + String(result.name) + " · " + driveUploadCompletionText(result), { kind: "success", link: result.webViewLink });
+    } catch (error) {
+      googleDriveResumeAvailable = googleDriveUploadCanResume(capability.api, error);
+      if (error && (error.cancelled || error.code === "DRIVE_CANCELLED")) setGoogleDriveStatus("已取消續傳；遠端上傳結果仍待確認。", { kind: "error" });
+      else if (error && error.code === "DRIVE_UPLOAD_SESSION_EXPIRED") setGoogleDriveStatus("上傳工作階段已過期，遠端結果需人工確認；請先檢查 Drive，直接重試可能建立重複檔案。", { kind: "error" });
+      else setGoogleDriveStatus((error && error.code ? error.code + " · " : "") + (error && error.message || "無法續傳 Google Drive 上傳。"), { kind: "error" });
+    } finally { endGoogleDriveOperation(); }
+  }
+  function confirmDiscardGoogleDriveUpload() {
+    const capability = kinoDriveCapability();
+    if (!capability.available || !capability.api || typeof capability.api.discardPendingUpload !== "function" || googleDriveOperation) return;
+    const pending = pendingGoogleDriveUpload(capability.api);
+    if (!pending) { googleDriveResumeAvailable = false; renderGoogleDriveControls(); return; }
+    showConfirm(
+      "清除待確認的 Drive 上傳",
+      "清除只會移除本頁記憶體中的續傳資料，不會刪除 Drive 檔案。遠端 ZIP 可能已建立；請先在 Drive 檢查。若再次上傳，可能產生重複檔案。",
+      "清除記憶體暫存",
+      async function () {
+        try {
+          capability.api.discardPendingUpload({ confirmPossibleDuplicate: true });
+          googleDriveResumeAvailable = false;
+          setGoogleDriveStatus("續傳暫存已清除；Drive 上可能仍有原上傳檔案。再次上傳前請先檢查 Drive。", { kind: "error" });
+          return true;
+        } catch (error) {
+          setGoogleDriveStatus((error && error.code ? error.code + " · " : "") + (error && error.message || "無法清除待確認上傳。"), { kind: "error" });
+          return false;
+        }
+      }
+    );
+  }
+  async function handleGoogleDriveAction(action) {
+    if (action === "import") { await importCompletePackageFromGoogleDrive(); return; }
+    if (action === "export") { await exportCompletePackageToGoogleDrive(); return; }
+    if (action === "cancel") { await cancelGoogleDriveOperation(); return; }
+    if (action === "resume") { await resumeGoogleDriveUpload(); }
+    if (action === "discard-pending") { confirmDiscardGoogleDriveUpload(); }
+  }
   function safePackageImportPath(value) {
     if (typeof value !== "string") return "";
     return value.replace(/[\u0000-\u001f\u007f-\u009f\u200e\u200f\u202a-\u202e\u2066-\u2069]/g, "").slice(0, 240);
@@ -5424,9 +5702,10 @@
       return;
     }
     const busy = ["reading", "previewing", "importing"].includes(session.status);
-    const fileSummary = '<div class="package-import-file"><strong>' + escapeHtml(session.fileName || "未命名專案包") + '</strong><span>' + formatPackageByteLength(session.fileSize) + '</span></div>';
+    const sourceLabel = session.source === "google-drive" ? '<small class="package-import-source">來源：Google Drive；ZIP 僅保留在本次匯入記憶體中</small>' : "";
+    const fileSummary = '<div class="package-import-file"><div><strong>' + escapeHtml(session.fileName || "未命名專案包") + '</strong>' + sourceLabel + '</div><span>' + formatPackageByteLength(session.fileSize) + '</span></div>';
     let status = "";
-    if (session.status === "reading") status = '<p class="package-import-status" role="status">正在讀取 ZIP bytes；來源專案尚未變更。</p>';
+    if (session.status === "reading") status = '<p class="package-import-status" role="status">' + (session.source === "google-drive" ? "正在準備 Google Drive ZIP bytes；來源專案尚未變更。" : "正在讀取 ZIP bytes；來源專案尚未變更。") + '</p>';
     else if (session.status === "previewing") status = '<p class="package-import-status" role="status">正在驗證 ZIP、Manifest、完整 Asset 與專案引用…此步驟不會寫入專案。</p>';
     else if (session.status === "importing") status = '<p class="package-import-status" role="status">正在以本機交易新增專案；目前工作專案不會切換。</p>';
     else if (session.status === "failed" && !session.preview) {
@@ -5491,6 +5770,7 @@
     if (cancel) cancel.disabled = session.status === "importing";
   }
   function openCompletePackagePicker(origin) {
+    if (googleDriveOperation && googleDriveOperation.kind === "import") { message("Google Drive ZIP 正在下載；請等候這次操作完成後再選擇本機 ZIP。", true); return; }
     const input = $("#complete-package-picker");
     if (!input || !model || typeof model.previewCompletePackage !== "function" || typeof model.importCompletePackage !== "function") {
       message("完整專案包 API 尚未載入；沒有選取檔案。", true); return;
@@ -5540,16 +5820,31 @@
     const file = input && input.files && input.files[0];
     if (input) input.value = "";
     if (!file) return;
+    return startCompletePackageImport(file, file.name || "未命名專案包", file.size || 0, completePackageImportOrigin, "local");
+  }
+  async function startCompletePackageImport(archiveInput, fileName, fileSize, origin, source) {
+    if (!archiveInput) return null;
+    if (googleDriveOperation && googleDriveOperation.kind === "import" && source !== "google-drive") return null;
+    if (!model || typeof model.previewCompletePackage !== "function" || typeof model.importCompletePackage !== "function") {
+      const error = { code: "PACKAGE_IMPORT_API_UNAVAILABLE", message: "完整專案包 API 尚未載入；沒有寫入專案。" };
+      message(error.code + " · " + error.message, true);
+      return null;
+    }
+    if (completePackageImportSession && completePackageImportSession.status === "importing") return null;
+    if (completePackageImportSession && completePackageImportSession.source === "google-drive" && source !== "google-drive") {
+      setGoogleDriveStatus("Google Drive ZIP 預覽已被新的本機匯入取代；尚未寫入本機專案。");
+    }
     if (completePackageImportSession && completePackageImportSession.previewAbortController) {
       completePackageImportSession.previewAbortController.abort();
       completePackageImportSession.previewAbortController = null;
     }
     const session = {
       id: ++completePackageImportSequence,
-      origin: completePackageImportOrigin,
-      fileName: file.name || "未命名專案包",
-      fileSize: file.size || 0,
-      archiveFile: file,
+      origin: origin || "project-menu",
+      source: source || "local",
+      fileName: fileName || "未命名專案包",
+      fileSize: Number(fileSize) || 0,
+      archiveFile: archiveInput,
       mode: "restore",
       preview: null,
       collision: false,
@@ -5563,18 +5858,21 @@
     else if (dialog && !dialog.open) dialog.setAttribute("open", "");
     try {
       const maxBytes = 516 * 1024 * 1024;
-      if (file.size > maxBytes) throw Object.assign(new Error("ZIP 超過目前完整專案包上限 516 MiB。"), { code: "ARCHIVE_SIZE_LIMIT" });
+      if (session.fileSize > maxBytes) throw Object.assign(new Error("ZIP 超過目前完整專案包上限 516 MiB。"), { code: "ARCHIVE_SIZE_LIMIT" });
       if (completePackageImportSession !== session) return;
       await previewCompletePackageImport(session, "restore");
+      return session;
     } catch (error) {
       if (completePackageImportSession !== session) return;
       session.status = "failed";
       session.error = { code: error && error.code || "PACKAGE_FILE_READ_FAILED", message: error && error.message || "無法讀取所選專案包。" };
       renderCompletePackageImportDialog();
+      return session;
     }
   }
   function cancelCompletePackageImport() {
     if (completePackageImportSession && completePackageImportSession.status === "importing") return;
+    const cancelledDriveImport = !!(completePackageImportSession && completePackageImportSession.source === "google-drive");
     if (completePackageImportSession && completePackageImportSession.previewAbortController) {
       completePackageImportSession.previewAbortController.abort();
       completePackageImportSession.previewAbortController = null;
@@ -5584,6 +5882,7 @@
     const dialog = $("#complete-package-import-dialog");
     if (dialog && dialog.open && typeof dialog.close === "function") dialog.close();
     renderCompletePackageImportDialog();
+    if (cancelledDriveImport) setGoogleDriveStatus("已取消 Google Drive ZIP 預覽／確認；本機專案未變更。");
   }
   async function confirmCompletePackageImport() {
     const session = completePackageImportSession;
@@ -5604,6 +5903,7 @@
       completePackageImportSession = null;
       const dialog = $("#complete-package-import-dialog"); if (dialog && dialog.open && typeof dialog.close === "function") dialog.close();
       renderCompletePackageImportDialog();
+      if (session.source === "google-drive") setGoogleDriveStatus("Google Drive ZIP 已依確認新增至本機專案清單；目前工作專案未切換。");
       const importedProjectId = result && result.projectId || (session.preview && session.preview.projectId) || "";
       message((session.mode === "copy" ? "完整專案已另存為副本" : "完整專案已還原") + "並加入本機專案清單（Project ID " + importedProjectId + "）。目前工作專案沒有切換；本機 undo／redo 不在封包內。", false);
     } catch (error) {
@@ -5804,6 +6104,11 @@
     const exportBlock = completePackageExportBlockReason();
     const packageImportAvailable = !!(model && typeof model.previewCompletePackage === "function" && typeof model.importCompletePackage === "function");
     menu.innerHTML = '<div class="popover-heading">專案資訊</div><form id="project-metadata-form"><div class="field-group"><label class="field-label" for="project-metadata-title">專案名稱</label><input class="text-field" id="project-metadata-title" type="text" maxlength="120" data-project-field="title" data-entity-id="' + escapeHtml(projectId) + '" value="' + escapeHtml(titleDraft ? titleDraft.value : state.title || "") + '"><small class="field-note">會用於專案標題與文件。</small></div><div class="field-group"><label class="field-label" for="project-metadata-type">專案類型</label><input class="text-field" id="project-metadata-type" type="text" maxlength="80" data-project-field="projectType" data-entity-id="' + escapeHtml(projectId) + '" value="' + escapeHtml(typeDraft ? typeDraft.value : state.projectType || "") + '" placeholder="例如：品牌形象影片"><small class="field-note">內容分類；留白代表尚未設定，與本機保存方式不同。</small></div><button class="outline-button project-metadata-save" type="submit" data-project-metadata-save>保存專案資訊</button></form><div class="popover-heading project-tools-heading">專案工具</div><div class="aspect-setting"><label for="project-aspect-ratio">專案畫幅</label><select id="project-aspect-ratio" aria-label="專案畫幅"><option value="16:9">16:9　寬螢幕</option><option value="1:1">1:1　方形</option><option value="4:3">4:3　標準</option><option value="2.35:1">2.35:1　寬銀幕</option></select><small>套用至所有分鏡與輸出圖；完整顯示，不會拉伸。</small></div><button data-action="download-backup">' + icon("copy",14) + '<span><strong>下載專案 JSON</strong><small>建立已保存內容的完整 canonical 快照</small></span></button><button data-action="download-complete-package" title="' + escapeHtml(exportBlock || "") + '" ' + (exportBlock ? "disabled" : "") + '>' + icon("copy",14) + '<span><strong>下載完整專案 ZIP</strong><small>含原始照片與 Drawing；不含裝置本機 undo／redo</small></span></button><button data-action="import-complete-package" ' + (packageImportAvailable ? "" : "disabled") + '>' + icon("copy",14) + '<span><strong>匯入完整專案 ZIP</strong><small>完整驗證後另增專案；不切換目前工作案</small></span></button><span class="package-export-status" id="complete-package-export-status" role="status" aria-live="polite">' + escapeHtml(exportBlock || "") + '</span><button id="photo-integrity-run" data-action="check-photo-integrity">' + icon("copy",14) + '<span><strong>檢查照片完整性</strong><small>手動逐張核對原圖 bytes 與 SHA-256；不修改專案或照片，也不代表每次保存都已驗證。</small></span></button><span class="package-export-status" id="photo-integrity-status" role="status" aria-live="polite"></span><button id="photo-integrity-cancel" data-action="cancel-photo-integrity-check" hidden>取消檢查</button><button data-action="switch-project">' + icon("calendar",14) + '<span><strong>切換／開啟專案</strong><small>先保存未提交欄位，再切換</small></span></button><button data-action="create-demo">' + icon("calendar",14) + '<span><strong>建立示範專案</strong><small>建立新案，不覆寫目前專案</small></span></button><div class="popover-foot">畫幅與輸出偏好使用本機專案保存</div>';
+    const driveControls = document.createElement("section");
+    driveControls.className = "google-drive-controls";
+    driveControls.innerHTML = '<div class="google-drive-heading">Google Drive 手動備份</div><p class="google-drive-note">只在你按下動作並選取檔案或資料夾後才傳輸 ZIP；不會自動同步。首次授權使用 drive.file，access token 僅供本次操作使用，不會長期保存。</p><button type="button" data-drive-action="import">' + icon("copy",14) + '<span><strong>從 Google Drive 匯入 ZIP</strong><small>完整預覽驗證後，仍須確認還原或另存副本</small></span></button><button type="button" data-drive-action="export">' + icon("copy",14) + '<span><strong>匯出 ZIP 至 Google Drive</strong><small>依目前已保存 revision 建立新檔，不覆蓋既有檔案</small></span></button><div class="google-drive-status" id="google-drive-status" role="status" aria-live="polite"></div><div class="google-drive-actions"><button type="button" class="outline-button" data-drive-action="cancel" hidden>取消本次 Drive 操作</button><button type="button" class="outline-button" data-drive-action="resume" hidden>續傳上傳</button><button type="button" class="outline-button" data-drive-action="discard-pending" hidden>清除待確認上傳</button></div>';
+    menu.insertBefore(driveControls, $("#complete-package-export-status", menu));
+    renderGoogleDriveControls(menu);
     $("#project-menu").parentElement.appendChild(menu);
     [["#project-metadata-title", titleDraft], ["#project-metadata-type", typeDraft]].forEach(([selector, draft]) => { const field = $(selector, menu); if (draft) renderDraftError(field, draft); });
     const ratioSelect = $("#project-aspect-ratio"); ratioSelect.value = state.aspectRatio || "16:9";
@@ -6695,6 +7000,8 @@
     document.addEventListener("click", async (event) => {
       const callsheetAction = event.target.closest("[data-callsheet-action]");
       if (callsheetAction) { event.preventDefault(); await safely(() => handleCallsheetAction(callsheetAction.dataset.callsheetAction, callsheetAction)); return; }
+      const driveAction = event.target.closest("[data-drive-action]");
+      if (driveAction) { event.preventDefault(); await safely(() => handleGoogleDriveAction(driveAction.dataset.driveAction)); return; }
       const packageImportAction = event.target.closest("[data-package-import-action]");
       if (packageImportAction) { event.preventDefault(); await safely(() => handleCompletePackageImportAction(packageImportAction.dataset.packageImportAction)); return; }
       const drawingAction = event.target.closest("[data-drawing-action]");

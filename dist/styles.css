@@ -1391,3 +1391,21 @@ body.is-read-only #shot-list .shot-card.is-gallery .shot-card-text-preview:focus
 }
 
 .brand-mark img.brand-logo{width:100%;height:100%;display:block;object-fit:contain}
+
+.google-drive-controls{margin:10px 5px 7px;padding:10px 8px 7px;border:1px solid #e3e7e4;border-radius:8px;background:#f8f9f6}
+.google-drive-heading{padding:1px 0 5px;color:#68758c;font-size:9px;font-weight:700;letter-spacing:.04em}
+.google-drive-note{margin:0 0 5px;color:#858d98;font-size:8px;line-height:1.5}
+.project-popover .google-drive-controls>button{padding:8px 5px}
+.google-drive-status{margin:5px 2px 1px;padding:7px 8px;border-radius:5px;background:#eef1f0;color:#5d6977;font-size:9px;line-height:1.5;overflow-wrap:anywhere;white-space:pre-wrap}
+.google-drive-status[data-kind="error"]{background:#fff2ee;color:#975348}
+.google-drive-status[data-kind="success"]{background:#edf6f0;color:#42694c}
+.google-drive-status a{display:inline-block;margin-top:3px;color:#365d8c;text-decoration:underline;text-underline-offset:2px}
+.google-drive-actions{display:flex;justify-content:flex-end;gap:6px;flex-wrap:wrap}
+.project-popover .google-drive-actions button{width:auto;min-height:34px;padding:6px 9px;font-size:9px}
+.google-drive-actions button[hidden]{display:none}
+.package-import-source{display:block;margin-top:3px;color:#718096;font-size:9px;line-height:1.4}
+.package-import-file>div{min-width:0}
+@media(max-width:480px){.google-drive-controls{margin-right:2px;margin-left:2px}.google-drive-actions button{flex:1 1 100%}}
+
+.policy-links { margin-top: 1rem; font-size: .8rem; color: #687587; }
+.policy-links a { color: inherit; text-decoration: underline; text-underline-offset: .18em; }
