@@ -1389,3 +1389,5 @@ body.is-read-only #shot-list .shot-card.is-gallery .shot-card-text-preview:focus
     opacity: 1;
   }
 }
+
+.brand-mark img.brand-logo{width:100%;height:100%;display:block;object-fit:contain}
