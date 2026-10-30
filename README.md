@@ -6,7 +6,7 @@ KINO Storyboard 是分鏡創作、拍攝安排與文件交付工具。程式碼�
 
 ## 部署與 Google Drive 規劃
 
-靜態網站的部署設定位於 `wrangler.jsonc`，網站資產位於 `dist/`；目前以 Wrangler 手動部署，GitHub 推送尚不會自動發布。完整專案 ZIP 的 Google Drive 匯入／匯出尚未實作；操作與驗收規劃見 [Google Drive ZIP 規劃](docs/google-drive-zip-plan.md)。
+靜態網站的部署設定位於 `wrangler.jsonc`，網站資產位於 `dist/`；Cloudflare Workers Builds 連接 GitHub 的 `main` 分支，推送後執行 `npx wrangler deploy` 自動部署。完整專案 ZIP 的 Google Drive 匯入／匯出尚未實作；操作與驗收規劃見 [Google Drive ZIP 規劃](docs/google-drive-zip-plan.md)。
 
 ## 本機資料與備份
 
