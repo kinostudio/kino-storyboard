@@ -1658,7 +1658,28 @@
         ? [item.shotId, preparedFiles.map(function (result) { return result.metadata; })]
         : [item.shotId, item.previousAssetId, preparedFiles[0].metadata],
       { newId: newIdFactory(before) });
-      const bridged = validateBridgeResult(raw, before);
+      let bridged = validateBridgeResult(raw, before);
+      if (item.hasPhotoCrop) {
+        const shot = bridged.project.shots.find(function (candidate) { return candidate.id === item.shotId; });
+        const photoValue = isRecord(bridged.value) ? bridged.value : null;
+        const candidates = item.type === "replaceShotPhoto"
+          ? [photoValue && photoValue.assetId]
+          : [].concat(photoValue && photoValue.addedAssetIds || [], photoValue && photoValue.duplicateAssetIds || []);
+        const assetId = candidates.find(function (candidate) {
+          return typeof candidate === "string" && shot && Array.isArray(shot.assetIds) && shot.assetIds.indexOf(candidate) >= 0;
+        });
+        if (!assetId) throw makeError("PHOTO_CROP_TARGET_MISSING", "照片已驗證，但找不到同一命令要套用裁切的主圖 Asset。沒有保存照片或裁切。");
+        const cropRaw = deps.bridge.applyCommand(bridged.project, "setShotPhotoCrop", [item.shotId, assetId, item.photoCrop], {
+          newId: newIdFactory(bridged.project)
+        });
+        const cropResult = validateBridgeResult(cropRaw, bridged.project);
+        bridged = {
+          project: cropResult.project,
+          changed: bridged.changed || cropResult.changed,
+          value: bridged.value,
+          undoable: bridged.undoable && cropResult.undoable
+        };
+      }
       const currentRevision = before.revision;
       const bridgeValue = isRecord(bridged.value) ? bridged.value : { value: bridged.value };
       if (!bridged.changed) {
@@ -2250,6 +2271,11 @@
           files = [fileInput];
         }
         const callOptions = isRecord(commandOptions) ? commandOptions : {};
+        const hasPhotoCrop = Object.prototype.hasOwnProperty.call(callOptions, "crop");
+        if (hasPhotoCrop && files.length !== 1) throw makeError("PHOTO_CROP_REQUIRES_SINGLE_FILE", "單張照片裁切命令一次只能匯入一張照片。");
+        const photoCrop = hasPhotoCrop
+          ? callOptions.crop === null ? null : deps.schema.validatePhotoCrop(callOptions.crop, "$.photoOptions.crop")
+          : null;
         return enqueue({
           kind: "photo",
           type: type,
@@ -2258,6 +2284,8 @@
           previousAssetId: previousAssetId,
           files: files.slice(),
           onProgress: typeof callOptions.onProgress === "function" ? callOptions.onProgress : null,
+          hasPhotoCrop: hasPhotoCrop,
+          photoCrop: photoCrop,
           photoImportOptions: snapshotPhotoImportOptions(),
           commandId: randomToken("command")
         });

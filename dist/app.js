@@ -1156,6 +1156,10 @@
     const projectId = state && state.projectId || "";
     const photoIds = Array.isArray(shot.assetIds) ? shot.assetIds : [];
     const drawingIds = Array.isArray(shot.drawingIds) ? shot.drawingIds : [];
+    // The ordered photo reference is the durable storyboard card primary.
+    // Keep every Drawing reference intact and available through its own entry
+    // and the output source chooser.
+    if (photoIds.length) return { type: "photo", id: photoIds[0] };
     if (drawingIds.length === 1) return { type: "drawing", id: drawingIds[0] };
     if (drawingIds.length > 1) {
       const choice = outputImageSourceChoices.get(outputImageSourceKey(projectId, shot.id));
@@ -1163,7 +1167,6 @@
       if (choice && choice.type === "photo" && photoIds.includes(choice.id)) return { type: "photo", id: choice.id };
       return { type: "ambiguous", drawingCount: drawingIds.length };
     }
-    if (photoIds.length) return { type: "photo", id: photoIds[0] };
     return { type: "schematic" };
   }
   function renderShotPhotoMarkup(shot, index, artwork) {
@@ -1173,9 +1176,9 @@
     const photoInputAvailable = !!(photoImportPolicy() && model && typeof model.addShotPhotos === "function" && typeof model.getShotPhoto === "function");
     const readonly = isReadOnly();
     const photoActionAttrs = photoInputAvailable
-      ? ' role="button" aria-label="' + escapeHtml(readonly ? shotNumber(shot) + ' 唯讀瀏覽，新增照片已停用' : '點擊新增照片至' + shotNumberWithQuotedTitle(shot)) + '" data-shot-photo-action="add" data-shot-id="' + escapeHtml(shot.id) + '" tabindex="0" aria-keyshortcuts="Enter Space" aria-disabled="' + (readonly ? "true" : "false") + '"'
+      ? ' role="button" aria-label="' + escapeHtml(readonly ? shotNumber(shot) + ' 唯讀瀏覽照片；目前不可修改' : (assetId ? '點擊選取照片以更新' : '點擊選取照片至') + shotNumberWithQuotedTitle(shot)) + '" data-shot-photo-action="add" data-shot-id="' + escapeHtml(shot.id) + '" tabindex="0" aria-keyshortcuts="Enter Space" aria-disabled="' + (readonly ? "true" : "false") + '"'
       : ' role="img" aria-label="' + escapeHtml(shotNumber(shot) + ' 分鏡主圖') + '"';
-    const tapHint = photoInputAvailable ? '<span class="shot-photo-tap-hint' + (source.type === "drawing" ? ' is-drawing-tap-hint' : '') + '">' + (readonly ? '唯讀瀏覽' : '點圖新增照片') + '</span>' : '';
+    const tapHint = photoInputAvailable ? '<span class="shot-photo-tap-hint' + (source.type === "drawing" ? ' is-drawing-tap-hint' : '') + '">' + (readonly ? '唯讀瀏覽' : (assetId ? '點圖更新照片' : '點圖選取照片')) + '</span>' : '';
     if (!assetId) {
       if (source.type === "drawing") {
         const content = '<span class="shot-photo-message">正在合成已保存手繪…</span>';
@@ -1185,11 +1188,11 @@
       }
       if (source.type === "ambiguous") {
         const messageText = '此鏡頭有多個照片／手繪來源；請在「文件交付」選擇主圖。';
-        const thumb = '<div class="shot-thumb is-artwork-ambiguous"' + photoActionAttrs + '><span class="shot-photo-content"><span class="shot-photo-message is-artwork-choice">' + escapeHtml(messageText) + '</span></span><span class="shot-artwork-badge">主圖待選</span>' + tapHint + '</div>';
+      const thumb = '<div class="shot-thumb is-artwork-ambiguous"' + photoActionAttrs + '><span class="shot-photo-content"><span class="shot-photo-message is-artwork-choice">' + escapeHtml(messageText) + '</span></span><span class="shot-artwork-badge">主圖待選</span>' + tapHint + '</div>';
         return '<div class="shot-art-wrap">' + thumb + renderShotDrawingEntry(shot) + '</div>';
       }
       const actionAttrs = photoActionAttrs;
-      const thumb = '<div class="shot-thumb is-schematic"' + actionAttrs + '><div class="shot-illustration">' + svgArt(shot.art, index) + '</div><span class="shot-placeholder-note">示意圖 · 尚無照片' + (photoInputAvailable && !readonly ? ' · 點擊新增' : '') + '</span></div>';
+      const thumb = '<div class="shot-thumb is-schematic"' + actionAttrs + '><div class="shot-illustration">' + svgArt(shot.art, index) + '</div><span class="shot-placeholder-note">示意圖 · 尚無照片' + (photoInputAvailable && !readonly ? ' · 點擊選取照片' : '') + '</span></div>';
       return '<div class="shot-art-wrap">' + thumb + renderShotDrawingEntry(shot) + '</div>';
     }
     const readKey = photoReadKey(projectId, shot.id, assetId);
@@ -1197,7 +1200,7 @@
     const content = readError
       ? '<span class="shot-photo-message is-error">照片讀取失敗 · ' + escapeHtml((readError.code ? readError.code + ' · ' : '') + (readError.message || '請重新載入或還原照片來源。')) + '</span>'
       : '<span class="shot-photo-message">照片預覽待載入</span>';
-    const thumb = '<div class="shot-thumb is-saved-photo" role="button" aria-label="' + escapeHtml(readonly ? shotNumber(shot) + ' 唯讀瀏覽主圖；新增照片已停用' : '點擊新增照片至' + shotNumberWithQuotedTitle(shot)) + '" data-shot-photo-action="add" data-shot-id="' + escapeHtml(shot.id) + '" data-photo-project="' + escapeHtml(projectId) + '" data-photo-asset-id="' + escapeHtml(assetId) + '" tabindex="0" aria-keyshortcuts="Enter Space" aria-disabled="' + (readonly ? "true" : "false") + '"><span class="shot-photo-content">' + content + '</span><span class="shot-photo-count">' + shot.assetIds.length + ' 張照片</span><span class="shot-photo-tap-hint">' + (readonly ? '唯讀瀏覽' : '點圖新增照片') + '</span><span class="shot-photo-thumbnail-note" hidden></span></div>';
+    const thumb = '<div class="shot-thumb is-saved-photo" role="button" aria-label="' + escapeHtml(readonly ? shotNumber(shot) + ' 唯讀瀏覽主圖；目前不可修改' : '點擊選取照片以更新' + shotNumberWithQuotedTitle(shot)) + '" data-shot-photo-action="add" data-shot-id="' + escapeHtml(shot.id) + '" data-photo-project="' + escapeHtml(projectId) + '" data-photo-asset-id="' + escapeHtml(assetId) + '" tabindex="0" aria-keyshortcuts="Enter Space" aria-disabled="' + (readonly ? "true" : "false") + '"><span class="shot-photo-content">' + content + '</span><span class="shot-photo-count">' + shot.assetIds.length + ' 張照片</span><span class="shot-photo-tap-hint">' + (readonly ? '唯讀瀏覽' : '點圖更新照片') + '</span><span class="shot-photo-thumbnail-note" hidden></span></div>';
     return '<div class="shot-art-wrap">' + thumb + renderShotDrawingEntry(shot) + '</div>';
   }
   function drawingUiAvailable() {
@@ -1938,7 +1941,7 @@
       const active = !!(session && session.shotId === node.dataset.photoStatusShot && state && state.projectId === session.projectId);
       node.hidden = !active;
       if (!active) { node.textContent = ""; return; }
-      const labels = { selected: "照片已選取，尚未保存。", importing: "照片正在驗證或保存…", retrying: "正在重試保存…", save_failed: "照片尚未保存；保存失敗，可重試。", reconcile_required: "保存結果待 Model 核對；請重試原命令，不要重新新增。", recovery_required: "保存已停止；先重新取得編輯權或重新載入比對。", failed: "照片尚未保存；請檢查錯誤或重新選取。" };
+      const labels = { cropping: "照片裁切尚未確認，沒有寫入。", importing: "照片正在驗證、保存照片與裁切…", retrying: "正在重試原照片與裁切命令…", save_failed: "照片與裁切尚未保存；保存失敗，可重試。", reconcile_required: "保存結果待 Model 核對；請重試原命令，不要重新選檔。", recovery_required: "保存已停止；先重新取得編輯權或重新載入比對。", failed: "照片尚未保存；請檢查錯誤或重新選取。" };
       node.textContent = labels[session.status] || "照片匯入進度已更新。";
     });
   }
@@ -1949,12 +1952,12 @@
     if (error && ["LEASE_LOST", "REVISION_CONFLICT"].includes(error.code)) return "recovery_required";
     return fallbackStatus;
   }
-  function configureShotPhotoPicker(mode) {
+  function configureShotPhotoPicker() {
     const input = $("#shot-photo-picker");
     const policy = photoImportPolicy();
     if (!input || !policy) return false;
     input.accept = Array.isArray(policy.acceptedMimeTypes) ? policy.acceptedMimeTypes.join(",") : "";
-    input.multiple = mode !== "replace";
+    input.multiple = false;
     return true;
   }
   function photoTargetTitle(session) {
@@ -1970,56 +1973,144 @@
     if (!banner) return;
     const session = photoImportSession;
     if (!session) { banner.hidden = true; banner.replaceChildren(); updatePhotoSessionCardStatus(); return; }
+    if (["cropping", "importing", "retrying"].includes(session.status)) {
+      banner.hidden = true; banner.replaceChildren(); updatePhotoSessionCardStatus(); return;
+    }
     const sameProject = !!(state && state.projectId === session.projectId);
     const policy = photoImportPolicy();
-    const statusText = session.status === "selected" ? "候選照片尚未保存。" : session.status === "importing" ? "正在驗證照片並保存到本機專案…" : session.status === "retrying" ? "正在重試原保存命令…" : session.status === "save_failed" ? "保存失敗；原候選檔和目標鏡頭仍保留。" : session.status === "reconcile_required" ? "保存結果仍待 Model 核對；請使用下方按鈕重試原命令，不要重新新增。" : session.status === "recovery_required" ? "保存已停止；請先重新取得編輯權或重新載入比對，再決定後續操作。" : session.status === "failed" ? "照片尚未保存；請查看錯誤並重新選取。" : "照片匯入進度已更新。";
+    const statusText = session.status === "save_failed" ? "照片與裁切尚未保存；候選檔和目標鏡頭仍保留。" : session.status === "reconcile_required" ? "保存結果仍待 Model 核對；請使用下方按鈕重試原命令，不要重新選檔。" : session.status === "recovery_required" ? "保存已停止；請先重新取得編輯權或重新載入比對，再決定後續操作。" : session.status === "failed" ? "照片尚未保存；請查看錯誤並重新選取。" : "照片資料仍保留，尚未完成。";
     const files = session.files.map((file) => '<li>' + escapeHtml(file.name || "未命名檔案") + ' <span>' + Math.ceil((file.size || 0) / 1024) + ' KB</span></li>').join("");
     const progress = session.progress ? '<p class="shot-photo-import-progress" aria-live="polite">' + escapeHtml(session.progress) + '</p>' : '';
     const error = session.error ? '<p class="shot-photo-import-error" role="alert">' + escapeHtml((session.error.code ? session.error.code + ' · ' : '') + (session.error.message || "照片匯入失敗。")) + '</p>' : '';
     const mismatch = sameProject ? '' : '<p class="shot-photo-import-error" role="alert">目前已切換到其他專案；候選仍保留在原專案「' + escapeHtml(session.projectTitle || "未命名專案") + '」。請切回原專案後再提交，或放棄候選。</p>';
-    const replacement = session.mode === "replace" ? '<p class="shot-photo-import-summary">替換主圖：' + escapeHtml(photoTargetAssetName(session)) + ' → ' + escapeHtml(session.files[0] && session.files[0].name || "新照片") + '。只變更此鏡頭的照片引用，原始照片資料不會刪除。</p>' : '';
+    const replacement = session.mode === "replace" ? '<p class="shot-photo-import-summary">只更新此鏡頭的主圖引用；原始照片與其他鏡頭的引用都會保留，這項變更可復原。</p>' : '';
     let controls = '';
-    const canWrite = sameProject && !isReadOnly() && session.status !== "importing" && session.status !== "retrying";
-    if (session.status === "selected" && session.mode === "add") controls += '<button type="button" class="shot-photo-action shot-photo-write-action" data-shot-photo-action="import" ' + (!canWrite ? 'disabled' : '') + '>匯入照片</button>';
-    if (session.status === "selected" && session.mode === "replace") controls += '<button type="button" class="shot-photo-action shot-photo-write-action" data-shot-photo-action="confirm-replace" ' + (!canWrite || session.files.length !== 1 ? 'disabled' : '') + '>確認替換</button>';
+    const canWrite = sameProject && !isReadOnly();
     if (["save_failed", "reconcile_required"].includes(session.status)) controls += '<button type="button" class="shot-photo-action shot-photo-write-action" data-shot-photo-action="retry" ' + (!canWrite ? 'disabled' : '') + '>' + (session.status === "reconcile_required" ? "重試並核對原命令" : "重試保存") + '</button>';
-    if (sameProject && ["failed", "selected"].includes(session.status)) controls += '<button type="button" class="shot-photo-action shot-photo-write-action" data-shot-photo-action="reselect" ' + (!canWrite ? 'disabled' : '') + '>重新選照片</button>';
-    if (!['importing', 'retrying', 'save_failed', 'reconcile_required'].includes(session.status)) controls += '<button type="button" class="shot-photo-action is-quiet" data-shot-photo-action="cancel">清除候選</button>';
+    if (sameProject && session.status === "failed") controls += '<button type="button" class="shot-photo-action shot-photo-write-action" data-shot-photo-action="reselect" ' + (!canWrite ? 'disabled' : '') + '>重新選照片</button>';
+    if (["failed", "recovery_required"].includes(session.status)) controls += '<button type="button" class="shot-photo-action is-quiet" data-shot-photo-action="cancel">清除提示</button>';
     const trial = policy && policy.maxBytesStatus === "trial" ? '<p class="shot-photo-import-footnote">可選格式依目前照片匯入政策；容量限制仍是試作設定。</p>' : '';
     banner.hidden = false;
-    banner.innerHTML = '<div class="shot-photo-import-copy"><strong>' + (session.mode === "replace" ? "替換主圖" : "新增照片") + ' · ' + escapeHtml(photoTargetTitle(session)) + '</strong><p>' + statusText + '</p><ul>' + files + '</ul>' + replacement + progress + error + mismatch + trial + '</div><div class="shot-photo-import-controls">' + controls + '</div>';
+    banner.innerHTML = '<div class="shot-photo-import-copy"><strong>' + (session.mode === "replace" ? "更新主圖" : "設定主圖") + ' · ' + escapeHtml(photoTargetTitle(session)) + '</strong><p>' + statusText + '</p><ul>' + files + '</ul>' + replacement + progress + error + mismatch + trial + '</div><div class="shot-photo-import-controls">' + controls + '</div>';
     applyPhotoReadonlyControls(); updatePhotoSessionCardStatus();
   }
   function applyPhotoReadonlyControls() {
     const locked = isReadOnly();
     $$("#shot-list .shot-photo-write-action, #shot-photo-picker, #shot-photo-import-banner .shot-photo-write-action").forEach((element) => lockReadonlyControl(element, locked));
   }
-  function openShotPhotoPicker(target, allowReplaceExisting) {
+  function openShotPhotoPicker(target) {
     if (isReadOnly()) { message("目前為唯讀瀏覽；請重新取得編輯權後再選取照片。", true); return; }
     if (!photoImportPolicy() || !model || typeof model.getShotPhoto !== "function" || typeof model.addShotPhotos !== "function") { message("照片匯入功能尚未載入，請重新整理工作區後再試。", true); return; }
     if (photoImportSession) { message("目前仍有待處理照片；請先匯入、重試或清除候選。", true); return; }
     const shotId = target.dataset.shotId || target.closest("[data-shot]")?.dataset.shot;
     const shot = state && state.shots.find((item) => item.id === shotId);
     if (!shot || !state.projectId) { message("找不到此照片操作的目標鏡頭。", true); return; }
-    const mode = target.dataset.shotPhotoAction === "replace" || allowReplaceExisting ? "replace" : "add";
-    const previousAssetId = mode === "replace" ? (target.dataset.assetId || shot.assetIds && shot.assetIds[0]) : null;
+    const previousAssetId = Array.isArray(shot.assetIds) ? shot.assetIds[0] || null : null;
+    const mode = previousAssetId ? "replace" : "add";
     if (mode === "replace" && (!previousAssetId || !Array.isArray(shot.assetIds) || shot.assetIds[0] !== previousAssetId || typeof model.replaceShotPhoto !== "function")) { message("主圖已變更；請重新整理卡片後再開始替換。", true); return; }
     const input = $("#shot-photo-picker");
-    if (!input || !configureShotPhotoPicker(mode)) { message("照片匯入政策尚未載入，無法開啟檔案選擇器。", true); return; }
-    photoPickerTarget = { projectId: state.projectId, projectTitle: state.title || "未命名專案", shotId, mode, previousAssetId };
+    if (!input || !configureShotPhotoPicker()) { message("照片匯入政策尚未載入，無法開啟檔案選擇器。", true); return; }
+    photoPickerTarget = { projectId: state.projectId, projectTitle: state.title || "未命名專案", shotId, mode, previousAssetId, initialAssetIds: shot.assetIds.slice(), initialPrimaryCrop: previousAssetId ? photoCropForShot(shot, previousAssetId) : null, startRevision: state.revision, projectGeneration: photoCropProjectGeneration };
     input.value = "";
     input.click();
+  }
+  function disposePhotoImportEditor(session) {
+    if (!session || !session.editor) return false;
+    const editor = session.editor;
+    session.editor = null;
+    if (typeof editor.destroy === "function") editor.destroy();
+    return true;
+  }
+  function photoImportSessionIsCurrent(session, requireBaseRevision) {
+    if (!session || photoImportSession !== session || session.projectGeneration !== photoCropProjectGeneration) return false;
+    const project = currentCanonicalPhotoProject(session.projectId);
+    if (!project || project.projectId !== session.projectId || requireBaseRevision && project.revision !== session.startRevision) return false;
+    const shot = Array.isArray(project.shots) && project.shots.find((item) => item.id === session.shotId);
+    return !!(shot && Array.isArray(shot.assetIds) && JSON.stringify(shot.assetIds) === JSON.stringify(session.initialAssetIds));
+  }
+  function syncPhotoImportSessionForSnapshot(snapshot) {
+    const session = photoImportSession;
+    if (!session || session.status !== "cropping") return;
+    if (photoImportSessionIsCurrent(session, true)) return;
+    disposePhotoImportEditor(session);
+    session.status = "failed";
+    session.error = { code: "PHOTO_IMPORT_STALE", message: "專案、鏡頭或照片清單已更新；候選沒有寫入，請重新選取照片。" };
+    renderPhotoImportBanner();
+    if (snapshot && snapshot.projectId !== session.projectId) message("專案已切換；照片候選沒有寫入，請切回原專案後重新選取。", true);
+  }
+  function startShotPhotoImportCrop(session) {
+    const cropEditor = window.DirectorStoryboardPhotoCropEditor;
+    const mount = $("#photo-crop-editor-mount");
+    if (!cropEditor || typeof cropEditor.mount !== "function" || !mount) {
+      session.status = "failed";
+      session.error = { code: "PHOTO_CROP_EDITOR_UNAVAILABLE", message: "照片裁切視窗尚未載入；照片沒有寫入。" };
+      renderPhotoImportBanner();
+      return;
+    }
+    if (!photoImportSessionIsCurrent(session, true)) {
+      session.status = "failed";
+      session.error = { code: "PHOTO_IMPORT_STALE", message: "專案或鏡頭資料已更新；照片沒有寫入，請重新選取。" };
+      renderPhotoImportBanner();
+      return;
+    }
+    try {
+      const editor = cropEditor.mount(mount, {
+        imageBlob: session.files[0],
+        aspectRatio: state && state.aspectRatio || "16:9",
+        crop: null,
+        imageLabel: session.files[0].name || "待匯入照片",
+        title: (session.mode === "replace" ? "更新分鏡主圖" : "設定分鏡主圖") + " · " + photoTargetTitle(session),
+        onConfirm: (crop) => submitShotPhotoImport(session, crop),
+        onCancel: () => {
+          if (photoImportSession === session) {
+            photoImportSession = null;
+            renderPhotoImportBanner();
+          }
+        }
+      });
+      session.editor = editor;
+      const dialog = editor.editor && editor.editor.dialog;
+      if (dialog) dialog.addEventListener("close", () => {
+        if (session.editor === editor) disposePhotoImportEditor(session);
+        if (photoImportSession === session && session.status === "cropping") {
+          photoImportSession = null;
+          renderPhotoImportBanner();
+        }
+      }, { once: true });
+      void editor.open().catch((error) => {
+        if (photoImportSession === session) {
+          session.status = "failed";
+          session.error = { code: error && error.code || "PHOTO_CROP_OPEN_FAILED", message: error && error.message || "無法開啟照片裁切。照片沒有寫入。" };
+          renderPhotoImportBanner();
+        }
+        disposePhotoImportEditor(session);
+      });
+    } catch (error) {
+      session.status = "failed";
+      session.error = { code: error && error.code || "PHOTO_CROP_OPEN_FAILED", message: error && error.message || "無法開啟照片裁切。照片沒有寫入。" };
+      renderPhotoImportBanner();
+    }
   }
   function handleShotPhotoPickerChange(input) {
     const target = photoPickerTarget; photoPickerTarget = null;
     const files = Array.from(input.files || []); input.value = "";
     if (!target || !files.length) return;
-    const startingShot = state && state.projectId === target.projectId && state.shots.find((shot) => shot.id === target.shotId);
-    const session = { id: ++photoImportSessionSequence, ...target, files, status: "selected", progress: "", error: null, savedAssetIds: [], initialAssetIds: startingShot && Array.isArray(startingShot.assetIds) ? startingShot.assetIds.slice() : [], startRevision: state && state.projectId === target.projectId ? state.revision : null };
-    if (target.mode === "replace" && files.length !== 1) { session.status = "failed"; session.error = { code: "INVALID_SELECTION", message: "替換主圖一次只能選取一個檔案；候選仍保留，請重新選擇。" }; }
+    const policy = photoImportPolicy();
+    const session = { id: ++photoImportSessionSequence, ...target, files: files.slice(0, 1), status: "cropping", progress: "", error: null, savedAssetIds: [], savedAssetId: null, importResult: null, crop: null, editor: null };
     photoImportSession = session;
-    renderPhotoImportBanner();
-    if (isReadOnly()) message("候選照片已保留；目前為唯讀瀏覽，取得編輯權後才能保存。", true);
+    if (files.length !== 1) {
+      session.status = "failed";
+      session.error = { code: "INVALID_SELECTION", message: "每個鏡頭一次只選取一張照片；照片沒有寫入。" };
+      renderPhotoImportBanner();
+      return;
+    }
+    if (policy && policy.maxBytes !== null && files[0].size > policy.maxBytes) {
+      session.status = "failed";
+      session.error = { code: "FILE_TOO_LARGE", message: "照片超過目前匯入大小上限；照片沒有寫入。" };
+      renderPhotoImportBanner();
+      return;
+    }
+    startShotPhotoImportCrop(session);
   }
   function updatePhotoImportProgress(session, event) {
     if (photoImportSession !== session || !event) return;
@@ -2042,7 +2133,7 @@
     }
     return canonical;
   }
-  function finishPhotoImportSession(session, result, retried) {
+  async function finishPhotoImportSession(session, result, retried) {
     if (photoImportSession !== session) return false;
     const canonical = refreshPhotoCanonicalState(session);
     const shot = canonical && canonical.shots.find((item) => item.id === session.shotId);
@@ -2051,31 +2142,43 @@
     if (session.mode === "replace") committedIds = [result && result.assetId, ...session.savedAssetIds].filter(Boolean);
     else committedIds = [...(result && result.addedAssetIds || []), ...(result && result.duplicateAssetIds || []), ...session.savedAssetIds];
     if (retried && !committedIds.length) committedIds = shot.assetIds.filter((assetId) => !session.initialAssetIds.includes(assetId));
-    if (!committedIds.length || !committedIds.every((assetId) => shot.assetIds.includes(assetId))) throw Object.assign(new Error("Model 尚未在目標鏡頭確認照片引用；候選仍保留。"), { code: "PHOTO_COMMIT_NOT_VISIBLE" });
+    const assetId = session.savedAssetId || committedIds.find((candidate) => shot.assetIds.includes(candidate)) || null;
+    if (!assetId || !shot.assetIds.includes(assetId)) throw Object.assign(new Error("Model 尚未在目標鏡頭確認照片引用；候選仍保留。"), { code: "PHOTO_COMMIT_NOT_VISIBLE" });
+    if (!photoCropsEqual(photoCropForShot(shot, assetId), session.crop)) {
+      throw Object.assign(new Error("Model 尚未在同一保存命令確認照片與裁切；候選保留，請重新載入檢查。"), { code: "PHOTO_CROP_NOT_VISIBLE" });
+    }
+    session.savedAssetId = assetId;
+    if (!session.importResult) session.importResult = result || null;
     const duplicateCount = result && result.duplicateAssetIds ? result.duplicateAssetIds.length : 0;
-    const noOp = !!(result && result.noOp);
+    const noOp = !!(result && result.noOp) && photoCropsEqual(session.initialPrimaryCrop, session.crop);
     photoImportSession = null; renderPhotoImportBanner(); renderShotList();
-    if (noOp) message("照片相同，未變更。");
-    else if (duplicateCount) message("照片已保存；" + duplicateCount + " 張已在此鏡頭，未重複加入。");
-    else message(retried ? "原照片命令已重試保存。" : "照片已保存到此鏡頭。");
+    if (noOp) message("照片與裁切沒有變更。");
+    else if (session.mode === "replace") message("分鏡主圖已更新；舊照片仍保留，可復原。");
+    else if (duplicateCount) message("照片已設定為分鏡主圖；既有原圖沒有重複保存。");
+    else message(retried ? "原照片命令已重試；分鏡主圖與裁切已保存。" : "分鏡主圖與照片裁切已保存。");
     return true;
   }
-  async function submitShotPhotoImport(session, replaceConfirmed) {
+  async function submitShotPhotoImport(session, crop) {
     if (photoImportSession !== session) return false;
     if (isReadOnly()) throw readOnlyFailure();
     if (!state || state.projectId !== session.projectId) throw Object.assign(new Error("請先切回選取照片時的原專案；候選與原鏡頭目標已保留。"), { code: "PROJECT_SWITCH_PENDING" });
-    if (session.mode === "replace" && !replaceConfirmed) throw Object.assign(new Error("替換主圖必須先確認。"), { code: "REPLACE_CONFIRM_REQUIRED" });
-    const shot = state.shots.find((item) => item.id === session.shotId);
-    if (!shot) throw Object.assign(new Error("找不到選取照片時的原目標鏡頭。"), { code: "SHOT_NOT_FOUND" });
-    if (!session.files.length || (session.mode === "replace" && session.files.length !== 1)) throw Object.assign(new Error("請確認候選照片數量。"), { code: "INVALID_SELECTION" });
-    if (session.mode === "replace" && (!Array.isArray(shot.assetIds) || shot.assetIds[0] !== session.previousAssetId)) throw Object.assign(new Error("等待選檔時主圖已變更；請確認目前主圖後重新開始替換。"), { code: "REPLACE_TARGET_CHANGED" });
+    if (!session.files.length || session.files.length !== 1) throw Object.assign(new Error("每個鏡頭一次只選取一張照片。"), { code: "INVALID_SELECTION" });
+    if (!session.savedAssetId && !photoImportSessionIsCurrent(session, true)) throw Object.assign(new Error("專案、鏡頭或主圖已更新；照片沒有寫入，請重新選取。"), { code: "PHOTO_IMPORT_STALE" });
+    if (session.mode === "replace") {
+      const shot = state.shots.find((item) => item.id === session.shotId);
+      if (!shot || !Array.isArray(shot.assetIds) || shot.assetIds[0] !== session.previousAssetId) throw Object.assign(new Error("等待裁切期間主圖已變更；照片沒有寫入，請重新選取。"), { code: "REPLACE_TARGET_CHANGED" });
+    }
+    session.crop = crop == null ? null : { x: crop.x, y: crop.y, width: crop.width, height: crop.height };
     session.status = "importing"; session.error = null; session.progress = "等待照片驗證…"; renderPhotoImportBanner();
-    const options = { onProgress: (event) => updatePhotoImportProgress(session, event) };
+    const options = { crop: session.crop, onProgress: (event) => updatePhotoImportProgress(session, event) };
     try {
-      const result = await withMutation(() => session.mode === "replace"
-        ? model.replaceShotPhoto(session.shotId, session.previousAssetId, session.files[0], options)
-        : model.addShotPhotos(session.shotId, session.files, options));
-      finishPhotoImportSession(session, result, false);
+      const result = session.savedAssetId
+        ? session.importResult
+        : await withMutation(() => session.mode === "replace"
+          ? model.replaceShotPhoto(session.shotId, session.previousAssetId, session.files[0], options)
+          : model.addShotPhotos(session.shotId, session.files, options));
+      session.importResult = result || session.importResult;
+      await finishPhotoImportSession(session, result, false);
       return true;
     } catch (error) {
       if (photoImportSession === session) {
@@ -2083,6 +2186,7 @@
         session.status = photoErrorStatus(error, session.progress && session.progress.includes("保存失敗") || currentLifecycle && currentLifecycle.phase === "save_failed" ? "save_failed" : "failed");
         session.error = { code: error && error.code || "PHOTO_IMPORT_FAILED", message: error && error.message || "照片匯入失敗。" };
         renderPhotoImportBanner();
+        if (["save_failed", "reconcile_required", "recovery_required"].includes(session.status) || currentLifecycle && Number(currentLifecycle.pendingCount || 0) > 0) disposePhotoImportEditor(session);
       }
       throw error;
     }
@@ -2096,7 +2200,7 @@
     try {
       const result = await withMutation(() => model.retryPending());
       if (result === false) throw Object.assign(new Error("Model 沒有可重試的待保存照片命令；候選仍保留。"), { code: "NO_PENDING_RETRY" });
-      finishPhotoImportSession(session, result, true);
+      await finishPhotoImportSession(session, result, true);
       return true;
     } catch (error) {
       if (photoImportSession === session) {
@@ -2108,20 +2212,9 @@
       throw error;
     }
   }
-  function confirmShotPhotoReplacement(session) {
-    if (!session || photoImportSession !== session || session.mode !== "replace" || session.files.length !== 1) return;
-    const summary = "鏡頭：" + photoTargetTitle(session) + "\n舊照片：" + photoTargetAssetName(session) + "\n新照片：" + session.files[0].name + "\n\n只替換這個鏡頭的主圖引用；原始照片資料與其他引用會保留。";
-    showConfirm("確認替換主圖", summary, "替換照片", async () => {
-      try { return await submitShotPhotoImport(session, true); }
-      catch (error) {
-        if (photoImportSession === session) closeDialog("confirm-dialog");
-        message((error && error.code ? error.code + " · " : "") + (error && error.message || "替換照片失敗；候選與原鏡頭目標仍保留。"), true);
-        return false;
-      }
-    });
-  }
   function clearPhotoImportSession() {
     if (!photoImportSession || ["importing", "retrying", "save_failed", "reconcile_required"].includes(photoImportSession.status)) return;
+    disposePhotoImportEditor(photoImportSession);
     photoImportSession = null; renderPhotoImportBanner();
   }
   function handleShotPhotoAction(action, target) {
@@ -2134,15 +2227,13 @@
       return;
     }
     if (action === "photo-remove") { confirmRemoveShotPhoto(target); return; }
-    if (action === "import") { if (session) void submitShotPhotoImport(session, false).catch((error) => message((error.code ? error.code + " · " : "") + (error.message || "照片匯入失敗。"), true)); return; }
-    if (action === "confirm-replace") { confirmShotPhotoReplacement(session); return; }
     if (action === "retry") { if (session) void retryShotPhotoImport(session).catch((error) => message((error.code ? error.code + " · " : "") + (error.message || "照片保存重試失敗。"), true)); return; }
     if (action === "cancel") { clearPhotoImportSession(); return; }
     if (action === "reselect") {
       if (!session) return;
-      const previous = { projectId: session.projectId, projectTitle: session.projectTitle, shotId: session.shotId, mode: session.mode, previousAssetId: session.previousAssetId };
+      const previous = { shotId: session.shotId };
       photoImportSession = null; renderPhotoImportBanner();
-      openShotPhotoPicker({ dataset: { shotId: previous.shotId, assetId: previous.previousAssetId, shotPhotoAction: previous.mode }, closest: () => null }, previous.mode === "replace");
+      openShotPhotoPicker({ dataset: { shotId: previous.shotId }, closest: () => null });
       return;
     }
     if (action === "reload") {
@@ -4828,6 +4919,7 @@
       }
     }
     syncPhotoCropSessionForSnapshot(snapshot, event);
+    syncPhotoImportSessionForSnapshot(snapshot);
     if (productionTimelineHandle && productionTimelineProjectId !== snapshot.projectId) {
       const previousProjectId = productionTimelineProjectId;
       if (!closeProductionTimeline()) {
@@ -6362,7 +6454,7 @@
       if (drawingRetryRoute) { drawingRetryRoute.status = "creating"; renderDrawingRouteStatus(); }
       try {
         const result = await model.retryPending();
-        if (photoImportSession && ["save_failed", "reconcile_required"].includes(photoImportSession.status)) finishPhotoImportSession(photoImportSession, result, true);
+        if (photoImportSession && ["save_failed", "reconcile_required"].includes(photoImportSession.status)) await finishPhotoImportSession(photoImportSession, result, true);
         if (drawingRetryRoute && drawingRetryRoute === drawingRoute) {
           try { finishDrawingCreate(drawingRetryRoute, result); }
           catch (error) { drawingRetryRoute.error = error; drawingRetryRoute.status = "error"; renderDrawingRouteStatus(); }
@@ -6416,7 +6508,7 @@
       session.afterPrintTimer = setTimeout(() => finishOutputPrintPreparation(session,true),0);
     });
     $("#production-timeline-toggle").addEventListener("click", toggleProductionTimeline);
-    configureShotPhotoPicker("add");
+    configureShotPhotoPicker();
     const drawingChoiceDialog = $("#drawing-choice-dialog");
     if (drawingChoiceDialog) {
       drawingChoiceDialog.addEventListener("close", () => { drawingChooserContext = null; });
@@ -6442,6 +6534,7 @@
     }
     window.addEventListener("pagehide", () => {
       disposePhotoCropSession(photoCropSession);
+      disposePhotoImportEditor(photoImportSession);
       shotDrawingUrlEpoch += 1;
       disconnectShotPhotoObservation($("#shot-list"));
       if (shotPhotoLoadQueueTimer !== null) window.clearTimeout(shotPhotoLoadQueueTimer);
