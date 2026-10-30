@@ -342,10 +342,12 @@
               finish(reject, cancelError());
               return;
             }
-            if (action !== pickerApi.Action.PICKED) {
-              finish(reject, makeError("DRIVE_PICKER_FAILED", "Google Picker 選取失敗。"));
+            if (pickerApi.Action.ERROR && action === pickerApi.Action.ERROR) {
+              finish(reject, makeError("DRIVE_PICKER_FAILED", "Google Picker 回報載入或選取錯誤。請檢查網站來源、API 金鑰限制及瀏覽器設定。"));
               return;
             }
+            // Picker may emit nonterminal notifications; wait for a selection or cancellation.
+            if (action !== pickerApi.Action.PICKED) return;
             const documents = data[pickerApi.Response.DOCUMENTS];
             const selected = Array.isArray(documents) ? documents[0] : null;
             if (!selected || !selected.id) {
