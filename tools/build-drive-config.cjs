@@ -1,0 +1,11 @@
+'use strict';
+const fs = require('node:fs');
+const path = require('node:path');
+const clientId = process.env.KINO_GOOGLE_CLIENT_ID || '';
+const apiKey = process.env.KINO_GOOGLE_PICKER_KEY || '';
+const appId = process.env.KINO_GOOGLE_PROJECT_NUMBER || '';
+const values = {clientId, apiKey, appId};
+const complete = Object.values(values).every(Boolean);
+if (!complete && Object.values(values).some(Boolean)) throw new Error('Incomplete Google Drive build configuration.');
+const output = complete ? 'window.KinoDriveConfig = ' + JSON.stringify(values) + ';\n' : '/* Google Drive not configured. */\n';
+fs.writeFileSync(path.join(__dirname, '..', 'dist', 'google-drive-config.js'), output);
