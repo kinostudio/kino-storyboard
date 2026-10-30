@@ -12,7 +12,7 @@ KINO Storyboard 是分鏡創作、拍攝安排與文件交付工具。程式碼�
 
 專案資料保存在目前瀏覽器來源、使用者設定檔與裝置的 IndexedDB。本機保存不會自動同步到其他瀏覽器或建立異地備份；清除網站資料、更換設定檔或裝置前，請先匯出並另存完整專案 ZIP。
 
-從 GitHub Pages 切換到 Cloudflare 時，兩個網址的 IndexedDB 相互獨立。請先在原網站匯出完整 ZIP，在新網站匯入並確認後再清理原網站資料。變更 GitHub 儲存庫名稱可能改變 GitHub Pages 路徑；同一 `kinostudio.github.io` 網域下可用的新路徑仍屬相同瀏覽器來源，實際可用性需待部署驗證。
+從 GitHub Pages 切換到 Cloudflare 時，兩個網址的 IndexedDB 相互獨立。GitHub 儲存庫更名後，先前的 GitHub Pages 網址已失效；可在儲存資料的原裝置與瀏覽器開啟 [GitHub Pages 遷移入口](https://kinostudio.github.io/kino-storyboard/)，匯出完整 ZIP，再到 Cloudflare 網站匯入並確認。GitHub Pages 新舊路徑都屬 `kinostudio.github.io` 來源，不會因路徑更動而變成新的 IndexedDB。確認匯入成功前，請勿清理舊網站資料。
 
 完整 ZIP 用於備份與交接，包含可重新編輯的專案、Drawing 資料、必要原始資產與完整性雜湊；不包含裝置本機 undo/redo 歷史、寫入租約、未提交草稿或記憶體中的檔案候選。匯出 ZIP 後，建議先在另一個乾淨瀏覽器環境匯入確認，再移除原本的瀏覽器資料。
 
