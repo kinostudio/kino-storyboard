@@ -414,9 +414,33 @@
   async function uploadErrorReason(response) {
     try {
       const body = await response.clone().json();
-      const reason = body && body.error && Array.isArray(body.error.errors) && body.error.errors[0] && body.error.errors[0].reason;
-      return typeof reason === "string" && /^[A-Za-z][A-Za-z0-9_]{0,63}$/.test(reason) ? reason : null;
+      const error = body && body.error;
+      const details = [];
+      if (error && Array.isArray(error.errors)) details.push(...error.errors);
+      if (error && Array.isArray(error.details)) details.push(...error.details);
+      const reason = details.map((item) => item && (item.reason || (item.metadata && item.metadata.reason)))
+        .find((value) => typeof value === "string" && /^[A-Za-z][A-Za-z0-9_]{0,63}$/.test(value));
+      return reason || null;
     } catch (_) { return null; }
+  }
+
+  function isDriveRateLimitReason(reason) {
+    return reason === "rateLimitExceeded" || reason === "userRateLimitExceeded";
+  }
+
+  function uploadSessionExpiredError(status, reason, context) {
+    const detail = uploadReasonDetail(reason);
+    return makeError(
+      "DRIVE_UPLOAD_SESSION_EXPIRED",
+      "Google Drive 在" + context + "回傳 HTTP " + status + "。Drive 指引要求 resumable upload 遇到此類 4xx 後重新建立工作階段；本次不會自動建立新檔。" + detail + "請先檢查 Drive，再清除待處理狀態後重試。",
+      { status, retryable: false, possibleDuplicate: true, causeCode: reason || ("DRIVE_HTTP_" + status) }
+    );
+  }
+
+  function uploadReasonDetail(reason) {
+    if (reason === "storageQuotaExceeded") return " Google Drive 儲存空間已滿，請先釋出空間。";
+    if (reason === "insufficientFilePermissions") return " Google Drive 拒絕寫入所選資料夾，請改選有新增檔案權限的位置。";
+    return reason ? " Google 回報原因：" + reason + "。" : "";
   }
 
   async function fetchForOperation(operation, url, init, keepController) {
@@ -603,7 +627,22 @@
       },
       body: JSON.stringify(metadata),
     });
-    if (!response.ok) throw httpError(response, "上傳初始化");
+    if (!response.ok) {
+      const reason = await uploadErrorReason(response);
+      if (response.status === 429 || isDriveRateLimitReason(reason)) {
+        throw makeError("DRIVE_RATE_LIMITED", "Google Drive 暫時限制上傳初始化；請稍候後重新開始匯出。" + (reason ? "（原因：" + reason + "）" : ""), {
+          status: response.status,
+          retryable: true,
+          causeCode: reason || "rateLimitExceeded",
+        });
+      }
+      const error = httpError(response, "上傳初始化");
+      if (reason) {
+        error.causeCode = reason;
+        error.message += uploadReasonDetail(reason);
+      }
+      throw error;
+    }
     const sessionUrl = response.headers.get("Location");
     let validSessionUrl = false;
     try {
@@ -638,8 +677,21 @@
         { retryable: false, possibleDuplicate: true }
       );
     }
-    const error = httpError(response, "上傳狀態查詢");
     const reason = await uploadErrorReason(response);
+    if (response.status === 429 || (response.status === 403 && isDriveRateLimitReason(reason))) {
+      pending.state = "paused";
+      throw makeError("DRIVE_RATE_LIMITED", "Google Drive 暫時限制上傳狀態查詢；請稍候再按「續傳／查詢」。" + (reason ? "（原因：" + reason + "）" : ""), {
+        status: response.status,
+        retryable: true,
+        causeCode: reason || "rateLimitExceeded",
+      });
+    }
+    if (response.status >= 400 && response.status < 500) {
+      pending.state = "expired";
+      pending.expired = true;
+      throw uploadSessionExpiredError(response.status, reason, "上傳狀態查詢");
+    }
+    const error = httpError(response, "上傳狀態查詢");
     if (reason) error.message += "（原因：" + reason + "）";
     throw error;
   }
@@ -733,6 +785,22 @@
           throw makeError("DRIVE_UPLOAD_RESULT_UNKNOWN", "Drive 尚未確認上傳進度；請按「續傳／查詢」確認，不要重新建立檔案。", { retryable: true, outcomeUnknown: true });
         }
         continue;
+      }
+      const uploadReason = response.status === 403 || response.status === 429
+        ? await uploadErrorReason(response)
+        : null;
+      if (response.status === 429 || (response.status === 403 && isDriveRateLimitReason(uploadReason))) {
+        pending.state = "paused";
+        throw makeError("DRIVE_RATE_LIMITED", "Google Drive 暫時限制 ZIP 上傳；請稍候，再按「續傳／查詢」確認遠端進度後重試。" + (uploadReason ? "（原因：" + uploadReason + "）" : ""), {
+          status: response.status,
+          retryable: true,
+          causeCode: uploadReason || "rateLimitExceeded",
+        });
+      }
+      if (response.status >= 400 && response.status < 500) {
+        pending.state = "expired";
+        pending.expired = true;
+        throw uploadSessionExpiredError(response.status, uploadReason || await uploadErrorReason(response), "ZIP 上傳");
       }
       if (response.status >= 500) {
         try {
