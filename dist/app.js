@@ -662,20 +662,21 @@
     } else if (readOnly) {
       title = "唯讀"; detail = lifecycle.readOnlyReason || (lifecycle.error && lifecycle.error.message) || "此專案目前沒有編輯權。"; panel.classList.add("is-read-only");
     } else if (pending > 0 || phase === "saving") {
-      title = "正在儲存"; detail = "變更尚未確認寫入；完成前不會標記為已保存。";
+      title = "正在儲存"; detail = "正在保存變更…";
     } else if (hasDrafts) {
       title = "尚未保存"; detail = hasTimelineDrafts ? "製作時程或其他欄位有尚未提交的草稿。" : "有欄位或輸出偏好尚未提交。"; panel.classList.add("is-error");
-    } else if (lifecycle.saveStatus) { detail = lifecycle.saveStatus + (lifecycle.committedRevision == null ? "" : " · revision " + lifecycle.committedRevision); }
+    } else if (lifecycle.saveStatus) { detail = "本機專案" + (lifecycle.committedRevision == null ? "" : " · revision " + lifecycle.committedRevision); }
     $("#durable-status-title").textContent = title;
     $("#durable-status-detail").textContent = detail;
     const actions = $("#durable-status-actions");
     actions.innerHTML = '';
     if (hasTimelineDrafts) actions.insertAdjacentHTML("beforeend", '<button type="button" data-status-action="timeline">處理製作時程草稿</button>');
     else if (hasDrafts && lifecycle.writable) actions.insertAdjacentHTML("beforeend", '<button type="button" data-status-action="save-drafts">保存欄位</button>');
-    if ((hasDrafts || pending > 0 || phase === "save_failed") && !hasTimelineDrafts) actions.insertAdjacentHTML("beforeend", '<button type="button" data-status-action="discard">放棄未保存變更</button>');
+    if ((hasDrafts || phase === "save_failed") && !hasTimelineDrafts) actions.insertAdjacentHTML("beforeend", '<button type="button" data-status-action="discard">放棄未保存變更</button>');
     if (phase === "save_failed") actions.insertAdjacentHTML("beforeend", '<button type="button" class="primary" data-status-action="retry">重試保存</button>');
-    if (phase === "save_failed" || pending > 0 || hasDrafts || lifecycle.rescueAvailable) actions.insertAdjacentHTML("beforeend", '<button type="button" data-status-action="rescue">下載救援資料</button>');
+    if (phase === "save_failed" || hasDrafts || lifecycle.rescueAvailable && pending === 0 && phase !== "saving") actions.insertAdjacentHTML("beforeend", '<button type="button" data-status-action="rescue">下載救援資料</button>');
     if (phase === "read_only" && state) actions.insertAdjacentHTML("beforeend", '<button type="button" data-status-action="reclaim">重新取得編輯權</button>');
+    panel.classList.toggle("is-compact", !actions.children.length && !panel.classList.contains("is-error") && !readOnly);
     panel.hidden = !detail && !actions.children.length;
   }
   function refreshLifecycle(next) {
