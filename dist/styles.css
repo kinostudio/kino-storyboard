@@ -60,6 +60,8 @@ body.project-ready .lifecycle-gate:not(.is-forced){display:none}
 @keyframes lifecycle-spin{to{transform:rotate(360deg)}}
 .durable-status{display:flex;align-items:center;justify-content:space-between;gap:14px;padding:11px 28px;background:#f0f2f5;border-bottom:1px solid #e0e4eb;color:#566276}
 .durable-status[hidden]{display:none}
+.durable-status { min-height: 67px; box-sizing: border-box; }
+@media (max-width: 920px) { .durable-status { min-height: 90px; } }
 .durable-status.is-error{background:#fff3f1;border-bottom-color:#eed3cf;color:#8d4d48}
 .durable-status.is-read-only{background:#f8f5eb;border-bottom-color:#e8dfc5;color:#746342}
 .durable-status-copy{min-width:0;display:flex;align-items:baseline;gap:9px;flex-wrap:wrap;font-size:11px;line-height:1.55}
