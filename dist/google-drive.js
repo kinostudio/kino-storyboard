@@ -893,7 +893,14 @@
         token = await requestToken(operation);
       }
       setOperationPhase(operation, "pick-folder", 0, bytes.byteLength);
-      let folder = await pickFromDrive(operation, token, "folder");
+      const destinationType = options && typeof options.chooseRootOrFolder === "function"
+        ? await awaitOperationOrCancel(operation, options.chooseRootOrFolder())
+        : "folder";
+      if (!destinationType) throw makeError("DRIVE_CANCELLED", "已取消 Google Drive 匯出。", { cancelled: true });
+      if (destinationType !== "root" && destinationType !== "folder") throw makeError("DRIVE_FOLDER_REQUIRED", "請選擇儲存位置。");
+      let folder = destinationType === "root"
+        ? { id: "root", name: "我的雲端硬碟", mimeType: "application/vnd.google-apps.folder" }
+        : await pickFromDrive(operation, token, "folder");
       if (!folder || !folder.id || folder.mimeType !== "application/vnd.google-apps.folder") {
         throw makeError("DRIVE_FOLDER_REQUIRED", "請在 Google Picker 選擇目的資料夾。", { retryable: true });
       }

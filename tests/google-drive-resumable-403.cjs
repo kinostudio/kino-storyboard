@@ -206,6 +206,15 @@ async function testRateLimit403CanResume() {
 }
 
 async function main() {
+  const rootDestination = createHarness(async (url, init) => {
+    if (init.method === "POST") {
+      assert.deepEqual(JSON.parse(init.body).parents, ["root"]);
+      return new Response(null, { status: 200, headers: { Location: sessionUrl } });
+    }
+    return jsonResponse({ id: "root-zip", name: "root.zip", mimeType: "application/zip", size: "1" }, 200);
+  });
+  const rootResult = await rootDestination.exportZip(Uint8Array.from([1]), "root.zip", { chooseRootOrFolder: async () => "root", chooseDestination: async () => ({}) });
+  assert.equal(rootResult.folderId, "root");
   let folderCreates = 0;
   const destination = createHarness(async (url, init) => {
     if (url.startsWith("https://www.googleapis.com/drive/v3/files?")) {

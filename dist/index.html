@@ -8,7 +8,7 @@
   <meta name="theme-color" content="#18243b">
   <title>KINO Storyboard｜光落下的地方</title>
   <link rel="icon" type="image/svg+xml" href="kino-storyboard.svg">
-  <link rel="stylesheet" href="styles.css?v=20261031drive2">
+  <link rel="stylesheet" href="styles.css?v=20261031drive3">
   <link rel="stylesheet" href="output.css?v=20261030ui2">
   <link rel="stylesheet" href="drawing-editor.css?v=20261030ui2">
   <link rel="stylesheet" href="photo-crop-editor.css?v=20261029v38">
@@ -35,8 +35,8 @@
   <script defer src="production-timeline.js?v=20261029g"></script>
   <script defer src="time-input.js"></script>
   <script defer src="google-drive-config.js?v=20261031drive1"></script>
-  <script defer src="google-drive.js?v=20261031drive6"></script>
-  <script defer src="app.js?v=20261031drive2"></script>
+  <script defer src="google-drive.js?v=20261031drive7"></script>
+  <script defer src="app.js?v=20261031drive3"></script>
 </head>
 <body>
   <section class="lifecycle-gate" id="lifecycle-gate" aria-live="polite" aria-labelledby="lifecycle-title">
@@ -220,6 +220,16 @@
   <div id="photo-crop-editor-mount"></div>
   <input id="shot-photo-picker" type="file" hidden aria-label="選取照片">
   <input id="complete-package-picker" type="file" accept=".storyboard.zip,.zip,application/zip" hidden aria-label="選取完整專案 ZIP">
+  <dialog class="app-dialog drive-destination-dialog" id="drive-root-or-folder-dialog" aria-labelledby="drive-root-or-folder-title" aria-describedby="drive-root-or-folder-description">
+    <div class="dialog-top"><span class="dialog-mark" aria-hidden="true">Drive</span><button class="dialog-close" type="button" data-drive-root-choice="cancel" aria-label="取消 Google Drive 匯出">×</button></div>
+    <h2 id="drive-root-or-folder-title">選擇 Google Drive 儲存位置</h2>
+    <p class="dialog-lead" id="drive-root-or-folder-description">選擇雲端硬碟根目錄，或挑選其他資料夾。下一步可確認位置，並選擇是否先建立新資料夾。</p>
+    <div class="drive-root-or-folder-options">
+      <button class="outline-button drive-root-or-folder-option" type="button" data-drive-root-choice="root"><strong>我的雲端硬碟根目錄</strong><small>直接存到根目錄，或先建立新資料夾</small></button>
+      <button class="outline-button drive-root-or-folder-option" type="button" data-drive-root-choice="folder"><strong>選擇其他資料夾</strong><small>開啟 Google Drive 資料夾選取器</small></button>
+    </div>
+    <div class="dialog-actions"><button class="outline-button" type="button" data-drive-root-choice="cancel">取消</button></div>
+  </dialog>
   <dialog class="app-dialog drive-destination-dialog" id="drive-destination-dialog" aria-labelledby="drive-destination-title" aria-describedby="drive-destination-description">
     <div class="dialog-top"><span class="dialog-mark" aria-hidden="true">Drive</span><button class="dialog-close" type="button" data-drive-destination-action="cancel" aria-label="取消 Google Drive 匯出">×</button></div>
     <h2 id="drive-destination-title">確認 Google Drive 儲存位置</h2>

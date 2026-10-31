@@ -134,6 +134,7 @@
   let googleDriveReadyState = "unknown";
   let googleDriveReadyStarted = false;
   let googleDriveDestinationResolve = null;
+  let googleDriveRootOrFolderResolve = null;
   let drawingRoute = null;
   let drawingEditorHandle = null;
   let drawingChooserContext = null;
@@ -5462,6 +5463,34 @@
       return url.protocol === "https:" && url.hostname === "drive.google.com" ? url.href : "";
     } catch (_) { return ""; }
   }
+  function finishGoogleDriveRootOrFolder(choice, closeDialog) {
+    const resolve = googleDriveRootOrFolderResolve;
+    if (!resolve) return;
+    googleDriveRootOrFolderResolve = null;
+    const dialog = $("#drive-root-or-folder-dialog");
+    if (closeDialog !== false && dialog && dialog.open) {
+      if (typeof dialog.close === "function") dialog.close();
+      else dialog.removeAttribute("open");
+    }
+    resolve(choice);
+  }
+  function chooseGoogleDriveRootOrFolder() {
+    return new Promise((resolve) => {
+      const dialog = $("#drive-root-or-folder-dialog");
+      if (!dialog) { resolve(null); return; }
+      if (googleDriveRootOrFolderResolve) finishGoogleDriveRootOrFolder(null);
+      googleDriveRootOrFolderResolve = resolve;
+      if (!dialog.dataset.rootOrFolderCancelBound) {
+        dialog.addEventListener("cancel", () => finishGoogleDriveRootOrFolder(null, false));
+        dialog.addEventListener("close", () => finishGoogleDriveRootOrFolder(null, false));
+        dialog.dataset.rootOrFolderCancelBound = "true";
+      }
+      if (typeof dialog.showModal === "function") dialog.showModal();
+      else dialog.setAttribute("open", "open");
+      const rootButton = $("[data-drive-root-choice='root']", dialog);
+      if (rootButton) rootButton.focus();
+    });
+  }
   function finishGoogleDriveDestination(choice, closeDialog) {
     const resolve = googleDriveDestinationResolve;
     if (!resolve) return;
@@ -5534,7 +5563,7 @@
       const status = googleDriveStatus && googleDriveStatus.text ? googleDriveStatus : null;
       statusNode.replaceChildren();
       statusNode.dataset.kind = status && status.kind || (unavailableMessage ? "error" : "info");
-      const text = status ? status.text : unavailableMessage || "只在你點選 Drive 動作並選擇檔案／資料夾後才傳輸 ZIP；不會自動同步。首次授權只要求 drive.file。";
+      const text = status ? status.text : unavailableMessage || "只在你點選 Drive 動作並選擇匯入檔案或匯出儲存位置後才傳輸 ZIP；不會自動同步。首次授權只要求 drive.file。";
       statusNode.appendChild(document.createTextNode(text));
       const link = status && status.link;
       if (link) {
@@ -5650,9 +5679,10 @@
         await new Promise((resolve) => requestAnimationFrame(resolve));
         archive = await model.exportCompletePackage();
         if (!archive || !(archive.archiveBytes instanceof Uint8Array) || !archive.archiveBytes.byteLength || !archive.fileName) throw Object.assign(new Error("Model 未回傳有效的完整專案 ZIP bytes。"), { code: "PACKAGE_EXPORT_RESULT_INVALID" });
-        setGoogleDriveStatus("本機 ZIP 已驗證；正在選擇 Google Drive 資料夾並上傳新檔。");
+        setGoogleDriveStatus("本機 ZIP 已驗證；正在選擇 Google Drive 儲存位置並上傳新檔。");
         return archive;
       }, undefined, {
+        chooseRootOrFolder: function () { return chooseGoogleDriveRootOrFolder(); },
         chooseDestination: function (folder) { return chooseGoogleDriveDestination(folder); },
         onProgress: function (progress) { if (progress && progress.phase === "upload") setGoogleDriveStatus(formatDriveProgress(progress)); }
       });
@@ -6153,7 +6183,7 @@
     menu.innerHTML = '<div class="popover-heading">專案資訊</div><form id="project-metadata-form"><div class="field-group"><label class="field-label" for="project-metadata-title">專案名稱</label><input class="text-field" id="project-metadata-title" type="text" maxlength="120" data-project-field="title" data-entity-id="' + escapeHtml(projectId) + '" value="' + escapeHtml(titleDraft ? titleDraft.value : state.title || "") + '"><small class="field-note">會用於專案標題與文件。</small></div><div class="field-group"><label class="field-label" for="project-metadata-type">專案類型</label><input class="text-field" id="project-metadata-type" type="text" maxlength="80" data-project-field="projectType" data-entity-id="' + escapeHtml(projectId) + '" value="' + escapeHtml(typeDraft ? typeDraft.value : state.projectType || "") + '" placeholder="例如：品牌形象影片"><small class="field-note">內容分類；留白代表尚未設定，與本機保存方式不同。</small></div><button class="outline-button project-metadata-save" type="submit" data-project-metadata-save>保存專案資訊</button></form><div class="popover-heading project-tools-heading">專案工具</div><div class="aspect-setting"><label for="project-aspect-ratio">專案畫幅</label><select id="project-aspect-ratio" aria-label="專案畫幅"><option value="16:9">16:9　寬螢幕</option><option value="1:1">1:1　方形</option><option value="4:3">4:3　標準</option><option value="2.35:1">2.35:1　寬銀幕</option></select><small>套用至所有分鏡與輸出圖；完整顯示，不會拉伸。</small></div><button data-action="download-backup">' + icon("copy",14) + '<span><strong>下載專案 JSON</strong><small>建立已保存內容的完整 canonical 快照</small></span></button><button data-action="download-complete-package" title="' + escapeHtml(exportBlock || "") + '" ' + (exportBlock ? "disabled" : "") + '>' + icon("copy",14) + '<span><strong>下載完整專案 ZIP</strong><small>含原始照片與 Drawing；不含裝置本機 undo／redo</small></span></button><button data-action="import-complete-package" ' + (packageImportAvailable ? "" : "disabled") + '>' + icon("copy",14) + '<span><strong>匯入完整專案 ZIP</strong><small>完整驗證後另增專案；不切換目前工作案</small></span></button><span class="package-export-status" id="complete-package-export-status" role="status" aria-live="polite">' + escapeHtml(exportBlock || "") + '</span><button id="photo-integrity-run" data-action="check-photo-integrity">' + icon("copy",14) + '<span><strong>檢查照片完整性</strong><small>手動逐張核對原圖 bytes 與 SHA-256；不修改專案或照片，也不代表每次保存都已驗證。</small></span></button><span class="package-export-status" id="photo-integrity-status" role="status" aria-live="polite"></span><button id="photo-integrity-cancel" data-action="cancel-photo-integrity-check" hidden>取消檢查</button><button data-action="switch-project">' + icon("calendar",14) + '<span><strong>切換／開啟專案</strong><small>先保存未提交欄位，再切換</small></span></button><button data-action="create-demo">' + icon("calendar",14) + '<span><strong>建立示範專案</strong><small>建立新案，不覆寫目前專案</small></span></button><div class="popover-foot">畫幅與輸出偏好使用本機專案保存</div>';
     const driveControls = document.createElement("section");
     driveControls.className = "google-drive-controls";
-    driveControls.innerHTML = '<div class="google-drive-heading">Google Drive 手動備份</div><p class="google-drive-note">只在你按下動作並選取檔案或資料夾後才傳輸 ZIP；不會自動同步。首次授權使用 drive.file，access token 僅供本次操作使用，不會長期保存。</p><button type="button" data-drive-action="import">' + icon("copy",14) + '<span><strong>從 Google Drive 匯入 ZIP</strong><small>完整預覽驗證後，仍須確認還原或另存副本</small></span></button><button type="button" data-drive-action="export">' + icon("copy",14) + '<span><strong>匯出 ZIP 至 Google Drive</strong><small>依目前已保存 revision 建立新檔，不覆蓋既有檔案</small></span></button><div class="google-drive-status" id="google-drive-status" role="status" aria-live="polite"></div><div class="google-drive-actions"><button type="button" class="outline-button" data-drive-action="cancel" hidden>取消本次 Drive 操作</button><button type="button" class="outline-button" data-drive-action="resume" hidden>續傳上傳</button><button type="button" class="outline-button" data-drive-action="discard-pending" hidden>清除待確認上傳</button></div>';
+    driveControls.innerHTML = '<div class="google-drive-heading">Google Drive 手動備份</div><p class="google-drive-note">只在你按下動作並選取匯入檔案或確認匯出儲存位置後才傳輸 ZIP；匯出可選擇雲端硬碟根目錄或其他資料夾，也可新增資料夾。不會自動同步。首次授權使用 drive.file，access token 僅供本次操作使用，不會長期保存。</p><button type="button" data-drive-action="import">' + icon("copy",14) + '<span><strong>從 Google Drive 匯入 ZIP</strong><small>完整預覽驗證後，仍須確認還原或另存副本</small></span></button><button type="button" data-drive-action="export">' + icon("copy",14) + '<span><strong>匯出 ZIP 至 Google Drive</strong><small>依目前已保存 revision 建立新檔，不覆蓋既有檔案</small></span></button><div class="google-drive-status" id="google-drive-status" role="status" aria-live="polite"></div><div class="google-drive-actions"><button type="button" class="outline-button" data-drive-action="cancel" hidden>取消本次 Drive 操作</button><button type="button" class="outline-button" data-drive-action="resume" hidden>續傳上傳</button><button type="button" class="outline-button" data-drive-action="discard-pending" hidden>清除待確認上傳</button></div>';
     menu.insertBefore(driveControls, $("#complete-package-export-status", menu));
     renderGoogleDriveControls(menu);
     $("#project-menu").parentElement.appendChild(menu);
@@ -7045,6 +7075,13 @@
     $("#shot-reorder-mode").addEventListener("click", () => toggleReorderMode("shots"));
     $("#schedule-reorder-mode").addEventListener("click", () => toggleReorderMode("entries"));
     document.addEventListener("click", async (event) => {
+      const driveRootChoice = event.target.closest("[data-drive-root-choice]");
+      if (driveRootChoice) {
+        event.preventDefault();
+        const choice = driveRootChoice.dataset.driveRootChoice;
+        finishGoogleDriveRootOrFolder(choice === "root" || choice === "folder" ? choice : null);
+        return;
+      }
       const driveDestinationAction = event.target.closest("[data-drive-destination-action]");
       if (driveDestinationAction) {
         event.preventDefault();
