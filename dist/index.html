@@ -36,7 +36,7 @@
   <script defer src="time-input.js"></script>
   <script defer src="google-drive-config.js?v=20261031drive1"></script>
   <script defer src="google-drive.js?v=20261031drive8"></script>
-  <script defer src="app.js?v=20261031drive4"></script>
+  <script defer src="app.js?v=20261031drive5"></script>
 </head>
 <body>
   <section class="lifecycle-gate" id="lifecycle-gate" aria-live="polite" aria-labelledby="lifecycle-title">
@@ -226,8 +226,8 @@
     <p class="dialog-lead" id="drive-destination-description">預設儲存至「我的雲端硬碟」根目錄。可在此選擇其他資料夾，或建立子資料夾。確認前不會建立資料夾或上傳 ZIP。</p>
     <div class="drive-destination-parent"><div><span>目前目的資料夾</span><strong id="drive-destination-parent-name"></strong></div><div class="drive-destination-folder-actions"><button class="outline-button" id="drive-destination-return-root" type="button" data-drive-destination-root>回到根目錄</button><button class="outline-button" id="drive-destination-browse-folder" type="button" data-drive-destination-browse>選擇其他資料夾</button></div></div>
     <p class="drive-destination-picker-status" id="drive-destination-picker-status" role="alert" aria-live="polite" hidden></p>
-    <div class="field-group drive-destination-folder-field"><label class="field-label" for="drive-destination-new-folder">新資料夾名稱（選填）</label><input class="text-field" id="drive-destination-new-folder" type="text" maxlength="255" autocomplete="off" aria-describedby="drive-destination-folder-note"><small class="field-note" id="drive-destination-folder-note">留空會直接儲存至目前資料夾；輸入名稱並選擇「新增資料夾並儲存」，會先建立子資料夾，再將 ZIP 存入其中。</small></div>
-    <div class="dialog-actions"><button class="outline-button" type="button" data-drive-destination-action="cancel">取消</button><button class="outline-button" id="drive-destination-create-folder" type="button" data-drive-destination-action="create-folder">新增資料夾並儲存</button><button class="primary-button" id="drive-destination-save-parent" type="button" data-drive-destination-action="save-parent">儲存至此資料夾</button></div>
+    <div class="field-group drive-destination-folder-field"><label class="field-label" for="drive-destination-new-folder">新資料夾名稱（選填）</label><input class="text-field" id="drive-destination-new-folder" type="text" maxlength="255" autocomplete="off" aria-describedby="drive-destination-folder-note"><small class="field-note" id="drive-destination-folder-note">留空儲存至目前資料夾；輸入名稱則先建立子資料夾。</small></div>
+    <div class="dialog-actions"><button class="outline-button" type="button" data-drive-destination-action="cancel">取消</button><button class="primary-button" id="drive-destination-save-parent" type="button" data-drive-destination-action="save-parent">儲存</button></div>
   </dialog>
   <dialog class="app-dialog package-import-dialog" id="complete-package-import-dialog" aria-labelledby="complete-package-import-title" aria-describedby="complete-package-import-description">
     <div class="dialog-top"><span class="dialog-mark" aria-hidden="true">ZIP</span><button class="dialog-close" type="button" data-package-import-action="cancel" aria-label="取消匯入">×</button></div>

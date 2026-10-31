@@ -5555,7 +5555,7 @@
         nameInput.addEventListener("keydown", (event) => {
           if (event.key === "Enter") {
             event.preventDefault();
-            const button = $("#drive-destination-create-folder", dialog);
+            const button = $("#drive-destination-save-parent", dialog);
             if (button) button.click();
           }
         });
@@ -7110,18 +7110,9 @@
         if (action === "cancel") finishGoogleDriveDestination(null);
         else if (action === "save-parent") {
           const session = googleDriveDestinationSession;
-          if (session) finishGoogleDriveDestination({ folder: session.folder });
-        }
-        else if (action === "create-folder") {
           const nameInput = $("#drive-destination-new-folder");
           const name = nameInput ? nameInput.value.trim() : "";
-          if (!name) {
-            if (nameInput) { nameInput.setCustomValidity("請輸入新資料夾名稱。"); nameInput.reportValidity(); nameInput.focus(); }
-            return;
-          }
-          if (nameInput) nameInput.setCustomValidity("");
-          const session = googleDriveDestinationSession;
-          if (session) finishGoogleDriveDestination({ folder: session.folder, createFolderName: name });
+          if (session) finishGoogleDriveDestination(name ? { folder: session.folder, createFolderName: name } : { folder: session.folder });
         }
         return;
       }
