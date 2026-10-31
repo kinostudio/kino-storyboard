@@ -140,6 +140,33 @@
     };
   }
 
+  function drawingSnapshotForShotCreate(drawing) {
+    return {
+      kind: "snapshot",
+      backgroundAssetId: drawing.backgroundAssetId || null,
+      backgroundCrop: drawing.backgroundCrop ? clone(drawing.backgroundCrop) : null,
+      layers: drawing.layers.map(function (layer) {
+        return {
+          kind: layer.kind,
+          visible: Boolean(layer.visible),
+          locked: Boolean(layer.locked),
+          strokes: layer.strokes.map(function (stroke) {
+            return {
+              kind: stroke.kind,
+              color: stroke.color,
+              baseWidth: stroke.baseWidth,
+              points: stroke.points.map(function (point) {
+                const normalized = { x: point.x, y: point.y, t: point.t };
+                if (Object.prototype.hasOwnProperty.call(point, "pressure")) normalized.pressure = point.pressure;
+                return normalized;
+              })
+            };
+          })
+        };
+      })
+    };
+  }
+
   function DrawingEditor(container, options) {
     if (!container || typeof container.appendChild !== "function") throw new TypeError("mount(container, options) 需要一個 DOM 容器。");
     const opts = options || {};
@@ -154,7 +181,23 @@
     this.onBack = typeof opts.onBack === "function" ? opts.onBack : null;
     this.onStateChange = typeof opts.onStateChange === "function" ? opts.onStateChange : null;
     this.shotLabel = opts.shotLabel || "目前鏡頭";
-    this.isDraft = Boolean(opts.draft);
+    this.isDraft = Boolean(opts.draft || opts.placeholder);
+    this.placeholder = opts.placeholder && typeof opts.placeholder === "object" ? {
+      sceneId: opts.placeholder.sceneId,
+      initialShotPatch: clone(opts.placeholder.initialShotPatch || {})
+    } : null;
+    if (this.placeholder && (typeof this.placeholder.sceneId !== "string" || !this.placeholder.sceneId.trim())) {
+      throw new TypeError("placeholder.sceneId 需要有效的 Scene ID。");
+    }
+    this.isPlaceholder = Boolean(this.placeholder);
+    this.placeholderBaseRevision = null;
+    this.placeholderDirty = false;
+    this.placeholderHistory = [];
+    this.placeholderRedo = [];
+    this.placeholderStrokeSequence = 0;
+    this.placeholderCommitted = false;
+    this.placeholderResult = null;
+    this.onCreated = typeof opts.onCreated === "function" ? opts.onCreated : null;
     this.initialDrawing = this.isDraft ? null : clone(opts.drawing || (opts.drawingId ? { id: opts.drawingId } : null));
     this.capturedProjectId = opts.projectId || this.initialDrawing && this.initialDrawing.projectId || null;
     this.capturedShotId = opts.shotId || this.initialDrawing && this.initialDrawing.shotId || null;
@@ -165,6 +208,7 @@
       ? createDraftDrawing(this.capturedProjectId, this.capturedShotId, opts.aspectRatio || "16:9", opts.defaultBackgroundAssetId,
         this.resolveDraftBackgroundCrop(opts.defaultBackgroundAssetId))
       : this.initialDrawing;
+    if (this.isPlaceholder) this.placeholderBaseRevision = this.currentProjectRevision();
     this.writableOverride = typeof opts.writable === "boolean" ? opts.writable : null;
     this.readOnlyReason = opts.readOnlyReason || "尚未確認可編輯狀態。";
     this.writable = false;
@@ -755,7 +799,7 @@
       this.drawing.backgroundCrop = this.resolveDraftBackgroundCrop(this.drawing.backgroundAssetId);
     }
     let drawing = this.drawing;
-    if (this.isDraft && !this.pendingOperation && this.model && typeof this.model.getDrawingsForShot === "function") {
+    if (this.isDraft && this.capturedShotId && !this.pendingOperation && this.model && typeof this.model.getDrawingsForShot === "function") {
       const savedDrawings = this.model.getDrawingsForShot(this.capturedShotId);
       if (Array.isArray(savedDrawings) && savedDrawings.length === 1) {
         drawing = savedDrawings[0];
@@ -806,7 +850,9 @@
     } else if (this.pendingOperation) {
       this.setStatus("尚未保存：有一筆操作待重試。", "error");
     } else if (this.isDraft && this.writable) {
-      this.setStatus("空白畫布尚未保存；開始繪製或調整設定後會自動保存。", "info");
+      this.setStatus(this.isPlaceholder
+        ? "此佔位鏡頭尚未建立；儲存並關閉時才會建立，返回關閉會捨棄草稿。"
+        : "空白畫布尚未保存；開始繪製或調整設定後會自動保存。", "info");
     } else if (this.writable) {
       this.setStatus("已保存", "saved");
     } else {
@@ -932,13 +978,100 @@
   };
 
   DrawingEditor.prototype.canCreateFromDraft = function () {
-    return Boolean(this.isDraft && this.model && typeof this.model.createDrawingForShotWithInitialEdit === "function");
+    return Boolean(this.isDraft && this.model && (this.isPlaceholder
+      ? typeof this.model.addShotWithDrawing === "function"
+      : typeof this.model.createDrawingForShotWithInitialEdit === "function"));
+  };
+
+  DrawingEditor.prototype.recordPlaceholderEdit = function (mutate) {
+    if (!this.isPlaceholder || !this.isDraft || !this.drawing || typeof mutate !== "function") return false;
+    this.placeholderHistory.push(clone(this.drawing));
+    if (this.placeholderHistory.length > 100) this.placeholderHistory.shift();
+    this.placeholderRedo = [];
+    mutate(this.drawing);
+    this.placeholderDirty = true;
+    this.setStatus("尚未儲存；按「儲存並關閉」才會建立鏡頭。", "info");
+    this.updateControls();
+    this.render();
+    return true;
+  };
+
+  DrawingEditor.prototype.placeholderHasStrokes = function () {
+    return Boolean(this.drawing && this.drawing.layers.some(function (layer) {
+      return Array.isArray(layer.strokes) && layer.strokes.length > 0;
+    }));
+  };
+
+  DrawingEditor.prototype.createPlaceholderSnapshot = function () {
+    if (!this.drawing || !this.placeholderHasStrokes()) return null;
+    return drawingSnapshotForShotCreate(this.drawing);
+  };
+
+  DrawingEditor.prototype.assertCurrentPlaceholderTarget = function (pending) {
+    const project = this.getCurrentProjectSnapshot();
+    const lifecycle = this.model && typeof this.model.getLifecycle === "function" ? this.model.getLifecycle() : null;
+    const sceneExists = project && Array.isArray(project.scenes) && project.scenes.some(function (scene) {
+      return scene && scene.id === pending.sceneId;
+    });
+    if (!project || !sceneExists || project.revision !== pending.baseRevision || this.currentProjectRevision() !== pending.baseRevision ||
+        lifecycle && lifecycle.selectedProjectId !== pending.projectId) {
+      const error = new Error("專案或場次已更新；草稿尚未送出，請重新開啟佔位卡片。");
+      error.code = "DRAWING_TARGET_REVISION_CHANGED";
+      throw error;
+    }
+    if (lifecycle && (!lifecycle.writable || lifecycle.pendingCount > 0)) {
+      const error = new Error(lifecycle.readOnlyReason || "目前無法保存；草稿仍保留在畫布。");
+      error.code = lifecycle.writable ? "MODEL_COMMAND_PENDING" : "DRAWING_READ_ONLY";
+      throw error;
+    }
+  };
+
+  DrawingEditor.prototype.verifyPlaceholderCommit = function (pending, result) {
+    if (!result || typeof result.shotId !== "string" || !result.shotId ||
+        typeof result.drawingId !== "string" || !result.drawingId || !Number.isInteger(result.revision)) {
+      throw new Error("Model 未回傳可核對的 Shot、Drawing ID 與 Revision。");
+    }
+    const project = this.getCurrentProjectSnapshot();
+    const shot = project && project.shots && project.shots.find(function (item) { return item.id === result.shotId; });
+    const drawing = this.getDrawingSnapshot(result.drawingId, project);
+    if (!project || project.revision !== result.revision || !shot || shot.sceneId !== pending.sceneId ||
+        !Array.isArray(shot.drawingIds) || !shot.drawingIds.includes(result.drawingId) || !drawing ||
+        drawing.projectId !== pending.projectId || drawing.shotId !== result.shotId) {
+      throw new Error("鏡頭已建立，但目前無法核對 Shot 與 Drawing 關係；請重新載入確認，避免重複保存。");
+    }
+    const expected = pending.initialEdit;
+    const actual = drawingSnapshotForShotCreate(drawing);
+    if (JSON.stringify(actual) !== JSON.stringify(expected)) {
+      throw new Error("鏡頭已建立，但目前無法核對 Drawing 初始內容；請重新載入確認，避免重複保存。");
+    }
+    return { shotId: result.shotId, drawingId: result.drawingId, revision: result.revision, drawing: drawing };
+  };
+
+  DrawingEditor.prototype.adoptPlaceholderCommit = function (pending, result) {
+    pending.committed = true;
+    const committed = this.verifyPlaceholderCommit(pending, result);
+    this.capturedShotId = committed.shotId;
+    this.initialDrawing = { id: committed.drawingId };
+    this.drawing = committed.drawing;
+    this.isDraft = false;
+    this.isPlaceholder = false;
+    this.placeholderCommitted = true;
+    this.placeholder = null;
+    const activeKind = this.activeLayer() && this.activeLayer().kind || "scene";
+    this.layerId = (this.drawing.layers.find(function (layer) { return layer.kind === activeKind; }) || this.drawing.layers[0] || {}).id || null;
+    this.stage.style.aspectRatio = this.drawing.canvas.width + " / " + this.drawing.canvas.height;
+    if (this.onCreated && !pending.notified) {
+      pending.notified = true;
+      try { this.onCreated({ shotId: committed.shotId, drawingId: committed.drawingId, revision: committed.revision }); }
+      catch (_) { /* host observation must not affect a committed Model command */ }
+    }
+    return committed.drawing;
   };
 
   DrawingEditor.prototype.isEditable = function () {
     const layer = this.activeLayer();
     const hasCommand = this.tool === "eraser"
-      ? this.model && typeof this.model.eraseDrawingStroke === "function"
+      ? this.isPlaceholder || this.model && typeof this.model.eraseDrawingStroke === "function"
       : this.canCreateFromDraft() || this.model && typeof this.model.appendDrawingStroke === "function";
     const canVerifyTarget = this.model && (typeof this.model.getDrawing === "function" || typeof this.model.getProject === "function");
     return Boolean(this.writable && this.canQueueCommand() && hasCommand && canVerifyTarget && Number.isInteger(this.currentProjectRevision()) && this.backgroundReady && !this.backgroundFailure && this.drawing && layer && layer.visible && !layer.locked && !this.pendingOperation && !this.drawingBusy);
@@ -954,10 +1087,16 @@
   DrawingEditor.prototype.canClearActiveLayer = function () {
     const layer = this.activeLayer();
     const canVerifyTarget = this.model && (typeof this.model.getDrawing === "function" || typeof this.model.getProject === "function");
-    return Boolean(layer && layer.visible && !layer.locked && layer.strokes.length > 0 && !this.activeStroke && this.drawing && this.writable && this.canQueueCommand() && this.model && typeof this.model.clearDrawingLayer === "function" && canVerifyTarget && Number.isInteger(this.currentProjectRevision()) && this.backgroundReady && !this.backgroundFailure && !this.pendingOperation && !this.drawingBusy);
+    const canSave = this.isPlaceholder || this.model && typeof this.model.clearDrawingLayer === "function";
+    return Boolean(layer && layer.visible && !layer.locked && layer.strokes.length > 0 && !this.activeStroke && this.drawing && this.writable && this.canQueueCommand() && canSave && canVerifyTarget && Number.isInteger(this.currentProjectRevision()) && this.backgroundReady && !this.backgroundFailure && !this.pendingOperation && !this.drawingBusy);
   };
 
   DrawingEditor.prototype.canWriteHistory = function (kind) {
+    if (this.isPlaceholder) {
+      const available = kind === "redo" ? this.placeholderRedo.length > 0 : this.placeholderHistory.length > 0;
+      return Boolean(available && this.writable && this.canQueueCommand() && this.drawing && this.backgroundReady && !this.backgroundFailure &&
+        Number.isInteger(this.currentProjectRevision()) && !this.pendingOperation && !this.drawingBusy);
+    }
     const method = kind === "redo" ? "redo" : "undo";
     const canRedoDraft = this.isDraft && kind === "redo";
     return Boolean((!this.isDraft || canRedoDraft) && this.writable && this.canQueueCommand() && this.drawing && this.backgroundReady && !this.backgroundFailure && Number.isInteger(this.currentProjectRevision()) && !this.pendingOperation && !this.drawingBusy && this.model && typeof this.model[method] === "function");
@@ -1001,6 +1140,7 @@
   };
 
   DrawingEditor.prototype.canWriteBackgroundChange = function () {
+    if (this.isPlaceholder) return false;
     const canReadProject = this.model && typeof this.model.getProject === "function";
     const canReadAsset = this.model && (typeof this.model.getAsset === "function" || this.loadBackground || typeof this.model.getShotPhoto === "function");
     const canVerifyTarget = this.model && (typeof this.model.getDrawing === "function" || canReadProject);
@@ -1358,11 +1498,11 @@
               : !source
                 ? "選擇先前鏡頭後，可先檢視兩邊場景再確認。"
                 : "預覽會並排顯示來源與目標的場景筆跡；確認後只替換目標場景。";
-    const canWrite = Boolean(numbering.ok && source && this.drawing && targetScene && targetScene.visible && !targetScene.locked &&
+    const canWrite = Boolean(!this.isPlaceholder && numbering.ok && source && this.drawing && targetScene && targetScene.visible && !targetScene.locked &&
       this.writable && this.canQueueCommand() && canSaveReuse &&
       Number.isInteger(this.currentProjectRevision()) && this.backgroundReady && !this.backgroundFailure &&
       !this.activeStroke && !this.pendingOperation && !this.drawingBusy);
-    this.sceneReuseSelect.disabled = !numbering.ok || !this.writable || !sources.size || Boolean(this.pendingOperation) || this.drawingBusy;
+    this.sceneReuseSelect.disabled = this.isPlaceholder || !numbering.ok || !this.writable || !sources.size || Boolean(this.pendingOperation) || this.drawingBusy;
     this.sceneReuseButton.disabled = !canWrite;
     this.sceneReuseButton.setAttribute("aria-label", source ? "預覽「" + source.label + "」的場景圖層，確認後複製到目前鏡頭" : "預覽場景複製；請先選擇來源鏡頭");
     this.sceneReuseButton.title = reason;
@@ -1552,7 +1692,7 @@
     this.clearLayerButton.title = activeLayer ? "只清空目前作用圖層的全部筆跡；相片底圖和另一圖層不會改變" : "尚未載入作用圖層";
     this.toolButtons.forEach(function (control, tool) {
       const hasCommand = tool === "eraser"
-        ? this.model && typeof this.model.eraseDrawingStroke === "function"
+        ? this.isPlaceholder || this.model && typeof this.model.eraseDrawingStroke === "function"
         : this.canCreateFromDraft() || this.model && typeof this.model.appendDrawingStroke === "function";
       const canVerifyTarget = this.model && (typeof this.model.getDrawing === "function" || typeof this.model.getProject === "function");
       control.disabled = !this.drawing || !activeLayer || !this.writable || !this.canQueueCommand() || !hasCommand || !canVerifyTarget || !Number.isInteger(this.currentProjectRevision()) || !this.backgroundReady || Boolean(this.backgroundFailure) || Boolean(this.pendingOperation) || this.drawingBusy;
@@ -1570,19 +1710,24 @@
     this.zoomOutButton.setAttribute("aria-label", "縮小畫布，目前 " + zoomPercent + "%");
     this.zoomInButton.setAttribute("aria-label", "放大畫布，目前 " + zoomPercent + "%");
     this.fitCanvasButton.setAttribute("aria-label", "將畫布調整為適合檢視；目前 " + zoomPercent + "%");
-    this.undoButton.disabled = !this.canWriteHistory("undo") || !(typeof this.model.canUndo === "function" ? this.model.canUndo() : true);
-    this.redoButton.disabled = !this.canWriteHistory("redo") || !(typeof this.model.canRedo === "function" ? this.model.canRedo() : true);
+    this.undoButton.disabled = !this.canWriteHistory("undo") || (this.isPlaceholder
+      ? this.placeholderHistory.length === 0
+      : !(typeof this.model.canUndo === "function" ? this.model.canUndo() : true));
+    this.redoButton.disabled = !this.canWriteHistory("redo") || (this.isPlaceholder
+      ? this.placeholderRedo.length === 0
+      : !(typeof this.model.canRedo === "function" ? this.model.canRedo() : true));
     this.updateSceneReuseControls();
     this.backButton.disabled = Boolean(this.drawingBusy || this.pendingOperation);
-    this.retryButton.hidden = !this.pendingOperation || Boolean(this.pendingOperation.committed) || Boolean(this.pendingOperation.reloadRequired);
-    if (this.pendingOperation && this.pendingOperation.queued && (!this.model || typeof this.model.retryPending !== "function")) this.retryButton.hidden = true;
-    this.retryButton.disabled = !this.pendingOperation || Boolean(this.pendingOperation.queued && (!this.model || typeof this.model.retryPending !== "function")) || this.drawingBusy;
+    const placeholderReadRetry = Boolean(this.pendingOperation && this.pendingOperation.kind === "createShotWithDrawing" && this.pendingOperation.readFailed && this.pendingOperation.result);
+    this.retryButton.hidden = !this.pendingOperation || Boolean(this.pendingOperation.committed && !placeholderReadRetry) || Boolean(this.pendingOperation.reloadRequired);
+    if (this.pendingOperation && this.pendingOperation.queued && (!this.model || typeof this.model.retryPending !== "function") && !placeholderReadRetry) this.retryButton.hidden = true;
+    this.retryButton.disabled = !this.pendingOperation || Boolean(this.pendingOperation.queued && (!this.model || typeof this.model.retryPending !== "function") && !placeholderReadRetry) || this.drawingBusy;
     this.discardButton.hidden = !this.canDiscardFailedCandidate();
     this.discardButton.disabled = this.drawingBusy;
     this.reloadButton.hidden = !this.readDrawing || Boolean(this.drawing && !(this.pendingOperation && (this.pendingOperation.readFailed || this.pendingOperation.reloadRequired)));
     this.saveCloseButton.hidden = !this.onBack;
     this.saveCloseButton.disabled = this.closeBusy;
-    this.changeBackgroundButton.hidden = !this.model || !this.canCreateFromDraft() && typeof this.model.setDrawingBackground !== "function" || typeof this.model.getProject !== "function";
+    this.changeBackgroundButton.hidden = this.isPlaceholder || !this.model || !this.canCreateFromDraft() && typeof this.model.setDrawingBackground !== "function" || typeof this.model.getProject !== "function";
     this.changeBackgroundButton.disabled = !this.canOpenBackgroundChange();
     this.changeBackgroundButton.title = this.writable
       ? (this.drawing && this.drawing.backgroundAssetId ? "預覽並確認此鏡頭的新照片底圖；目前照片和筆跡不會被修改" : "預覽並確認此鏡頭的新照片底圖")
@@ -1601,7 +1746,9 @@
     const unavailableLayerFeatures = [];
     if (!this.model || typeof this.model.clearDrawingLayer !== "function") unavailableLayerFeatures.push("清空圖層功能尚未就緒");
     if (!this.model || typeof this.model.setDrawingLayerState !== "function") unavailableLayerFeatures.push("圖層顯示與鎖定功能尚未就緒");
-    this.featureNote.textContent = this.isDraft
+    this.featureNote.textContent = this.isPlaceholder
+      ? "這是尚未建立的鏡頭草稿；「儲存並關閉」會一併建立鏡頭與手繪內容，返回關閉會捨棄草稿。"
+      : this.isDraft
       ? "此鏡頭尚未建立手繪內容；返回鏡頭不會保存空白畫布。第一次繪製或調整設定時自動保存。"
       : unavailableLayerFeatures.length
       ? unavailableLayerFeatures.join("；") + "，相關操作已停用。"
@@ -1687,7 +1834,9 @@
     this.clearTouchInteraction(true);
     this.closeDialogStatus.textContent = this.pendingOperation || this.drawingBusy
       ? "目前有保存作業進行中；可選擇儲存並關閉，等待結果確認。"
-      : this.isDraft ? "空白畫布尚未建立 Drawing。" : "已完成的筆畫會逐筆自動保存。";
+      : this.isPlaceholder
+        ? this.placeholderHasStrokes() ? "鏡頭與手繪都尚未保存；「儲存並關閉」會一併建立，返回關閉會捨棄草稿。" : "尚未建立鏡頭；返回關閉或儲存並關閉都不會建立空白鏡頭。"
+        : this.isDraft ? "空白畫布尚未建立 Drawing。" : "已完成的筆畫會逐筆自動保存。";
     this.updateCloseDialogControls();
     if (this.closeDialog.open) return true;
     if (typeof this.closeDialog.showModal === "function") this.closeDialog.showModal();
@@ -1724,7 +1873,12 @@
     if (this.closeDialog.open) this.closeDialog.close();
     else this.closeDialog.removeAttribute("open");
     this.clearTouchInteraction(true);
-    this.onBack({ drawingId: this.isDraft ? null : this.drawing && this.drawing.id, shotId: this.capturedShotId, projectId: this.capturedProjectId });
+    const result = { drawingId: this.isDraft ? null : this.drawing && this.drawing.id, shotId: this.capturedShotId, projectId: this.capturedProjectId };
+    if (this.placeholder || this.placeholderCommitted) {
+      result.saved = Boolean(this.placeholderCommitted);
+      if (this.placeholderResult) result.revision = this.placeholderResult.revision;
+    }
+    this.onBack(result);
     return true;
   };
 
@@ -1754,6 +1908,33 @@
         return false;
       }
       if (this.pendingOperation) await this.retry();
+      if (this.isPlaceholder) {
+        if (this.pendingOperation) {
+          this.closeDialogStatus.textContent = "鏡頭尚未建立成功；草稿仍保留，請重試或取消保存作業。";
+          return false;
+        }
+        const initialEdit = this.createPlaceholderSnapshot();
+        if (initialEdit) {
+          const pending = {
+            kind: "createShotWithDrawing",
+            projectId: this.capturedProjectId,
+            sceneId: this.placeholder.sceneId,
+            initialPatch: clone(this.placeholder.initialShotPatch),
+            initialEdit: initialEdit,
+            baseRevision: this.placeholderBaseRevision,
+            queued: false
+          };
+          this.pendingOperation = pending;
+          await this.submitPlaceholderCreate(pending);
+          if (!this.placeholderCommitted || this.pendingOperation) {
+            this.closeDialogStatus.textContent = "鏡頭尚未確認保存；草稿仍保留在畫布。可重試同一保存。";
+            return false;
+          }
+        } else {
+          this.setStatus("沒有可保存的筆畫；尚未建立空白鏡頭。", "info");
+        }
+        return this.finishClose();
+      }
       if (this.drawingBusy) {
         while (this.drawingBusy && Date.now() - startedAt < 20000) {
           await new Promise(function (resolve) { setTimeout(resolve, 25); });
@@ -2146,6 +2327,16 @@
       return;
     }
     if (this.isDraft) {
+      if (this.isPlaceholder) {
+        this.recordPlaceholderEdit(function (drawing) {
+          const layer = drawing.layers.find(function (item) { return item.id === active.layerId; });
+          if (!layer) return;
+          layer.strokes.push(Object.assign({
+            id: "draft:" + this.capturedProjectId + ":stroke:" + (++this.placeholderStrokeSequence)
+          }, clone(draft)));
+        }.bind(this));
+        return;
+      }
       this.createFromDraft({ kind: "stroke", layerKind: currentLayer.kind, strokeDraft: clone(draft) });
       return;
     }
@@ -2179,6 +2370,12 @@
     const layer = this.findLayer(kind);
     if (!layer || !this.canWriteLayerState(kind)) return false;
     if (this.activeStroke) this.cancelActiveStroke("圖層設定已變更，未完成筆畫已取消。");
+    if (this.isPlaceholder) {
+      return this.recordPlaceholderEdit(function (drawing) {
+        const target = drawing.layers.find(function (item) { return item.kind === kind; });
+        if (target) Object.keys(patch).forEach(function (key) { target[key] = patch[key]; });
+      });
+    }
     if (this.isDraft) return this.createFromDraft({ kind: "layerState", layerKind: kind, patch: clone(patch) });
     const projectRevision = this.currentProjectRevision();
     if (!Number.isInteger(projectRevision)) {
@@ -2213,6 +2410,12 @@
       return false;
     }
     if (this.activeLayer() !== layer || !this.canClearActiveLayer()) return false;
+    if (this.isPlaceholder) {
+      return this.recordPlaceholderEdit(function (drawing) {
+        const target = drawing.layers.find(function (item) { return item.kind === layer.kind; });
+        if (target) target.strokes = [];
+      });
+    }
     const projectRevision = this.currentProjectRevision();
     if (!Number.isInteger(projectRevision)) {
       this.setStatus("目前無法確認編輯狀態；圖層未變更。", "error");
@@ -2246,6 +2449,13 @@
       }
     }
     if (!hit) return;
+    if (this.isPlaceholder) {
+      this.recordPlaceholderEdit(function (drawing) {
+        const target = drawing.layers.find(function (item) { return item.kind === layer.kind; });
+        if (target) target.strokes = target.strokes.filter(function (stroke) { return stroke.id !== hit.id; });
+      });
+      return;
+    }
     const projectRevision = this.currentProjectRevision();
     if (!Number.isInteger(projectRevision)) {
       this.setStatus("目前無法確認編輯狀態，無法使用橡皮擦。", "error");
@@ -2314,6 +2524,54 @@
     this.drawing = fresh;
     this.layerId = (fresh.layers.find(function (layer) { return layer.kind === activeKind; }) || fresh.layers[0] || {}).id || null;
     return fresh;
+  };
+
+  DrawingEditor.prototype.completePlaceholderCreate = async function (pending, result) {
+    this.adoptPlaceholderCommit(pending, result);
+    this.placeholderResult = { shotId: result.shotId, drawingId: result.drawingId, revision: result.revision };
+    this.pendingOperation = null;
+    this.setStatus("鏡頭與手繪已一併保存。", "saved");
+    this.updateControls();
+    await this.refreshBackground();
+    return true;
+  };
+
+  DrawingEditor.prototype.submitPlaceholderCreate = async function (pending) {
+    if (!pending || pending.kind !== "createShotWithDrawing" || this.drawingBusy) return false;
+    if (!this.model || typeof this.model.addShotWithDrawing !== "function") {
+      pending.error = new Error("目前無法原子建立鏡頭與手繪內容；草稿仍保留。請重新載入後再試。");
+      this.setStatus(pending.error.message, "error");
+      this.updateControls();
+      return false;
+    }
+    this.drawingBusy = true;
+    this.setStatus("正在一併保存鏡頭與手繪內容…", "saving");
+    this.updateControls();
+    this.render();
+    try {
+      this.assertCurrentPlaceholderTarget(pending);
+      pending.queued = true;
+      const result = await this.model.addShotWithDrawing(
+        pending.sceneId, clone(pending.initialPatch), clone(pending.initialEdit), pending.baseRevision
+      );
+      pending.result = clone(result);
+      return await this.completePlaceholderCreate(pending, result);
+    } catch (error) {
+      pending.error = error;
+      const lifecycle = this.model && typeof this.model.getLifecycle === "function" ? this.model.getLifecycle() : null;
+      if (lifecycle && lifecycle.pendingCount === 0 && lifecycle.phase !== "save_failed") pending.queued = false;
+      if (pending.committed) {
+        pending.readFailed = true;
+        this.setStatus("鏡頭已建立，但目前無法確認最新 Drawing；請重試確認，避免重複保存。", "error");
+      } else {
+        this.setStatus("鏡頭與手繪尚未保存：" + (error && error.message || "請重試同一保存。"), "error");
+      }
+      return false;
+    } finally {
+      this.drawingBusy = false;
+      this.updateControls();
+      this.render();
+    }
   };
 
   DrawingEditor.prototype.submitPending = async function () {
@@ -2636,6 +2894,39 @@
 
   DrawingEditor.prototype.retry = async function () {
     if (!this.pendingOperation || !this.model) return;
+    if (this.pendingOperation.kind === "createShotWithDrawing") {
+      const pendingPlaceholder = this.pendingOperation;
+      if (!pendingPlaceholder.queued && !(pendingPlaceholder.committed && pendingPlaceholder.result)) {
+        await this.submitPlaceholderCreate(pendingPlaceholder);
+        return;
+      }
+      if (!pendingPlaceholder.committed && typeof this.model.retryPending !== "function") return;
+      this.drawingBusy = true;
+      this.setStatus("正在確認並重試鏡頭與手繪保存…", "saving");
+      this.updateControls();
+      try {
+        let result = pendingPlaceholder.result;
+        if (!pendingPlaceholder.committed || !result) result = await this.model.retryPending();
+        if (result === false || !result) throw new Error("目前沒有可重試的保存；草稿仍保留，請重新載入確認。");
+        pendingPlaceholder.result = clone(result);
+        await this.completePlaceholderCreate(pendingPlaceholder, result);
+      } catch (error) {
+        pendingPlaceholder.error = error;
+        const lifecycle = this.model && typeof this.model.getLifecycle === "function" ? this.model.getLifecycle() : null;
+        if (lifecycle && lifecycle.pendingCount === 0 && lifecycle.phase !== "save_failed") pendingPlaceholder.queued = false;
+        if (pendingPlaceholder.committed) {
+          pendingPlaceholder.readFailed = true;
+          this.setStatus("鏡頭已建立，但目前仍無法確認 Drawing；請重新載入檢查。", "error");
+        } else {
+          this.setStatus("鏡頭與手繪仍未保存；請重試同一保存。", "error");
+        }
+      } finally {
+        this.drawingBusy = false;
+        this.updateControls();
+        this.render();
+      }
+      return;
+    }
     if (!this.pendingOperation.queued) {
       if (this.pendingOperation.kind === "history") {
         const kind = this.pendingOperation.historyKind;
@@ -2693,6 +2984,23 @@
 
   DrawingEditor.prototype.runHistory = async function (kind) {
     if (!this.canWriteHistory(kind)) return;
+    if (this.isPlaceholder) {
+      const activeKind = this.activeLayer() && this.activeLayer().kind;
+      if (kind === "undo") {
+        this.placeholderRedo.push(clone(this.drawing));
+        this.drawing = this.placeholderHistory.pop();
+      } else {
+        this.placeholderHistory.push(clone(this.drawing));
+        this.drawing = this.placeholderRedo.pop();
+      }
+      const activeLayer = this.findLayer(activeKind) || this.findLayer("scene") || this.drawing.layers[0];
+      this.layerId = activeLayer ? activeLayer.id : null;
+      this.placeholderDirty = true;
+      this.setStatus("草稿已" + (kind === "undo" ? "復原" : "重做") + "；按「儲存並關閉」才會建立鏡頭。", "info");
+      this.updateControls();
+      this.render();
+      return;
+    }
     const projectRevision = this.currentProjectRevision();
     const layer = this.activeLayer();
     if (!Number.isInteger(projectRevision) || !layer) return;

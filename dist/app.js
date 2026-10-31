@@ -86,6 +86,12 @@
   let productionTimelineProjectId = null;
   let productionTimelineError = null;
   let selectedShotId = null;
+  let shotPlaceholderContextKey = "";
+  let shotPlaceholderDraft = null;
+  const shotPlaceholderDrafts = new Map();
+  let shotPlaceholderPromotionPromise = null;
+  let shotPlaceholderMessage = "";
+  const shotPlaceholderComposingFields = new Set();
   let shotNumberResolution = null;
   let shotNumberResolutionKey = "";
   let shotNumberResolutionError = null;
@@ -264,6 +270,7 @@
       const reason = staleEntry ? "此手繪入口已離開目前鏡頭清單；請從目前鏡頭卡重新開啟。" : !drawingAvailable ? "手繪畫布尚未載入。" : existingDrawing ? "開啟此鏡頭的手繪 Drawing。" : canCreateDrawing ? "建立並編輯此鏡頭的 Drawing。" : locked ? "唯讀瀏覽；重新取得編輯權後才能建立 Drawing。" : "目前有保存命令待處理，完成保存後才能建立 Drawing。";
       button.title = reason; button.setAttribute("aria-description", reason);
     });
+    refreshShotPlaceholderControls($("#shot-list [data-shot-placeholder]"));
     lastReadonlyControlsKey = nextKey;
     return true;
   }
@@ -591,12 +598,12 @@
         ? '<p>專案資料尚未確認寫入。請重試保存或下載救援資料；目前專案與未提交內容都會保留。</p><div class="lifecycle-actions">' + gateButton("重試保存", "retry-pending", true) + gateButton("下載救援資料", "download-rescue", false) + '</div>'
         : '<p>沒有載入示範資料，也沒有修改舊稿。請檢查錯誤、下載原始資料，或明確建立新的空白專案；建立新案不會覆寫舊稿。</p><div class="lifecycle-actions">' + gateButton("重新嘗試", "retry-initialize", true) + (preview && preview.sourceRaw != null || lifecycle.sourceRaw != null ? gateButton("下載舊稿原始資料", "download-legacy", false) : '') + '</div>';
       if (phase === "error" && !isReady) {
-        body += '<form class="lifecycle-create-form" id="lifecycle-create-form"><label for="lifecycle-project-title">另建空白專案</label><input id="lifecycle-project-title" name="title" maxlength="120" placeholder="待命名專案"><div class="lifecycle-actions"><button class="primary-button" type="submit" name="createKind" value="blank">建立空白專案</button></div></form>';
+        body += '<form class="lifecycle-create-form" id="lifecycle-create-form"><label for="lifecycle-project-title">新建專案</label><input id="lifecycle-project-title" name="title" maxlength="120" placeholder="待命名專案"><div class="lifecycle-actions"><button class="primary-button" type="submit" name="createKind" value="blank">新建專案</button></div></form>';
       }
     } else if (phase === "choosing" || lifecycleGateForced) {
       title = "選擇要開啟的專案";
       const rows = projects.length ? '<div class="lifecycle-project-list">' + projects.map((project) => '<button type="button" class="lifecycle-project" data-lifecycle-action="select-project" data-project-id="' + escapeHtml(project.projectId || project.id) + '"><span><strong>' + escapeHtml(project.title || "未命名專案") + '</strong><small>revision ' + escapeHtml(project.revision == null ? 0 : project.revision) + (String(project.projectId || "") === String(lifecycle.selectedProjectId || "") ? ' · 目前專案' : '') + '</small></span><span class="project-arrow" aria-hidden="true">›</span></button>').join("") + '</div>' : '<p>目前還沒有已保存的專案。</p>';
-      body = rows + '<form class="lifecycle-create-form" id="lifecycle-create-form"><label for="lifecycle-project-title">建立新專案</label><input id="lifecycle-project-title" name="title" maxlength="120" placeholder="待命名專案"><div class="lifecycle-actions"><button class="primary-button" type="submit" name="createKind" value="blank">建立空白專案</button><button class="outline-button" type="submit" name="createKind" value="demo">建立示範專案</button></div></form><div class="lifecycle-actions">' + gateButton("預覽舊版草稿", "preview-migration", false) + (lifecycleGateForced ? gateButton("返回目前專案", "return-project", false) : '') + '</div>';
+      body = rows + '<form class="lifecycle-create-form" id="lifecycle-create-form"><label for="lifecycle-project-title">新建專案</label><input id="lifecycle-project-title" name="title" maxlength="120" placeholder="待命名專案"><div class="lifecycle-actions"><button class="primary-button" type="submit" name="createKind" value="blank">新建專案</button><button class="outline-button" type="submit" name="createKind" value="demo">建立示範專案</button></div></form><div class="lifecycle-actions">' + (lifecycleGateForced ? gateButton("返回目前專案", "return-project", false) : '') + '</div>';
     } else if (phase === "needs_migration_confirmation" || preview && phase !== "saving") {
       title = "確認舊版草稿遷移";
       const report = preview && (preview.migrationReport || preview.report || preview);
@@ -608,11 +615,27 @@
       body = '<p>這是唯讀預覽。只有按下確認後，才會建立新的專案；來源舊稿會保留。</p><div class="lifecycle-report"><strong>' + escapeHtml(previewTitle) + '</strong><ul><li>來源 revision：' + escapeHtml(sourceRevision == null ? "未提供" : sourceRevision) + '</li><li>場次：' + escapeHtml(count("sceneCount", "—")) + '</li><li>鏡頭：' + escapeHtml(count("shotCount", "—")) + '</li><li>拍攝日：' + escapeHtml(count("shootingDayCount", "—")) + '</li><li>排程項目：' + escapeHtml(count("scheduleEntryCount", "—")) + '</li></ul>' + (warnings.length ? '<div class="lifecycle-warning"><strong>請檢視警告</strong><ul>' + warnings.map((warning) => '<li>' + escapeHtml(typeof warning === "string" ? warning : warning.message || warning.code || JSON.stringify(warning)) + '</li>').join("") + '</ul></div>' : '<div class="lifecycle-warning">來源 revision 會記錄於新專案；新專案從 revision 0 開始。</div>') + '</div><form class="lifecycle-create-form" id="lifecycle-migration-form"><label for="lifecycle-migration-title">新專案名稱</label><input id="lifecycle-migration-title" name="title" maxlength="120" placeholder="待命名專案" value="' + escapeHtml(previewTitle) + '"><div class="lifecycle-actions"><button class="primary-button" type="submit">確認建立新專案</button><button class="outline-button" type="button" data-lifecycle-action="cancel-migration">取消遷移</button></div></form>';
     } else if (phase === "needs_project_creation") {
       title = "建立第一個專案";
-      body = '<p>資料庫目前沒有已保存專案。你可以建立空白專案，也可以先唯讀預覽舊版草稿。</p><form class="lifecycle-create-form" id="lifecycle-create-form"><label for="lifecycle-project-title">專案名稱</label><input id="lifecycle-project-title" name="title" maxlength="120" placeholder="待命名專案"><div class="lifecycle-actions"><button class="primary-button" type="submit" name="createKind" value="blank">建立空白專案</button><button class="outline-button" type="submit" name="createKind" value="demo">建立示範專案</button><button class="outline-button" type="button" data-lifecycle-action="preview-migration">預覽舊版草稿</button></div></form>';
+      body = '<p>資料庫目前沒有已保存專案。你可以新建專案，或建立示範專案。</p><form class="lifecycle-create-form" id="lifecycle-create-form"><label for="lifecycle-project-title">專案名稱</label><input id="lifecycle-project-title" name="title" maxlength="120" placeholder="待命名專案"><div class="lifecycle-actions"><button class="primary-button" type="submit" name="createKind" value="blank">新建專案</button><button class="outline-button" type="submit" name="createKind" value="demo">建立示範專案</button></div></form>';
     }
     const packageApiReady = !!(model && typeof model.previewCompletePackage === "function" && typeof model.importCompletePackage === "function");
     const packageGateEnabled = packageApiReady && ["choosing", "needs_project_creation", "needs_migration_confirmation", "ready", "read_only"].includes(phase);
-    body += '<div class="lifecycle-actions package-gate-actions"><button type="button" class="outline-button" data-lifecycle-action="import-complete-package" ' + (packageGateEnabled ? "" : "disabled") + '>匯入完整專案 ZIP</button></div><p class="package-gate-note">匯入前會檢查封包；確認後只新增專案，不覆寫或切換現有專案。</p>';
+    const driveCapability = kinoDriveCapability();
+    const driveImportBlockReason = !packageApiReady
+      ? "完整專案 ZIP 預覽功能尚未載入。"
+      : !packageGateEnabled
+        ? "本機專案資料庫尚未準備好。"
+      : !driveCapability.available
+        ? driveCapability.message
+        : googleDriveOperation
+          ? "Google Drive 操作進行中，請等候完成。"
+          : completePackageImportSession && completePackageImportSession.status === "importing"
+            ? "完整專案 ZIP 正在匯入。"
+            : "";
+    const driveImportEnabled = packageGateEnabled && !driveImportBlockReason;
+    body += '<div class="lifecycle-actions package-gate-actions"><button type="button" class="outline-button" data-lifecycle-action="import-complete-package" ' + (packageGateEnabled ? "" : "disabled") + '>匯入完整專案 ZIP</button><button type="button" class="outline-button" data-lifecycle-action="import-google-drive" title="' + escapeHtml(driveImportBlockReason) + '" ' + (driveImportEnabled ? "" : "disabled") + '>從 Google Drive 匯入專案</button></div><p class="package-gate-note">ZIP 匯入會先完整驗證；確認後只新增專案，不覆寫或切換目前專案。</p><p class="package-gate-note" role="status" data-kind="' + escapeHtml(googleDriveStatus && googleDriveStatus.kind || (driveImportBlockReason ? "error" : "info")) + '">' + escapeHtml(googleDriveStatus && googleDriveStatus.text || (driveImportBlockReason || "Google Drive 匯入只會讀取你手動選取的 ZIP；取消不會修改本機專案。")) + '</p>';
+    if (googleDriveOperation && googleDriveOperation.kind === "import") {
+      body += '<div class="lifecycle-actions package-gate-actions"><button type="button" class="outline-button" data-lifecycle-action="cancel-drive-import" ' + (googleDriveOperation.cancelable ? "" : "disabled") + '>' + (googleDriveOperation.cancelable ? "取消 Google Drive 匯入" : "正在取消 Google Drive 匯入…") + '</button></div>';
+    }
     if (error) body += '<div class="lifecycle-error"><strong>' + escapeHtml(error.code || "UNKNOWN_ERROR") + '</strong><br>' + escapeHtml(error.message || "發生未分類錯誤。") + '</div>';
     if (lifecycleGateForced && phase !== "choosing") body += '<div class="lifecycle-actions">' + gateButton("返回目前專案", "return-project", false) + '</div>';
     content.innerHTML = '<p class="lifecycle-kicker">本機專案 · ' + escapeHtml(phase.replaceAll("_", " ")) + '</p><h1 id="lifecycle-title">' + escapeHtml(title) + '</h1>' + body;
@@ -1989,6 +2012,7 @@
     return true;
   }
   function photoTargetTitle(session) {
+    if (session && session.mode === "new-shot") return "新鏡頭草稿";
     const shot = state && state.projectId === session.projectId && state.shots.find((item) => item.id === session.shotId);
     return shot ? shotNumberWithQuotedTitle(shot) : "指定鏡頭";
   }
@@ -2006,7 +2030,7 @@
     }
     const sameProject = !!(state && state.projectId === session.projectId);
     const policy = photoImportPolicy();
-    const statusText = session.status === "save_failed" ? "照片與裁切尚未保存；候選檔和目標鏡頭仍保留。" : session.status === "reconcile_required" ? "保存結果仍待 Model 核對；請使用下方按鈕重試原命令，不要重新選檔。" : session.status === "recovery_required" ? "保存已停止；請先重新取得編輯權或重新載入比對，再決定後續操作。" : session.status === "failed" ? "照片尚未保存；請查看錯誤並重新選取。" : "照片資料仍保留，尚未完成。";
+    const statusText = session.status === "save_failed" ? (session.mode === "new-shot" ? "新鏡頭、照片與裁切尚未保存；候選仍保留，鏡頭尚未建立。" : "照片與裁切尚未保存；候選檔和目標鏡頭仍保留。") : session.status === "reconcile_required" ? "保存結果仍待 Model 核對；請使用下方按鈕重試原命令，不要重新選檔。" : session.status === "recovery_required" ? "保存已停止；請先重新取得編輯權或重新載入比對，再決定後續操作。" : session.status === "failed" ? "照片尚未保存；請查看錯誤並重新選取。" : "照片資料仍保留，尚未完成。";
     const files = session.files.map((file) => '<li>' + escapeHtml(file.name || "未命名檔案") + ' <span>' + Math.ceil((file.size || 0) / 1024) + ' KB</span></li>').join("");
     const progress = session.progress ? '<p class="shot-photo-import-progress" aria-live="polite">' + escapeHtml(session.progress) + '</p>' : '';
     const error = session.error ? '<p class="shot-photo-import-error" role="alert">' + escapeHtml((session.error.code ? session.error.code + ' · ' : '') + (session.error.message || "照片匯入失敗。")) + '</p>' : '';
@@ -2053,6 +2077,7 @@
     if (!session || photoImportSession !== session || session.projectGeneration !== photoCropProjectGeneration) return false;
     const project = currentCanonicalPhotoProject(session.projectId);
     if (!project || project.projectId !== session.projectId || requireBaseRevision && project.revision !== session.startRevision) return false;
+    if (session.mode === "new-shot") return !!(session.sceneId && project.scenes.some((scene) => scene.id === session.sceneId));
     const shot = Array.isArray(project.shots) && project.shots.find((item) => item.id === session.shotId);
     return !!(shot && Array.isArray(shot.assetIds) && JSON.stringify(shot.assetIds) === JSON.stringify(session.initialAssetIds));
   }
@@ -2077,7 +2102,7 @@
     }
     if (!photoImportSessionIsCurrent(session, true)) {
       session.status = "failed";
-      session.error = { code: "PHOTO_IMPORT_STALE", message: "專案或鏡頭資料已更新；照片沒有寫入，請重新選取。" };
+      session.error = { code: session.mode === "new-shot" ? "PHOTO_TARGET_REVISION_CHANGED" : "PHOTO_IMPORT_STALE", message: "專案或目標資料已更新；照片沒有寫入，請重新選取。" };
       renderPhotoImportBanner();
       return;
     }
@@ -2122,6 +2147,35 @@
   function handleShotPhotoPickerChange(input) {
     const target = photoPickerTarget; photoPickerTarget = null;
     const files = Array.from(input.files || []); input.value = "";
+    if (target && target.placeholder) {
+      if (!files.length) return;
+      if (!state || state.projectId !== target.projectId || !state.chapters.some((chapter) => chapter.id === target.sceneId)) {
+        message("專案或場次已切換；照片沒有寫入，也沒有建立鏡頭。", true); return;
+      }
+      if (files.length !== 1) { message("每個鏡頭一次只選取一張照片；沒有建立鏡頭。", true); return; }
+      const policy = photoImportPolicy();
+      if (policy && policy.maxBytes !== null && files[0].size > policy.maxBytes) { message("照片超過目前匯入大小上限；沒有建立鏡頭。", true); return; }
+      const session = {
+        id: ++photoImportSessionSequence,
+        ...target,
+        mode: "new-shot",
+        shotId: null,
+        files: [files[0]],
+        initialAssetIds: [],
+        initialPrimaryCrop: null,
+        status: "cropping",
+        progress: "",
+        error: null,
+        savedAssetIds: [],
+        savedAssetId: null,
+        importResult: null,
+        crop: null,
+        editor: null
+      };
+      photoImportSession = session;
+      startShotPhotoImportCrop(session);
+      return;
+    }
     if (!target || !files.length) return;
     const policy = photoImportPolicy();
     const session = { id: ++photoImportSessionSequence, ...target, files: files.slice(0, 1), status: "cropping", progress: "", error: null, savedAssetIds: [], savedAssetId: null, importResult: null, crop: null, editor: null };
@@ -2164,6 +2218,37 @@
   async function finishPhotoImportSession(session, result, retried) {
     if (photoImportSession !== session) return false;
     const canonical = refreshPhotoCanonicalState(session);
+    if (session.mode === "new-shot") {
+      const shotId = result && result.shotId;
+      const shot = canonical && canonical.shots.find((item) => item.id === shotId);
+      const committedIds = [result && result.assetId, ...(result && result.addedAssetIds || []), ...(result && result.duplicateAssetIds || []), ...session.savedAssetIds].filter(Boolean);
+      const assetId = committedIds.find((candidate) => shot && Array.isArray(shot.assetIds) && shot.assetIds.includes(candidate)) || null;
+      if (!shot || shot.chapterId !== session.sceneId || !Array.isArray(shot.assetIds) || shot.assetIds.length !== 1 || !assetId || !shot.assetIds.includes(assetId)) {
+        throw Object.assign(new Error("Model 尚未確認新鏡頭與單張照片已一併保存；候選仍保留。"), { code: "SHOT_PHOTO_COMMIT_NOT_VISIBLE" });
+      }
+      if (!photoCropsEqual(photoCropForShot(shot, assetId), session.crop)) {
+        throw Object.assign(new Error("Model 尚未確認照片與裁切在同一命令保存；候選仍保留。"), { code: "PHOTO_CROP_NOT_VISIBLE" });
+      }
+      session.shotId = shotId;
+      session.savedAssetId = assetId;
+      session.importResult = result || null;
+      const contextKey = session.contextKey;
+      const emptyDraft = { title: "", visual: "", script: "", super: "", sound: "", move: "", tags: "", duration: "" };
+      shotPlaceholderDrafts.set(contextKey, emptyDraft);
+      const sameDraftContext = shotPlaceholderContextKey === contextKey && state && state.projectId === session.projectId;
+      if (sameDraftContext) {
+        shotPlaceholderDraft = emptyDraft;
+        shotPlaceholderMessage = "";
+        selectedShotId = shotId;
+        activeChapterId = session.sceneId;
+      }
+      photoImportSession = null;
+      renderPhotoImportBanner();
+      renderAll();
+      const duplicateCount = result && result.duplicateAssetIds ? result.duplicateAssetIds.length : 0;
+      message(duplicateCount ? "照片已保存；新鏡頭已建立並引用專案中的既有原圖。" : "照片與裁切已保存；新鏡頭已建立。");
+      return true;
+    }
     const shot = canonical && canonical.shots.find((item) => item.id === session.shotId);
     if (!shot) throw Object.assign(new Error("原目標鏡頭已不存在；候選照片仍保留。"), { code: "SHOT_NOT_FOUND" });
     let committedIds = [];
@@ -2199,12 +2284,15 @@
     session.crop = crop == null ? null : { x: crop.x, y: crop.y, width: crop.width, height: crop.height };
     session.status = "importing"; session.error = null; session.progress = "等待照片驗證…"; renderPhotoImportBanner();
     const options = { crop: session.crop, onProgress: (event) => updatePhotoImportProgress(session, event) };
+    if (session.mode === "new-shot") options.expectedRevision = session.startRevision;
     try {
       const result = session.savedAssetId
         ? session.importResult
-        : await withMutation(() => session.mode === "replace"
-          ? model.replaceShotPhoto(session.shotId, session.previousAssetId, session.files[0], options)
-          : model.addShotPhotos(session.shotId, session.files, options));
+        : await withMutation(() => session.mode === "new-shot"
+          ? model.addShotWithPhoto(session.sceneId, session.files[0], session.initialPatch || {}, options)
+          : session.mode === "replace"
+            ? model.replaceShotPhoto(session.shotId, session.previousAssetId, session.files[0], options)
+            : model.addShotPhotos(session.shotId, session.files, options));
       session.importResult = result || session.importResult;
       await finishPhotoImportSession(session, result, false);
       return true;
@@ -2259,6 +2347,14 @@
     if (action === "cancel") { clearPhotoImportSession(); return; }
     if (action === "reselect") {
       if (!session) return;
+      if (session.mode === "new-shot") {
+        const card = $("#shot-list [data-shot-placeholder]");
+        const canReselect = state && state.projectId === session.projectId && shotPlaceholderContextKey === session.contextKey && card && card.dataset.placeholderSceneId === session.sceneId;
+        photoImportSession = null; renderPhotoImportBanner();
+        if (!canReselect) { message("請切回原專案與場次，再從尾端草稿重新選取照片；沒有建立鏡頭。", true); return; }
+        openShotPlaceholderPhotoPicker(card);
+        return;
+      }
       const previous = { shotId: session.shotId };
       photoImportSession = null; renderPhotoImportBanner();
       openShotPhotoPicker({ dataset: { shotId: previous.shotId }, closest: () => null });
@@ -2292,6 +2388,216 @@
     $("#chapter-list").innerHTML = entries.map((chapter) => '<div class="chapter-row ' + (chapter.id === 'all' ? 'is-all' : '') + '"><button class="chapter-item ' + (activeChapterId === chapter.id ? "is-active" : "") + '" data-chapter="' + escapeHtml(chapter.id) + '"><span class="chapter-bullet"></span>' + (chapter.id === "all" ? "" : '<span class="chapter-label">場次</span><span class="chapter-number">' + (state.chapters.findIndex(item => item.id === chapter.id) + 1) + '</span>') + '<span class="chapter-name">' + escapeHtml(chapter.title) + '</span><span class="chapter-quantity">' + chapter.count + '</span></button>' + (chapter.id === 'all' ? '' : '<button class="scene-edit-button" data-action="edit-scene" data-scene-id="' + escapeHtml(chapter.id) + '" aria-label="編輯' + escapeHtml(sceneNumber(chapter.id)) + '" title="編輯場次名稱">編輯</button>') + '</div>').join("");
     $("#chapter-count").textContent = state.chapters.length;
   }
+  const SHOT_PLACEHOLDER_TEXT_FIELDS = ["title", "visual", "script", "super", "sound", "move", "tags"];
+  function shotPlaceholderSceneId() {
+    if (!state || !Array.isArray(state.chapters) || !state.chapters.length) return null;
+    return activeChapterId !== "all" && state.chapters.some((chapter) => chapter.id === activeChapterId)
+      ? activeChapterId
+      : state.chapters[0].id;
+  }
+  function ensureShotPlaceholderDraft(sceneId) {
+    const key = sceneId && state ? String(state.projectId) + "\u0000" + String(sceneId) : "";
+    if (key !== shotPlaceholderContextKey) {
+      shotPlaceholderContextKey = key;
+      if (key && !shotPlaceholderDrafts.has(key)) shotPlaceholderDrafts.set(key, { title: "", visual: "", script: "", super: "", sound: "", move: "", tags: "", duration: "" });
+      shotPlaceholderDraft = key ? shotPlaceholderDrafts.get(key) : null;
+      shotPlaceholderMessage = "";
+    }
+    if (!shotPlaceholderDraft && key) {
+      shotPlaceholderDraft = { title: "", visual: "", script: "", super: "", sound: "", move: "", tags: "", duration: "" };
+      shotPlaceholderDrafts.set(key, shotPlaceholderDraft);
+    }
+    return key;
+  }
+  function shotPlaceholderAssessment() {
+    const patch = {};
+    let hasText = false;
+    SHOT_PLACEHOLDER_TEXT_FIELDS.forEach((key) => {
+      const value = String(shotPlaceholderDraft && shotPlaceholderDraft[key] || "");
+      if (value.replace(/[\s\u200B\uFEFF]/gu, "")) {
+        hasText = true;
+        patch[key] = value;
+      }
+    });
+    const rawDuration = String(shotPlaceholderDraft && shotPlaceholderDraft.duration || "").trim();
+    let positiveDuration = false;
+    if (rawDuration) {
+      const duration = Number(rawDuration);
+      if (!Number.isFinite(duration) || duration < 0 || Math.abs(duration * 10 - Math.round(duration * 10)) > 1e-8) {
+        return { valid: false, meaningful: false, patch, error: "秒數需為大於或等於 0 的數值，最多一位小數。" };
+      }
+      patch.duration = duration;
+      positiveDuration = duration > 0;
+    }
+    return { valid: true, meaningful: hasText || positiveDuration, patch, error: "" };
+  }
+  function shotPlaceholderCardMarkup() {
+    const sceneId = shotPlaceholderSceneId();
+    if (!sceneId) return "";
+    ensureShotPlaceholderDraft(sceneId);
+    const modeClass = shotView === "gallery" ? "is-gallery" : "is-list";
+    const readonly = isReadOnly();
+    const disabled = readonly ? " disabled" : "";
+    const canCreatePhoto = !!(photoImportPolicy() && model && typeof model.addShotWithPhoto === "function" && window.DirectorStoryboardPhotoCropEditor && typeof window.DirectorStoryboardPhotoCropEditor.mount === "function");
+    const canCreateDrawing = !!(drawingUiAvailable() && model && typeof model.addShotWithDrawing === "function");
+    const value = (key) => escapeHtml(String(shotPlaceholderDraft[key] == null ? "" : shotPlaceholderDraft[key]));
+    const assessment = shotPlaceholderAssessment();
+    return '<article class="shot-card shot-placeholder-card ' + modeClass + '" data-shot-placeholder="true" data-placeholder-project-id="' + escapeHtml(state.projectId) + '" data-placeholder-scene-id="' + escapeHtml(sceneId) + '" aria-label="新增鏡頭草稿">' +
+      '<div class="shot-art-wrap"><div class="shot-thumb shot-placeholder-thumb" aria-hidden="true"><span class="shot-placeholder-plus">＋</span><span class="shot-placeholder-thumb-label">輸入內容建立鏡頭</span></div></div>' +
+      '<div class="shot-number"><span class="shot-placeholder-number">＋　待新增</span></div>' +
+      '<div class="field-group shot-inline-field shot-title-field"><label class="field-label" for="shot-placeholder-title">鏡頭標題</label><input id="shot-placeholder-title" class="shot-inline-title" type="text" data-shot-placeholder-field="title" aria-label="新鏡頭標題" value="' + value("title") + '" placeholder="輸入鏡頭標題" autocomplete="off"' + disabled + '></div>' +
+      '<div class="field-group shot-inline-field shot-visual-field"><label class="field-label" for="shot-placeholder-visual">畫面描述</label><textarea id="shot-placeholder-visual" class="shot-inline-visual" data-shot-placeholder-field="visual" aria-label="新鏡頭畫面描述" rows="2" placeholder="描述畫面、人物動作與視覺重點…"' + disabled + '>' + value("visual") + '</textarea></div>' +
+      '<div class="shot-card-text-preview shot-card-script-preview"><label class="shot-preview-label" for="shot-placeholder-script"><strong>VO</strong><span>台詞／旁白</span></label><textarea id="shot-placeholder-script" class="shot-preview-text shot-inline-script" data-shot-placeholder-field="script" aria-label="新鏡頭台詞或旁白" rows="2" placeholder="輸入台詞或旁白…"' + disabled + '>' + value("script") + '</textarea></div>' +
+      '<div class="shot-card-text-preview shot-card-super-preview"><label class="shot-preview-label" for="shot-placeholder-super"><strong>SUPER</strong><span>字卡</span></label><textarea id="shot-placeholder-super" class="shot-preview-text shot-inline-super" data-shot-placeholder-field="super" aria-label="新鏡頭字卡" rows="2" placeholder="輸入畫面字卡…"' + disabled + '>' + value("super") + '</textarea></div>' +
+      '<div class="field-group shot-inline-field shot-duration-field"><label class="field-label" for="shot-placeholder-duration">影片秒數</label><div class="shot-duration-control"><input id="shot-placeholder-duration" class="shot-inline-duration" type="text" inputmode="decimal" data-shot-placeholder-field="duration" aria-label="新鏡頭影片秒數" value="' + value("duration") + '" placeholder="0" autocomplete="off"' + disabled + '><span class="shot-duration-unit">秒</span></div><span class="shot-duration-estimate">未估</span></div>' +
+      '<details class="shot-placeholder-extra"><summary>其他鏡頭資料</summary><div class="shot-placeholder-extra-fields"><label>聲音設計<textarea class="textarea-field" data-shot-placeholder-field="sound" placeholder="環境音、音樂或轉場…"' + disabled + '>' + value("sound") + '</textarea></label><label>景別／運鏡<input class="text-field" type="text" data-shot-placeholder-field="move" value="' + value("move") + '" placeholder="例如：中景・推近"' + disabled + '></label><label>標籤<input class="text-field" type="text" data-shot-placeholder-field="tags" value="' + value("tags") + '" placeholder="以頓號分隔，例如：人物、黃昏"' + disabled + '></label></div></details>' +
+      '<div class="shot-photo-actions shot-placeholder-actions"><span class="shot-placeholder-media-note">' + (canCreatePhoto ? "選擇照片後，確認裁切時才建立鏡頭。" : "照片保存流程尚未載入。") + (canCreateDrawing ? " 手繪按下「儲存並關閉」時才建立鏡頭；返回會捨棄畫布。" : " 手繪保存流程尚未載入。") + '</span>' + (canCreatePhoto ? '<button type="button" class="outline-button" data-placeholder-action="photo"' + disabled + '>選擇照片</button>' : '') + (canCreateDrawing ? '<button type="button" class="outline-button" data-placeholder-action="drawing"' + disabled + '>手繪</button>' : '') + '<button type="button" class="primary-button" data-placeholder-action="promote"' + (disabled || !assessment.valid || !assessment.meaningful || shotPlaceholderPromotionPromise ? " disabled" : "") + '>加入鏡頭</button></div>' +
+      '<div class="shot-placeholder-status" role="status" aria-live="polite" data-kind="' + (shotPlaceholderMessage || shotPlaceholderAssessment().error ? "error" : "info") + '">' + escapeHtml(shotPlaceholderMessage || shotPlaceholderAssessment().error || "輸入文字或大於 0 的秒數後，才會建立鏡頭。空白與 0 秒會保留為草稿。") + '</div>' +
+      '</article>';
+  }
+  function refreshShotPlaceholderControls(card) {
+    if (!card || !card.isConnected || !card.matches("[data-shot-placeholder]")) return;
+    const assessment = shotPlaceholderAssessment();
+    const locked = isReadOnly() || !!shotPlaceholderPromotionPromise;
+    card.querySelectorAll("[data-shot-placeholder-field],[data-placeholder-action]").forEach((field) => { field.disabled = locked; });
+    const promote = card.querySelector('[data-placeholder-action="promote"]');
+    if (promote) promote.disabled = isReadOnly() || !assessment.valid || !assessment.meaningful || !!shotPlaceholderPromotionPromise;
+    const photo = card.querySelector('[data-placeholder-action="photo"]');
+    if (photo) photo.disabled = isReadOnly() || !assessment.valid || !!shotPlaceholderPromotionPromise;
+    const drawing = card.querySelector('[data-placeholder-action="drawing"]');
+    if (drawing) drawing.disabled = isReadOnly() || !assessment.valid || !!shotPlaceholderPromotionPromise || !!photoImportSession;
+    const status = card.querySelector(".shot-placeholder-status");
+    if (status) {
+      const text = shotPlaceholderMessage || assessment.error || (assessment.meaningful
+        ? "輸入完成後移開此卡片，或選擇「加入鏡頭」保存。"
+        : "輸入文字或大於 0 的秒數後，才會建立鏡頭。空白與 0 秒會保留為草稿。");
+      status.textContent = text;
+      status.dataset.kind = shotPlaceholderMessage || assessment.error ? "error" : "info";
+    }
+  }
+  function handleShotPlaceholderInput(field) {
+    const card = field && field.closest && field.closest("[data-shot-placeholder]");
+    const key = field && field.dataset && field.dataset.shotPlaceholderField;
+    if (!card || !key || card.dataset.placeholderProjectId !== (state && state.projectId) || card.dataset.placeholderSceneId !== shotPlaceholderSceneId()) return false;
+    if (!shotPlaceholderDraft) ensureShotPlaceholderDraft(card.dataset.placeholderSceneId);
+    if (shotPlaceholderContextKey !== String(state.projectId) + "\u0000" + String(card.dataset.placeholderSceneId)) return false;
+    shotPlaceholderDraft[key] = field.value;
+    shotPlaceholderDrafts.set(shotPlaceholderContextKey, shotPlaceholderDraft);
+    shotPlaceholderMessage = "";
+    if (key === "duration") {
+      const estimate = card.querySelector(".shot-duration-estimate");
+      const raw = String(field.value || "").trim();
+      const duration = Number(raw);
+      if (estimate) estimate.hidden = !!raw && Number.isFinite(duration) && duration > 0 && Math.abs(duration * 10 - Math.round(duration * 10)) < 1e-8;
+    }
+    refreshShotPlaceholderControls(card);
+    return true;
+  }
+  function openShotPlaceholderPhotoPicker(card) {
+    if (isReadOnly()) { message("目前為唯讀瀏覽；請重新取得編輯權後再選取照片。", true); return; }
+    if (!photoImportPolicy() || !model || typeof model.addShotWithPhoto !== "function" || typeof model.getShotPhoto !== "function" || !window.DirectorStoryboardPhotoCropEditor || typeof window.DirectorStoryboardPhotoCropEditor.mount !== "function") {
+      message("新鏡頭照片保存流程尚未載入；沒有建立鏡頭。", true); return;
+    }
+    if (photoImportSession) { message("目前仍有待處理照片；請先完成、重試或清除候選。", true); return; }
+    if (!card || card.dataset.placeholderProjectId !== (state && state.projectId) || card.dataset.placeholderSceneId !== shotPlaceholderSceneId()) return;
+    const assessment = shotPlaceholderAssessment();
+    if (!assessment.valid) { shotPlaceholderMessage = assessment.error; refreshShotPlaceholderControls(card); return; }
+    const input = $("#shot-photo-picker");
+    if (!input || !configureShotPhotoPicker()) { message("照片匯入政策尚未載入，無法開啟檔案選擇器。", true); return; }
+    photoPickerTarget = {
+      placeholder: true,
+      projectId: state.projectId,
+      projectTitle: state.title || "未命名專案",
+      sceneId: card.dataset.placeholderSceneId,
+      initialPatch: assessment.patch,
+      contextKey: shotPlaceholderContextKey,
+      startRevision: state.revision,
+      projectGeneration: photoCropProjectGeneration
+    };
+    input.value = "";
+    input.click();
+  }
+  function openShotPlaceholderDrawingRoute(card) {
+    if (isReadOnly()) { message("目前為唯讀瀏覽；請重新取得編輯權後再開啟手繪。", true); return; }
+    if (!drawingUiAvailable() || !model || typeof model.addShotWithDrawing !== "function") {
+      message("新鏡頭手繪保存流程尚未載入；沒有建立鏡頭。", true); return;
+    }
+    if (photoImportSession) { message("目前有待處理照片；先完成或取消照片裁切，再開啟手繪。", true); return; }
+    if (!card || card.dataset.placeholderProjectId !== (state && state.projectId) || card.dataset.placeholderSceneId !== shotPlaceholderSceneId()) return;
+    const assessment = shotPlaceholderAssessment();
+    if (!assessment.valid) { shotPlaceholderMessage = assessment.error; refreshShotPlaceholderControls(card); return; }
+    const current = model.getState && model.getState();
+    const sceneId = card.dataset.placeholderSceneId;
+    if (!current || current.projectId !== state.projectId || current.revision !== state.revision || !current.chapters.some((chapter) => chapter.id === sceneId)) {
+      message("專案或場次已更新；手繪草稿沒有開啟，也沒有建立鏡頭。", true); return;
+    }
+    const route = {
+      placeholder: true,
+      projectId: current.projectId,
+      sceneId,
+      shotId: null,
+      drawingId: null,
+      initialShotPatch: assessment.patch,
+      contextKey: shotPlaceholderContextKey,
+      baseRevision: current.revision,
+      status: "loading",
+      error: null
+    };
+    drawingRoute = route;
+    setView("drawing");
+    renderDrawingRouteStatus();
+    try { mountDrawingRoute(route, null, true); }
+    catch (error) {
+      if (route === drawingRoute) { route.error = error; route.status = "error"; renderDrawingRouteStatus(); }
+    }
+  }
+  async function handleShotPlaceholderAction(action, card) {
+    if (action === "promote") { await promoteShotPlaceholder(); return; }
+    if (action === "photo") { openShotPlaceholderPhotoPicker(card); return; }
+    if (action === "drawing") { openShotPlaceholderDrawingRoute(card); return; }
+  }
+  async function promoteShotPlaceholder() {
+    if (shotPlaceholderPromotionPromise) return shotPlaceholderPromotionPromise;
+    if (isReadOnly() || !state || !model || typeof model.addShot !== "function") return false;
+    const sceneId = shotPlaceholderSceneId();
+    const contextKey = ensureShotPlaceholderDraft(sceneId);
+    const assessment = shotPlaceholderAssessment();
+    const card = $("#shot-list [data-shot-placeholder]");
+    if (!assessment.valid || !assessment.meaningful) { refreshShotPlaceholderControls(card); return false; }
+    const projectId = state.projectId;
+    const patch = assessment.patch;
+    shotPlaceholderMessage = "正在保存新鏡頭…";
+    refreshShotPlaceholderControls(card);
+    shotPlaceholderPromotionPromise = (async () => {
+      const shotId = await withMutation(() => model.addShot(sceneId, patch));
+      const canonical = model.getState && model.getState();
+      if (!canonical || canonical.projectId !== projectId || !canonical.shots.some((shot) => shot.id === shotId && shot.chapterId === sceneId)) {
+        throw Object.assign(new Error("新鏡頭保存尚未在目前專案確認；草稿仍保留。"), { code: "SHOT_PROMOTION_NOT_VISIBLE" });
+      }
+      state = canonical;
+      const sameDraftContext = shotPlaceholderContextKey === contextKey && state.projectId === projectId && shotPlaceholderSceneId() === sceneId;
+      const emptyDraft = { title: "", visual: "", script: "", super: "", sound: "", move: "", tags: "", duration: "" };
+      shotPlaceholderDrafts.set(contextKey, emptyDraft);
+      if (sameDraftContext) {
+        shotPlaceholderDraft = emptyDraft;
+        shotPlaceholderMessage = "";
+        selectedShotId = shotId;
+        activeChapterId = sceneId;
+      }
+      renderAll();
+      message(sameDraftContext ? "已保存新鏡頭；尾端保留下一張空白草稿。" : "新鏡頭已保存至原場次。");
+      return true;
+    })().catch((error) => {
+      shotPlaceholderMessage = (error && error.code ? error.code + " · " : "") + (error && error.message || "新鏡頭保存失敗；輸入仍保留。");
+      refreshShotPlaceholderControls($("#shot-list [data-shot-placeholder]"));
+      return false;
+    }).finally(() => {
+      shotPlaceholderPromotionPromise = null;
+      refreshShotPlaceholderControls($("#shot-list [data-shot-placeholder]"));
+    });
+    refreshShotPlaceholderControls(card);
+    return shotPlaceholderPromotionPromise;
+  }
   function renderShotList() {
     const list = $("#shot-list");
     cancelReorderGesture("shots");
@@ -2299,6 +2605,8 @@
     const focusedCard = focused && focused.closest ? focused.closest("#shot-list .shot-card") : null;
     const focusSnapshot = focusedCard ? {
       shotId: focusedCard.dataset.shot,
+      placeholder: focusedCard.matches("[data-shot-placeholder]"),
+      placeholderField: focused.dataset && focused.dataset.shotPlaceholderField || "",
       field: focused.dataset && focused.dataset.shotField || "",
       photoAction: focused.dataset && focused.dataset.shotPhotoAction || "",
       photoAssetId: focused.dataset && focused.dataset.assetId || "",
@@ -2323,6 +2631,7 @@
     list.dataset.renderedQuery = $("#chapter-search").value.trim();
     const chapter = state.chapters.find((item) => item.id === activeChapterId);
     const query = $("#chapter-search").value.trim();
+    const placeholderMarkup = query ? "" : shotPlaceholderCardMarkup();
     $("#chapter-eyebrow").textContent = chapter ? "SCENE " + String(state.chapters.indexOf(chapter) + 1) : query ? "SCENE SEARCH" : "ALL SCENES";
     $("#storyboard-heading").textContent = chapter ? sceneTitle(chapter) : "全部分鏡";
     $("#storyboard-subtitle").textContent = chapter ? "保留場次節奏，鏡頭內容與拍攝安排共用。" : "以鏡頭為單位，整理畫面、節奏與聲音。";
@@ -2332,9 +2641,13 @@
     $("#runtime-label").textContent = "預估片長 " + formatDuration(seconds) + (unknown ? " · " + unknown + " 鏡未估" : "");
     if (!shots.length) {
       disconnectShotPhotoObservation(list);
-      list.innerHTML = '<div class="empty-state"><div class="empty-icon">' + icon("info", 16) + '</div><strong>' + (state.shots.length ? "沒有符合條件的鏡頭" : "從第一個鏡頭開始") + '</strong><p>' + (state.shots.length ? "調整搜尋文字或切換場次，查看其他分鏡。" : "把畫面、聲音與節奏逐鏡整理起來。") + '</p>' + (state.shots.length ? '<button class="small-action" data-action="clear-search">清除搜尋</button>' : '<button class="outline-button empty-add" data-action="add-shot">' + icon("plus", 14) + '新增第一鏡</button>') + '</div>';
+      list.innerHTML = '<div class="empty-state"><div class="empty-icon">' + icon("info", 16) + '</div><strong>' + (state.shots.length ? "沒有符合條件的鏡頭" : "從第一個鏡頭開始") + '</strong><p>' + (state.shots.length ? "調整搜尋文字或切換場次，查看其他分鏡。" : "把畫面、聲音與節奏逐鏡整理起來。") + '</p>' + (state.shots.length ? '<button class="small-action" data-action="clear-search">清除搜尋</button>' : '<button class="outline-button empty-add" data-action="add-shot">' + icon("plus", 14) + '新增第一鏡</button>') + '</div>' + placeholderMarkup;
       reconcileShotPhotoUrls(); reconcileShotDrawingUrls(); renderPhotoImportBanner(); updateReorderSelectionUi();
       applyReadonlyControls();
+      if (focusSnapshot && focusSnapshot.placeholder && focusSnapshot.placeholderField) {
+        const target = list.querySelector('[data-shot-placeholder-field="' + focusSnapshot.placeholderField + '"]');
+        if (target) target.focus({ preventScroll: true });
+      }
       return;
     }
     disconnectShotPhotoObservation(list);
@@ -2365,7 +2678,7 @@
         '<div class="shot-card-text-preview shot-card-super-preview" data-shot-preview="super" title="' + escapeHtml(superValue) + '"><label class="shot-preview-label" for="shot-super-' + escapeHtml(shot.id) + '"><strong>SUPER</strong><span>字卡</span></label><textarea id="shot-super-' + escapeHtml(shot.id) + '" class="shot-preview-text shot-inline-super" data-shot-field="super" data-entity-id="' + escapeHtml(shot.id) + '" aria-label="' + escapeHtml(shotNumber(shot) + "字卡 SUPER") + '" rows="2" placeholder="輸入畫面字卡…">' + escapeHtml(superValue) + '</textarea></div>' +
         '<div class="field-group shot-inline-field shot-duration-field"><label class="field-label" for="shot-duration-' + escapeHtml(shot.id) + '">影片秒數</label><div class="shot-duration-control"><input id="shot-duration-' + escapeHtml(shot.id) + '" class="shot-inline-duration" type="text" inputmode="decimal" data-shot-field="duration" data-entity-id="' + escapeHtml(shot.id) + '" aria-label="' + escapeHtml(shotNumber(shot) + "影片秒數") + '" value="' + escapeHtml(durationValue) + '" placeholder="0" autocomplete="off"><span class="shot-duration-unit">秒</span></div><span class="shot-duration-estimate"' + (durationIsUnknown ? "" : " hidden") + '>未估</span></div>' +
         '</article>';
-    }).join("");
+    }).join("") + placeholderMarkup;
     list.scrollTop = scrollTop;
     syncVisibleShotDrawings(); syncVisibleShotPhotos(); renderPhotoImportBanner();
     const visualFields = [];
@@ -2377,14 +2690,17 @@
     if (shotView === "gallery") resizeShotVisualBatch(visualFields);
     applyReadonlyControls(); updateReorderSelectionUi();
     if (focusSnapshot) {
-      const card = $$("#shot-list .shot-card").find((item) => item.dataset.shot === focusSnapshot.shotId);
+      const card = focusSnapshot.placeholder
+        ? $("#shot-list [data-shot-placeholder]")
+        : $$("#shot-list .shot-card[data-shot]").find((item) => item.dataset.shot === focusSnapshot.shotId);
       let target = null;
-      if (card && focusSnapshot.field) target = card.querySelector('[data-shot-field="' + focusSnapshot.field + '"]');
+      if (card && focusSnapshot.placeholderField) target = card.querySelector('[data-shot-placeholder-field="' + focusSnapshot.placeholderField + '"]');
+      else if (card && focusSnapshot.field) target = card.querySelector('[data-shot-field="' + focusSnapshot.field + '"]');
       else if (card && focusSnapshot.photoAction && focusSnapshot.photoAssetId) {
         target = Array.from(card.querySelectorAll("[data-shot-photo-action][data-asset-id]")).find((item) => item.dataset.shotPhotoAction === focusSnapshot.photoAction && item.dataset.assetId === focusSnapshot.photoAssetId) || null;
       }
       if (!target && card && focusSnapshot.photoManager) target = card.querySelector(".shot-photo-manager summary");
-      if (!target && card) target = card;
+      if (!target && card && !focusSnapshot.placeholder) target = card;
       if (target) {
         target.focus({preventScroll:true});
         if (focusSnapshot.start != null && typeof target.setSelectionRange === "function") {
@@ -4500,6 +4816,7 @@
   function returnFromDrawingRoute(expected) {
     const route = drawingRoute;
     if (!route) return false;
+    if (route.placeholder) return finishPlaceholderDrawingRoute(route, expected);
     if (expected && (expected.projectId !== route.projectId || expected.shotId !== route.shotId || expected.drawingId && route.drawingId && expected.drawingId !== route.drawingId)) return false;
     if (drawingRouteIsBusy()) { message("Drawing 命令仍在保存或等待重試；完成保存或明確處理候選後才能返回。", true); return false; }
     destroyDrawingEditor(); drawingRoute = null;
@@ -4515,13 +4832,86 @@
     }
     return true;
   }
+  function finishPlaceholderDrawingRoute(route, result) {
+    if (!route || route !== drawingRoute) return false;
+    if (result && result.projectId && result.projectId !== route.projectId) return false;
+    if (result && result.shotId && route.shotId && result.shotId !== route.shotId) return false;
+    if (drawingRouteIsBusy()) { message("手繪仍在保存或等待重試；畫布保持開啟。", true); return false; }
+    const saved = Boolean(result && result.saved);
+    let canonical = null;
+    if (saved) {
+      const created = route.created;
+      canonical = model && model.getState && model.getState();
+      const shotId = result.shotId;
+      const drawingId = result.drawingId;
+      const shot = canonical && canonical.projectId === route.projectId && canonical.shots.find((item) => item.id === shotId);
+      let drawing = null;
+      try { drawing = model && model.getDrawing && model.getDrawing(drawingId); } catch (_) {}
+      const committedRevision = Number(result.revision);
+      const verified = created && created.shotId === shotId && created.drawingId === drawingId && created.revision === committedRevision &&
+        typeof shotId === "string" && typeof drawingId === "string" && Number.isInteger(committedRevision) &&
+        canonical && canonical.revision >= committedRevision && shot && shot.chapterId === route.sceneId &&
+        Array.isArray(shot.drawingIds) && shot.drawingIds.includes(drawingId) &&
+        drawing && drawing.projectId === route.projectId && drawing.shotId === shotId && drawing.id === drawingId;
+      if (!verified) {
+        route.status = "error";
+        route.error = { code: "PLACEHOLDER_DRAWING_COMMIT_NOT_VISIBLE", message: "鏡頭與手繪保存結果尚未完整核對；請留在畫布確認，不會重送新命令。" };
+        renderDrawingRouteStatus();
+        message(route.error.message, true);
+        return false;
+      }
+      route.shotId = shotId;
+      route.drawingId = drawingId;
+      state = canonical;
+      activeProjectId = canonical.projectId;
+      const emptyDraft = { title: "", visual: "", script: "", super: "", sound: "", move: "", tags: "", duration: "" };
+      shotPlaceholderDrafts.set(route.contextKey, emptyDraft);
+      if (shotPlaceholderContextKey === route.contextKey && canonical.projectId === route.projectId) {
+        shotPlaceholderDraft = emptyDraft;
+        shotPlaceholderMessage = "";
+        selectedShotId = shotId;
+        activeChapterId = route.sceneId;
+      }
+    } else if (route.created) {
+      route.status = "error";
+      route.error = { code: "PLACEHOLDER_DRAWING_RESULT_MISMATCH", message: "Model 已回報手繪建立，但關閉結果未確認保存；畫布保持開啟，請確認狀態。" };
+      renderDrawingRouteStatus();
+      message(route.error.message, true);
+      return false;
+    }
+    destroyDrawingEditor(); drawingRoute = null;
+    $("#view-drawing").classList.remove("has-drawing-editor");
+    const dialog = $("#drawing-choice-dialog");
+    if (dialog && dialog.open) dialog.close();
+    drawingChooserContext = null;
+    setView("storyboard");
+    if (saved && state && state.projectId === route.projectId && byId(route.shotId)) {
+      renderAll();
+      selectShot(route.shotId);
+      const entry = $$('#shot-list [data-drawing-action="open"]').find((item) => item.dataset.shotId === route.shotId);
+      if (entry) entry.focus({ preventScroll: true });
+      message("鏡頭與手繪已一併保存；尾端保留下一張空白草稿。");
+    } else {
+      const card = $("#shot-list [data-shot-placeholder]");
+      const button = card && card.querySelector('[data-placeholder-action="drawing"]');
+      if (button) button.focus({ preventScroll: true });
+      message("手繪草稿已捨棄；沒有建立鏡頭。");
+    }
+    return true;
+  }
   function mountDrawingRoute(route, drawingId, draft) {
     if (!route || route !== drawingRoute || !drawingUiAvailable()) return false;
     const current = model.getState();
-    if (!current || current.projectId !== route.projectId || !current.shots.some((shot) => shot.id === route.shotId)) throw new Error("目前專案或鏡頭已切換；停止開啟舊 Drawing。");
-    const shot = current.shots.find((item) => item.id === route.shotId);
-    if (!shot || !Array.isArray(shot.drawingIds)) throw new Error("鏡頭 Drawing 清單無效；沒有開放畫布。");
-    if (draft ? shot.drawingIds.length !== 0 : !shot.drawingIds.includes(drawingId)) throw new Error("Drawing 清單已變更；沒有開放畫布。");
+    if (!current || current.projectId !== route.projectId) throw new Error("目前專案已切換；停止開啟舊 Drawing。");
+    let shot = null;
+    if (route.placeholder) {
+      if (!draft || !current.chapters.some((chapter) => chapter.id === route.sceneId) || current.revision !== route.baseRevision) throw new Error("專案或場次已更新；手繪草稿沒有開啟，也沒有建立鏡頭。");
+    } else {
+      if (!current.shots.some((item) => item.id === route.shotId)) throw new Error("目前鏡頭已切換；停止開啟舊 Drawing。");
+      shot = current.shots.find((item) => item.id === route.shotId);
+      if (!shot || !Array.isArray(shot.drawingIds)) throw new Error("鏡頭 Drawing 清單無效；沒有開放畫布。");
+      if (draft ? shot.drawingIds.length !== 0 : !shot.drawingIds.includes(drawingId)) throw new Error("Drawing 清單已變更；沒有開放畫布。");
+    }
     const drawing = draft ? null : model.getDrawing(drawingId);
     if (!draft && (!drawing || drawing.projectId !== route.projectId || drawing.shotId !== route.shotId || drawing.id !== drawingId)) throw new Error("Drawing 的專案或鏡頭關係不符；沒有開放畫布。");
     destroyDrawingEditor();
@@ -4529,33 +4919,41 @@
     renderDrawingRouteStatus();
     const mount = $("#drawing-editor-mount");
     if (!mount) throw new Error("找不到 Drawing 畫布容器。");
-    route.label = shotNumberWithTitle(shot, " · ");
+    route.label = route.placeholder ? "新鏡頭草稿" : shotNumberWithTitle(shot, " · ");
     const editorOptions = {
       drawing: drawing, drawingId: draft ? null : drawingId, draft: Boolean(draft), aspectRatio: current.aspectRatio,
-      defaultBackgroundAssetId: draft && Object.prototype.hasOwnProperty.call(route,"defaultBackgroundAssetId")
+      defaultBackgroundAssetId: route.placeholder ? null : draft && Object.prototype.hasOwnProperty.call(route,"defaultBackgroundAssetId")
         ? route.defaultBackgroundAssetId
         : Array.isArray(shot.assetIds) && shot.assetIds.length ? shot.assetIds[0] : null,
-      projectId: route.projectId, shotId: route.shotId, model: model,
+      projectId: route.projectId, shotId: route.placeholder ? null : route.shotId, model: model,
       shotLabel: route.label,
       readOnlyReason: (modelLifecycle() && modelLifecycle().readOnlyReason) || READ_ONLY_HELP,
       loadBackground: (record) => record && record.backgroundAssetId ? model.getAsset(record.projectId, record.backgroundAssetId) : Promise.resolve(null),
+      onCreated: route.placeholder ? (created) => {
+        if (drawingRoute !== route || !created) return;
+        route.created = { shotId: created.shotId, drawingId: created.drawingId, revision: created.revision };
+        route.shotId = created.shotId;
+        route.drawingId = created.drawingId;
+      } : undefined,
       onBack: (target) => returnFromDrawingRoute(target),
       onStateChange: (snapshot) => {
-        if (drawingRoute === route && snapshot.projectId === route.projectId && snapshot.shotId === route.shotId &&
+        const shotMatches = route.placeholder ? (!route.shotId || snapshot.shotId === route.shotId) : snapshot.shotId === route.shotId;
+        if (drawingRoute === route && snapshot.projectId === route.projectId && shotMatches &&
             (snapshot.draft || route.drawingId === null || snapshot.drawingId === route.drawingId)) {
           route.editorState = snapshot;
           route.drawingId = snapshot.draft ? null : snapshot.drawingId || route.drawingId;
         }
       }
     };
-    if (draft && Object.prototype.hasOwnProperty.call(route,"defaultBackgroundCrop")) editorOptions.defaultBackgroundCrop = route.defaultBackgroundCrop;
+    if (route.placeholder) editorOptions.placeholder = { sceneId: route.sceneId, initialShotPatch: route.initialShotPatch };
+    if (!route.placeholder && draft && Object.prototype.hasOwnProperty.call(route,"defaultBackgroundCrop")) editorOptions.defaultBackgroundCrop = route.defaultBackgroundCrop;
     drawingEditorHandle = window.DirectorStoryboardDrawingEditor.mount(mount, editorOptions);
     $("#view-drawing").classList.add("has-drawing-editor");
     return true;
   }
   function syncDrawingRouteLabel() {
     const route = drawingRoute;
-    if (!route || route.status !== "ready" || !drawingEditorHandle || !state || state.projectId !== route.projectId) return;
+    if (!route || route.placeholder || !route.shotId || route.status !== "ready" || !drawingEditorHandle || !state || state.projectId !== route.projectId) return;
     const shot = state.shots.find((item) => item.id === route.shotId);
     if (!shot) return;
     const label = shotNumberWithTitle(shot, " · ");
@@ -5000,7 +5398,7 @@
       selectedShotId = null; shotReorderSelection = new Set(); shotSelectionAnchorId = null; shotMultiSelectMode = false; activeChapterId = "all"; selectedDayId = null; selectedEntryId = null; entryReorderSelection = new Set(); entrySelectionAnchorId = null; scheduleMultiSelectMode = false; selectedEntryMeta = null;
       outputScope = "all"; outputType = "storyboard"; outputDayId = null;
     }
-    if (drawingRoute && drawingRoute.projectId === snapshot.projectId) {
+    if (drawingRoute && drawingRoute.projectId === snapshot.projectId && !(drawingRoute.placeholder && !drawingRoute.shotId)) {
       const routeShot = snapshot.shots.find((shot) => shot.id === drawingRoute.shotId);
       const routeEditor = drawingEditorHandle && drawingEditorHandle.editor;
       const undoingDrawingCreation = Boolean(routeEditor && routeEditor.pendingOperation && routeEditor.pendingOperation.kind === "history" && routeEditor.pendingOperation.historyKind === "undo" && routeEditor.drawing && routeEditor.drawing.id === drawingRoute.drawingId);
@@ -5420,9 +5818,11 @@
     Promise.resolve(readiness).then((ready) => {
       googleDriveReadyState = ready === false ? "failed" : "ready";
       renderGoogleDriveControls();
+      renderLifecycleGate();
     }, () => {
       googleDriveReadyState = "failed";
       renderGoogleDriveControls();
+      renderLifecycleGate();
     });
   }
   function kinoDriveCapability() {
@@ -5569,6 +5969,7 @@
     const opts = options || {};
     googleDriveStatus = { text: String(text || ""), kind: opts.kind || "info", link: safeDriveWebViewLink(opts.link) };
     renderGoogleDriveControls();
+    renderLifecycleGate();
   }
   function renderGoogleDriveControls(root) {
     const menu = root || $("#project-popover");
@@ -5636,11 +6037,13 @@
     googleDriveOperation = { kind: kind, cancelable: cancelable !== false };
     window.addEventListener("kinodrive:progress", handleGoogleDriveProgress);
     renderGoogleDriveControls();
+    renderLifecycleGate();
   }
   function endGoogleDriveOperation() {
     window.removeEventListener("kinodrive:progress", handleGoogleDriveProgress);
     googleDriveOperation = null;
     renderGoogleDriveControls();
+    renderLifecycleGate();
   }
   async function cancelGoogleDriveOperation() {
     const capability = kinoDriveCapability();
@@ -5663,9 +6066,12 @@
     completePackageImportOrigin = origin || "project-menu";
     return startCompletePackageImport(bytes, fileName, bytes.byteLength, completePackageImportOrigin, "google-drive");
   }
-  async function importCompletePackageFromGoogleDrive() {
+  async function importCompletePackageFromGoogleDrive(origin) {
     const capability = kinoDriveCapability();
     if (!capability.available) { setGoogleDriveStatus(capability.message, { kind: "error" }); return; }
+    if (!model || typeof model.previewCompletePackage !== "function" || typeof model.importCompletePackage !== "function") {
+      setGoogleDriveStatus("完整專案 ZIP 預覽功能尚未載入；沒有下載或寫入本機專案。", { kind: "error" }); return;
+    }
     if (googleDriveOperation) return;
     if (completePackageImportSession && completePackageImportSession.status === "importing") return;
     googleDriveResumeAvailable = false;
@@ -5682,7 +6088,7 @@
       if (actualSize > 516 * 1024 * 1024) throw Object.assign(new Error("ZIP 超過目前完整專案包上限 516 MiB。"), { code: "ARCHIVE_SIZE_LIMIT" });
       endGoogleDriveOperation();
       setGoogleDriveStatus("ZIP 已下載；正在使用既有完整封包驗證流程，確認前不會寫入本機。");
-      const session = await openDrivePackageImport(result.bytes, fileName, "project-menu");
+      const session = await openDrivePackageImport(result.bytes, fileName, origin || "project-menu");
       if (session && session.preview) setGoogleDriveStatus("Google Drive ZIP 完整預覽驗證通過；請在預覽視窗確認還原或另存副本。");
       else if (session && session.error) setGoogleDriveStatus("Google Drive ZIP 驗證未通過 · " + (session.error.code ? session.error.code + " · " : "") + (session.error.message || "封包無法驗證。"), { kind: "error" });
     } catch (error) {
@@ -6746,6 +7152,8 @@
   }
   async function handleLifecycleAction(action, target) {
     if (action === "import-complete-package") { openCompletePackagePicker("lifecycle-gate"); return; }
+    if (action === "import-google-drive") { await importCompletePackageFromGoogleDrive("lifecycle-gate"); return; }
+    if (action === "cancel-drive-import") { await cancelGoogleDriveOperation(); return; }
     if (action === "return-project") {
       return lifecycleTask(async () => {
         await model.cancelMigration();
@@ -7071,13 +7479,55 @@
         $$("#day-callsheet-fields .group-call-row").forEach((item) => item.classList.remove("is-dragging", "is-drop-before", "is-drop-after"));
       });
     }
+    $("#shot-list").addEventListener("input", (event) => {
+      const field = event.target.closest && event.target.closest("[data-shot-placeholder-field]");
+      if (field) handleShotPlaceholderInput(field);
+    });
+    $("#shot-list").addEventListener("compositionstart", (event) => {
+      const field = event.target.closest && event.target.closest("[data-shot-placeholder-field]");
+      if (field) shotPlaceholderComposingFields.add(field);
+    });
+    $("#shot-list").addEventListener("compositionend", (event) => {
+      const field = event.target.closest && event.target.closest("[data-shot-placeholder-field]");
+      if (!field) return;
+      shotPlaceholderComposingFields.delete(field);
+      const card = field.closest("[data-shot-placeholder]");
+      if (card && !card.contains(document.activeElement)) setTimeout(() => { if (card.isConnected) void safely(() => promoteShotPlaceholder()); }, 0);
+    });
+    $("#shot-list").addEventListener("focusout", (event) => {
+      const field = event.target.closest && event.target.closest("[data-shot-placeholder-field]");
+      const card = field && field.closest("[data-shot-placeholder]");
+      if (!card || card.contains(event.relatedTarget)) return;
+      setTimeout(() => {
+        if (card.isConnected && !card.contains(document.activeElement) && !shotPlaceholderComposingFields.has(field)) {
+          void safely(() => promoteShotPlaceholder());
+        }
+      }, 0);
+    });
     $("#shot-list").addEventListener("click", (event) => {
+      const placeholderAction = event.target.closest && event.target.closest("[data-placeholder-action]");
+      const placeholderCard = placeholderAction && placeholderAction.closest("[data-shot-placeholder]");
+      if (placeholderAction && placeholderCard) {
+        event.preventDefault();
+        void handleShotPlaceholderAction(placeholderAction.dataset.placeholderAction, placeholderCard);
+        return;
+      }
+      if (event.target.closest("[data-shot-placeholder]")) return;
       if (event.target.closest("[data-shot-field],[data-shot-photo-action],[data-drawing-action],.shot-photo-manager summary")) return;
       const card = event.target.closest("[data-shot]"); if (!card) return;
       if (consumeSuppressedReorderClick("shots", card.dataset.shot)) { event.preventDefault(); event.stopPropagation(); return; }
       selectShotForReorder(card.dataset.shot, event);
     });
     $("#shot-list").addEventListener("keydown", (event) => {
+      const placeholderField = event.target.closest && event.target.closest("[data-shot-placeholder-field]");
+      if (placeholderField) {
+        if (isReadOnly()) { if (event.key === "Enter") event.preventDefault(); return; }
+        if (!event.isComposing && event.key === "Enter" && (placeholderField.tagName !== "TEXTAREA" || event.ctrlKey || event.metaKey)) {
+          event.preventDefault();
+          void safely(() => promoteShotPlaceholder());
+        }
+        return;
+      }
       const photoAction = event.target.closest && event.target.closest("[data-shot-photo-action]");
       if (photoAction && photoAction.tagName !== "BUTTON" && (event.key === "Enter" || event.key === " ")) {
         event.preventDefault();

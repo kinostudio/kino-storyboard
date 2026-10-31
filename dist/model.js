@@ -1271,7 +1271,7 @@
     }
 
     const LEGACY_CREATIVE_KINDS = new Set([
-      "updateProjectMetadata", "addScene", "updateScene", "addShot", "updateShot", "duplicateShot", "deleteShot", "moveShot",
+      "updateProjectMetadata", "addScene", "updateScene", "addShot", "addShotWithPhoto", "addShotWithDrawing", "updateShot", "duplicateShot", "deleteShot", "moveShot",
       "reorderShots", "setShotNumberLocked", "renumberShots", "scheduleShot", "removeEntry", "moveEntry", "reorderScheduleEntries", "updateEntry",
       "addBreak", "addDay", "updateDay", "addProductionTask", "updateProductionTask", "moveProductionTask",
       "reorderProductionTasks", "reorderProductionTimeline", "deleteProductionTask", "setAspectRatio"
@@ -1607,6 +1607,9 @@
       if (before.projectId !== item.projectId) throw makeError("PROJECT_CHANGED", "照片命令所屬專案已切換；原 Shot 與檔案仍保留在待處理項目。");
       if (!currentLeaseValid && !paused) throw tagStorageError(makeError("LEASE_LOST", "專案目前沒有有效編輯權。"));
       if (!historyReady || !historyState) throw historyUnavailable(historyFailure || makeError("HISTORY_STATE_MISSING", "尚未載入可驗證的 history state。"));
+      if (item.type === "addShotWithPhoto" && before.revision !== item.expectedRevision) {
+        throw makeError("PHOTO_TARGET_REVISION_CHANGED", "專案已更新；沒有建立鏡頭或保存照片，請重新選取。" );
+      }
       const importer = photoImportService();
       if (!importer || typeof importer.preparePhotoImport !== "function") {
         throw makeError("PHOTO_IMPORT_UNAVAILABLE", "尚未載入照片驗證模組；沒有變更 Project 或 Asset。請重新載入後再試。");
@@ -1654,13 +1657,36 @@
         verifiedExistingIds.add(existing.id);
       }
 
-      const raw = deps.bridge.applyCommand(before, item.type, item.type === "addShotPhotos"
-        ? [item.shotId, preparedFiles.map(function (result) { return result.metadata; })]
-        : [item.shotId, item.previousAssetId, preparedFiles[0].metadata],
-      { newId: newIdFactory(before) });
-      let bridged = validateBridgeResult(raw, before);
+      let targetShotId = item.shotId;
+      let bridged;
+      if (item.type === "addShotWithPhoto") {
+        const allocate = newIdFactory(before);
+        const createRaw = deps.bridge.applyCommand(before, "addShot", [item.sceneId, item.initialPatch], { newId: allocate });
+        const created = validateBridgeResult(createRaw, before);
+        if (!created.changed || typeof created.value !== "string") {
+          throw makeError("SHOT_CREATE_FAILED", "沒有建立可保存照片的鏡頭。照片仍保留為候選。");
+        }
+        targetShotId = created.value;
+        const photoRaw = deps.bridge.applyCommand(created.project, "addShotPhotos", [targetShotId, preparedFiles.map(function (result) { return result.metadata; })], { newId: allocate });
+        const photo = validateBridgeResult(photoRaw, created.project);
+        const photoValue = isRecord(photo.value) ? photo.value : {};
+        const shot = photo.project.shots.find(function (candidate) { return candidate.id === targetShotId; });
+        const assetId = shot && Array.isArray(shot.assetIds) ? shot.assetIds[0] || null : null;
+        bridged = {
+          project: photo.project,
+          changed: created.changed || photo.changed,
+          value: Object.assign({ shotId: targetShotId, assetId: assetId }, photoValue),
+          undoable: created.undoable && photo.undoable
+        };
+      } else {
+        const raw = deps.bridge.applyCommand(before, item.type, item.type === "addShotPhotos"
+          ? [item.shotId, preparedFiles.map(function (result) { return result.metadata; })]
+          : [item.shotId, item.previousAssetId, preparedFiles[0].metadata],
+        { newId: newIdFactory(before) });
+        bridged = validateBridgeResult(raw, before);
+      }
       if (item.hasPhotoCrop) {
-        const shot = bridged.project.shots.find(function (candidate) { return candidate.id === item.shotId; });
+        const shot = bridged.project.shots.find(function (candidate) { return candidate.id === targetShotId; });
         const photoValue = isRecord(bridged.value) ? bridged.value : null;
         const candidates = item.type === "replaceShotPhoto"
           ? [photoValue && photoValue.assetId]
@@ -1669,7 +1695,7 @@
           return typeof candidate === "string" && shot && Array.isArray(shot.assetIds) && shot.assetIds.indexOf(candidate) >= 0;
         });
         if (!assetId) throw makeError("PHOTO_CROP_TARGET_MISSING", "照片已驗證，但找不到同一命令要套用裁切的主圖 Asset。沒有保存照片或裁切。");
-        const cropRaw = deps.bridge.applyCommand(bridged.project, "setShotPhotoCrop", [item.shotId, assetId, item.photoCrop], {
+        const cropRaw = deps.bridge.applyCommand(bridged.project, "setShotPhotoCrop", [targetShotId, assetId, item.photoCrop], {
           newId: newIdFactory(bridged.project)
         });
         const cropResult = validateBridgeResult(cropRaw, bridged.project);
@@ -1734,6 +1760,46 @@
       if (!historyReady || !historyState) throw historyUnavailable(historyFailure || makeError("HISTORY_STATE_MISSING", "尚未載入可驗證的 history state。"));
     }
 
+    function normalizeInitialDrawingSnapshot(snapshot) {
+      if (!isRecord(snapshot) || snapshot.kind !== "snapshot") {
+        throw makeError("INVALID_DRAWING_SNAPSHOT", "新鏡頭手繪需要完整 Drawing snapshot。");
+      }
+      if (snapshot.backgroundAssetId !== undefined && snapshot.backgroundAssetId !== null ||
+          snapshot.backgroundCrop !== undefined && snapshot.backgroundCrop !== null) {
+        throw makeError("SHOT_ASSET_NOT_FOUND", "新鏡頭 Drawing 不能引用尚未保存的照片底圖。");
+      }
+      if (!Array.isArray(snapshot.layers) || snapshot.layers.length !== 2) {
+        throw makeError("INVALID_DRAWING_SNAPSHOT", "Drawing snapshot 必須包含 Scene 與 Subject 兩個圖層。");
+      }
+      const seenKinds = new Set();
+      let strokeCount = 0;
+      const layers = snapshot.layers.map(function (layer, index) {
+        if (!isRecord(layer) || !["scene", "subject"].includes(layer.kind) || seenKinds.has(layer.kind)) {
+          throw makeError("INVALID_DRAWING_SNAPSHOT", "Drawing snapshot 圖層種類無效或重複。", { index: index });
+        }
+        if (layer.visible !== undefined && typeof layer.visible !== "boolean" ||
+            layer.locked !== undefined && typeof layer.locked !== "boolean") {
+          throw makeError("INVALID_DRAWING_SNAPSHOT", "Drawing snapshot 圖層 visible／locked 必須是布林值。", { index: index });
+        }
+        if (!Array.isArray(layer.strokes)) {
+          throw makeError("INVALID_DRAWING_SNAPSHOT", "Drawing snapshot 圖層必須包含 strokes 陣列。", { index: index });
+        }
+        seenKinds.add(layer.kind);
+        strokeCount += layer.strokes.length;
+        return {
+          kind: layer.kind,
+          visible: layer.visible === undefined ? true : layer.visible,
+          locked: layer.locked === undefined ? false : layer.locked,
+          strokes: captureJson(layer.strokes)
+        };
+      });
+      if (!seenKinds.has("scene") || !seenKinds.has("subject")) {
+        throw makeError("INVALID_DRAWING_SNAPSHOT", "Drawing snapshot 必須包含 Scene 與 Subject 兩個圖層。");
+      }
+      if (strokeCount === 0) throw makeError("EMPTY_DRAWING", "空白 Drawing 不會建立鏡頭；請先完成至少一筆手繪。" );
+      return { kind: "snapshot", layers: layers };
+    }
+
     async function prepareDrawingCreate(item) {
       if (item.prepared) return item.prepared;
       const before = deps.schema.validateProject(currentProject);
@@ -1741,13 +1807,25 @@
       if (Number.isInteger(item.expectedRevision) && before.revision !== item.expectedRevision) {
         throw makeError("DRAWING_TARGET_REVISION_CHANGED", "專案已更新；沒有建立 Drawing，請重新載入後再試。" );
       }
-      const shot = before.shots.find(function (candidate) { return candidate.id === item.shotId; });
+      const allocate = newIdFactory(before);
+      let baseProject = before;
+      let targetShotId = item.shotId;
+      if (item.createShot) {
+        const shotRaw = deps.bridge.applyCommand(before, "addShot", [item.sceneId, item.initialPatch], { newId: allocate });
+        const createdShot = validateBridgeResult(shotRaw, before);
+        if (!createdShot.changed || typeof createdShot.value !== "string") {
+          throw makeError("SHOT_CREATE_FAILED", "沒有建立可保存 Drawing 的鏡頭。");
+        }
+        targetShotId = createdShot.value;
+        baseProject = createdShot.project;
+      }
+      const shot = baseProject.shots.find(function (candidate) { return candidate.id === targetShotId; });
       if (!shot) throw makeError("SHOT_NOT_FOUND", "分鏡不存在。");
       if (item.backgroundAssetId !== null) {
         if (shot.assetIds.indexOf(item.backgroundAssetId) < 0) throw makeError("SHOT_ASSET_NOT_FOUND", "Drawing 底圖必須是所屬分鏡目前引用的照片。");
-        const photo = before.assets.find(function (asset) { return asset.id === item.backgroundAssetId; });
+        const photo = baseProject.assets.find(function (asset) { return asset.id === item.backgroundAssetId; });
         if (!photo || photo.role !== "photoOriginal") throw makeError("INVALID_BACKGROUND_ASSET", "Drawing 底圖只能使用 photoOriginal Asset。");
-        await loadVerifiedAsset(before, photo);
+        await loadVerifiedAsset(baseProject, photo);
       }
 
       // A draft action that leaves the default Drawing unchanged must stay local.
@@ -1768,11 +1846,14 @@
           const sourceCrop = sourceAssetId && shot.photoCropsByAssetId && shot.photoCropsByAssetId[sourceAssetId] || null;
           isNoop = initialEdit.assetId === sourceAssetId && stableStringify(item.backgroundCrop) === stableStringify(sourceCrop);
         } else if (initialEdit.kind === "reuseScene") {
-          const source = before.drawings.find(function (drawing) { return drawing.id === initialEdit.sourceDrawingId; });
+          const source = baseProject.drawings.find(function (drawing) { return drawing.id === initialEdit.sourceDrawingId; });
           if (!source) throw makeError("DRAWING_NOT_FOUND", "來源 Drawing 不存在。");
           const sourceScene = source.layers.find(function (layer) { return layer.kind === "scene"; });
           if (!sourceScene) throw makeError("INVALID_DRAWING_LAYERS", "來源 Drawing 缺少 Scene 圖層。");
           isNoop = sourceScene.strokes.length === 0;
+        } else if (initialEdit.kind === "snapshot") {
+          if (!item.createShot) throw makeError("INVALID_DRAWING_INITIAL_EDIT", "Drawing snapshot 只適用於建立新鏡頭。");
+          item.initialEdit = normalizeInitialDrawingSnapshot(initialEdit);
         }
         if (isNoop) {
           item.prepared = { noop: true, value: null, type: item.type };
@@ -1780,15 +1861,15 @@
         }
       }
 
-      const createRaw = deps.bridge.applyCommand(before, "createDrawingForShot", [item.shotId], { newId: newIdFactory(before) });
-      const created = validateBridgeResult(createRaw, before);
+      const createRaw = deps.bridge.applyCommand(baseProject, "createDrawingForShot", [targetShotId], { newId: allocate });
+      const created = validateBridgeResult(createRaw, baseProject);
       if (!created.changed || typeof created.value !== "string") throw makeError("DRAWING_CREATE_FAILED", "Drawing bridge 沒有建立新的 Drawing。");
       let combinedProject = created.project;
       let combinedUndoable = created.undoable;
       if (item.backgroundAssetId !== null) {
         if (typeof deps.bridge.applyCommand !== "function") throw makeError("DRAWING_BACKGROUND_UNSUPPORTED", "目前 Drawing bridge 無法綁定照片底圖。");
         const backgroundRaw = deps.bridge.applyCommand(combinedProject, "setDrawingBackground", [created.value, item.backgroundAssetId, item.backgroundCrop], {
-          newId: newIdFactory(combinedProject)
+          newId: allocate
         });
         const background = validateBridgeResult(backgroundRaw, combinedProject);
         if (!background.changed) throw makeError("DRAWING_BACKGROUND_UNSUPPORTED", "目前 Drawing bridge 沒有保存照片底圖變更。");
@@ -1818,19 +1899,48 @@
             type = "setDrawingBackground";
             args = [created.value, initialEdit.assetId, item.backgroundCrop];
           }
+        } else if (initialEdit.kind === "snapshot") {
+          const snapshot = normalizeInitialDrawingSnapshot(initialEdit);
+          const layerByKind = new Map(drawing.layers.map(function (layer) { return [layer.kind, layer]; }));
+          for (const layerSnapshot of snapshot.layers) {
+            const layer = layerByKind.get(layerSnapshot.kind);
+            if (!layer) throw makeError("DRAWING_LAYER_NOT_FOUND", "Drawing snapshot 找不到目標圖層。");
+            for (const strokeDraft of layerSnapshot.strokes) {
+              const strokeRaw = deps.bridge.applyCommand(combinedProject, "appendDrawingStroke", [created.value, layer.id, strokeDraft], { newId: allocate });
+              const strokeResult = validateBridgeResult(strokeRaw, combinedProject);
+              if (!strokeResult.changed) throw makeError("DRAWING_STROKE_SAVE_FAILED", "Drawing snapshot 筆跡沒有套用。");
+              combinedProject = strokeResult.project;
+              combinedUndoable = combinedUndoable && strokeResult.undoable;
+            }
+          }
+          for (const layerSnapshot of snapshot.layers) {
+            const layer = combinedProject.drawings.find(function (candidate) { return candidate.id === created.value; }).layers.find(function (candidate) { return candidate.kind === layerSnapshot.kind; });
+            if (!layer) throw makeError("DRAWING_LAYER_NOT_FOUND", "Drawing snapshot 找不到圖層狀態的目標圖層。");
+            const patch = { visible: layerSnapshot.visible, locked: layerSnapshot.locked };
+            if (layer.visible !== patch.visible || layer.locked !== patch.locked) {
+              const stateRaw = deps.bridge.applyCommand(combinedProject, "setDrawingLayerState", [created.value, layer.id, patch], { newId: allocate });
+              const stateResult = validateBridgeResult(stateRaw, combinedProject);
+              if (!stateResult.changed) throw makeError("DRAWING_LAYER_STATE_SAVE_FAILED", "Drawing snapshot 圖層狀態沒有套用。");
+              combinedProject = stateResult.project;
+              combinedUndoable = combinedUndoable && stateResult.undoable;
+            }
+          }
         } else if (initialEdit.kind !== "background") {
           throw makeError("INVALID_DRAWING_INITIAL_EDIT", "不支援此 Drawing 初始編輯類型。");
         }
         if (type) {
-          const editRaw = deps.bridge.applyCommand(combinedProject, type, args, { newId: newIdFactory(combinedProject) });
+          const editRaw = deps.bridge.applyCommand(combinedProject, type, args, { newId: allocate });
           const edit = validateBridgeResult(editRaw, combinedProject);
           combinedProject = edit.project;
           combinedUndoable = combinedUndoable && edit.undoable;
         }
       }
-      const combined = { project: combinedProject, changed: true, value: created.value, undoable: combinedUndoable };
+      const value = item.createShot ? { shotId: targetShotId, drawingId: created.value } : created.value;
+      const combined = { project: combinedProject, changed: true, value: value, undoable: combinedUndoable };
       const prepared = prepareBridgeCommand(item, before, combined);
-      if (!prepared.noop) prepared.value = created.value;
+      if (!prepared.noop) prepared.value = item.createShot
+        ? Object.assign({}, value, { revision: prepared.candidate.revision })
+        : created.value;
       return prepared;
     }
 
@@ -2254,7 +2364,7 @@
       return copy;
     }
 
-    function queuePhotoCommand(type, shotId, previousAssetId, fileInput, commandOptions) {
+    function queuePhotoCommand(type, shotId, previousAssetId, fileInput, commandOptions, shotCreation) {
       try {
         requireInitialized();
         requireProject();
@@ -2266,17 +2376,41 @@
         if ((!currentLeaseValid || lifecycle.phase === "read_only") && !paused) throw makeError("READ_ONLY", lifecycle.readOnlyReason || "此專案目前為唯讀。");
 
         let files;
-        if (type === "addShotPhotos") {
+        if (type === "addShotPhotos" || type === "addShotWithPhoto") {
           if (fileInput === null || fileInput === undefined) throw makeError("INVALID_ARGUMENT", "新增照片需要 File 或 FileList。");
           try { files = Array.prototype.slice.call(fileInput); }
           catch (cause) { throw makeError("INVALID_ARGUMENT", "新增照片需要 File 陣列或 FileList。", cause); }
           if (!files || typeof files.length !== "number") throw makeError("INVALID_ARGUMENT", "新增照片需要 File 陣列或 FileList。");
-          if (files.length === 0) return Promise.resolve({ addedAssetIds: [], duplicateAssetIds: [], revision: currentProject.revision });
+          if (files.length === 0) {
+            if (type === "addShotWithPhoto") throw makeError("INVALID_ARGUMENT", "建立帶照片的鏡頭需要選取一個檔案。");
+            return Promise.resolve({ addedAssetIds: [], duplicateAssetIds: [], revision: currentProject.revision });
+          }
           if (files.length > 1) throw makeError("SHOT_PHOTO_LIMIT", "每個鏡次只能有一張照片。");
         } else {
           files = [fileInput];
         }
         const callOptions = isRecord(commandOptions) ? commandOptions : {};
+        let creation = null;
+        if (type === "addShotWithPhoto") {
+          const project = deps.schema.validateProject(currentProject);
+          if (!isRecord(shotCreation) || typeof shotCreation.sceneId !== "string" || !shotCreation.sceneId.trim()) {
+            throw makeError("INVALID_ARGUMENT", "建立帶照片的鏡頭需要有效場次 ID。");
+          }
+          if (!project.scenes.some(function (scene) { return scene.id === shotCreation.sceneId; })) {
+            throw makeError("SCENE_NOT_FOUND", "場次不存在。");
+          }
+          if (!Number.isInteger(callOptions.expectedRevision)) {
+            throw makeError("INVALID_ARGUMENT", "建立帶照片的鏡頭需要有效的 Project revision。");
+          }
+          if (project.revision !== callOptions.expectedRevision) {
+            throw makeError("PHOTO_TARGET_REVISION_CHANGED", "專案已更新；沒有建立鏡頭或保存照片，請重新選取。" );
+          }
+          creation = {
+            sceneId: shotCreation.sceneId,
+            initialPatch: captureJson(shotCreation.initialPatch === undefined ? {} : shotCreation.initialPatch),
+            expectedRevision: callOptions.expectedRevision
+          };
+        }
         const hasPhotoCrop = Object.prototype.hasOwnProperty.call(callOptions, "crop");
         if (hasPhotoCrop && files.length !== 1) throw makeError("PHOTO_CROP_REQUIRES_SINGLE_FILE", "單張照片裁切命令一次只能匯入一張照片。");
         const photoCrop = hasPhotoCrop
@@ -2287,6 +2421,9 @@
           type: type,
           projectId: currentProject.projectId,
           shotId: shotId,
+          sceneId: creation && creation.sceneId,
+          initialPatch: creation && creation.initialPatch,
+          expectedRevision: creation && creation.expectedRevision,
           previousAssetId: previousAssetId,
           files: files.slice(),
           onProgress: typeof callOptions.onProgress === "function" ? callOptions.onProgress : null,
@@ -2364,6 +2501,37 @@
         return queueDrawingCreate(shotId, hasBackgroundOverride ? initialEdit.assetId : null, hasBackgroundOverride,
           initialEdit, expectedRevision, backgroundCrop, arguments.length > 3);
       } catch (error) { return Promise.reject(normalizeError(error, "DRAWING_COMMAND_REJECTED", "無法建立 Drawing 與初始編輯。")); }
+    }
+
+    function queueAddShotWithDrawing(sceneId, initialPatch, snapshot, expectedRevision) {
+      try {
+        requireInitialized();
+        requireProject();
+        if (activationPending) throw makeError("PROJECT_ACTIVATING", "專案切換完成前不能建立鏡頭或 Drawing。");
+        if (!historyReady || !historyState) throw historyUnavailable(historyFailure || makeError("HISTORY_STATE_MISSING", "尚未載入可驗證的 history state。"));
+        if (queue.some(function (pending) { return pending.kind === "create"; })) throw makeError("PROJECT_SWITCH_PENDING", "新專案保存完成前不能排入鏡頭或 Drawing 命令。");
+        if ((!currentLeaseValid || lifecycle.phase === "read_only") && !paused) throw makeError("READ_ONLY", lifecycle.readOnlyReason || "此專案目前為唯讀。");
+        if (typeof sceneId !== "string" || !sceneId.trim()) throw makeError("INVALID_ARGUMENT", "建立 Drawing 鏡頭需要有效場次 ID。");
+        if (!Number.isInteger(expectedRevision)) throw makeError("INVALID_DRAWING_INITIAL_EDIT", "建立 Drawing 鏡頭需要有效的 Project revision。");
+        const project = deps.schema.validateProject(currentProject);
+        if (project.revision !== expectedRevision) throw makeError("DRAWING_TARGET_REVISION_CHANGED", "專案已更新；沒有建立鏡頭或 Drawing，請重新載入後再試。" );
+        if (!project.scenes.some(function (scene) { return scene.id === sceneId; })) throw makeError("SCENE_NOT_FOUND", "場次不存在。");
+        const normalizedSnapshot = normalizeInitialDrawingSnapshot(snapshot);
+        return enqueue({
+          kind: "drawing-create",
+          type: "addShotWithDrawing",
+          projectId: project.projectId,
+          shotId: null,
+          createShot: true,
+          sceneId: sceneId,
+          initialPatch: captureJson(initialPatch === undefined ? {} : initialPatch),
+          backgroundAssetId: null,
+          backgroundCrop: null,
+          initialEdit: captureJson(normalizedSnapshot),
+          expectedRevision: expectedRevision,
+          commandId: randomToken("command")
+        });
+      } catch (error) { return Promise.reject(normalizeError(error, "DRAWING_COMMAND_REJECTED", "無法建立鏡頭與 Drawing。")); }
     }
 
     function queueDrawingBackground(drawingId, assetId) {
@@ -3426,7 +3594,11 @@
       updateProjectMetadata: function (metadata) { return queueCommand("updateProjectMetadata", [metadata]); },
       addScene: function (title) { return queueCommand("addScene", [title]); },
       updateScene: function (id, patch) { return queueCommand("updateScene", [id, patch]); },
-      addShot: function (sceneId) { return queueCommand("addShot", [sceneId]); },
+      addShot: function (sceneId, initialPatch) {
+        const args = arguments.length ? [sceneId] : [];
+        if (initialPatch !== undefined) args.push(initialPatch);
+        return queueCommand("addShot", args);
+      },
       updateShot: function (id, patch) { return queueCommand("updateShot", [id, patch]); },
       setShotNumberLocked: function (id, locked) { return queueCommand("setShotNumberLocked", [id, locked]); },
       renumberShots: function (preview) { return queueCommand("renumberShots", [preview]); },
@@ -3459,6 +3631,7 @@
           null, null, backgroundCrop, arguments.length > 2);
       },
       createDrawingForShotWithInitialEdit: queueDrawingCreateWithInitialEdit,
+      addShotWithDrawing: queueAddShotWithDrawing,
       appendDrawingStroke: function (drawingId, layerId, strokeDraft) { return queueCommand("appendDrawingStroke", [drawingId, layerId, strokeDraft]); },
       eraseDrawingStroke: function (drawingId, layerId, strokeId) { return queueCommand("eraseDrawingStroke", [drawingId, layerId, strokeId]); },
       clearDrawingLayer: function (drawingId, layerId) { return queueCommand("clearDrawingLayer", [drawingId, layerId]); },
@@ -3468,6 +3641,9 @@
       getDrawing: getDrawing,
       getDrawingsForShot: getDrawingsForShot,
       addShotPhotos: function (shotId, files, photoOptions) { return queuePhotoCommand("addShotPhotos", shotId, null, files, photoOptions); },
+      addShotWithPhoto: function (sceneId, file, initialPatch, photoOptions) {
+        return queuePhotoCommand("addShotWithPhoto", null, null, [file], photoOptions, { sceneId: sceneId, initialPatch: initialPatch });
+      },
       reorderShotPhotos: function (shotId, orderedAssetIds) { return queueCommand("reorderShotPhotos", [shotId, orderedAssetIds]); },
       setShotPhotoCrop: function (shotId, assetId, crop) { return queueCommand("setShotPhotoCrop", [shotId, assetId, crop]); },
       removeShotPhoto: function (shotId, assetId) { return queueCommand("removeShotPhoto", [shotId, assetId]); },

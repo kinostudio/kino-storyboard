@@ -1412,3 +1412,63 @@ body.is-read-only #shot-list .shot-card.is-gallery .shot-card-text-preview:focus
 
 .policy-links { margin-top: 1rem; font-size: .8rem; color: #687587; }
 .policy-links a { color: inherit; text-decoration: underline; text-underline-offset: .18em; }
+
+/* The trailing shot editor stays transient until a valid value is saved. */
+.shot-placeholder-card {
+  cursor: default;
+  border-style: dashed;
+  border-color: #cfd5d4;
+  background: linear-gradient(115deg, #fbfcfa, #f7f8f5);
+}
+.shot-placeholder-card:hover {
+  border-color: #b7c1c7;
+  box-shadow: 0 2px 8px rgba(31, 44, 65, .035);
+}
+.shot-placeholder-card.is-selected::before { display: none; }
+.shot-placeholder-thumb {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-direction: column;
+  gap: 4px;
+  border: 1px dashed #bbc5c4;
+  background: #f0f3f1;
+  color: #7e8c8d;
+  text-align: center;
+}
+.shot-placeholder-thumb::after { display: none; }
+.shot-placeholder-plus { color: #778d8e; font-size: 27px; font-weight: 300; line-height: 1; }
+.shot-placeholder-thumb-label { max-width: 90%; font-size: 9px; line-height: 1.35; }
+.shot-placeholder-number { color: #87939a; font-family: inherit; font-size: 9px; letter-spacing: 0; }
+.shot-placeholder-card .shot-placeholder-actions {
+  display: flex;
+  grid-area: photo-actions;
+  align-items: center;
+  justify-content: space-between;
+  gap: 9px;
+  min-width: 0;
+  margin: 0;
+  padding: 7px 0 0;
+  border-top: 1px solid #e9ece9;
+}
+.shot-placeholder-media-note { min-width: 0; color: #879099; font-size: 9px; line-height: 1.45; }
+.shot-placeholder-actions .primary-button { flex: 0 0 auto; min-height: 35px; padding: 0 12px; }
+.shot-placeholder-extra,
+.shot-placeholder-status { grid-column: 1 / -1; min-width: 0; }
+.shot-placeholder-extra { border-top: 1px solid #e9ece9; padding-top: 8px; color: #697586; font-size: 10px; }
+.shot-placeholder-extra > summary { width: fit-content; cursor: pointer; color: #687a83; font-weight: 600; }
+.shot-placeholder-extra-fields { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 9px; margin-top: 9px; }
+.shot-placeholder-extra-fields label { display: grid; gap: 4px; min-width: 0; color: #808a93; font-size: 9px; }
+.shot-placeholder-extra-fields .text-field,
+.shot-placeholder-extra-fields .textarea-field { width: 100%; min-width: 0; margin: 0; }
+.shot-placeholder-status { padding: 5px 0 0; color: #78838d; font-size: 9px; line-height: 1.5; }
+.shot-placeholder-status[data-kind="error"] { color: #9c594e; }
+.shot-placeholder-card [data-placeholder-action]:disabled { opacity: .52; cursor: not-allowed; }
+.shot-placeholder-card [data-shot-placeholder-field]:disabled { color: #758092; cursor: not-allowed; }
+.shot-placeholder-card.is-gallery .shot-placeholder-actions { justify-content: stretch; flex-wrap: wrap; }
+.shot-placeholder-card.is-gallery .shot-placeholder-actions .primary-button { margin-left: auto; }
+@media(max-width:640px) {
+  .shot-placeholder-card .shot-placeholder-actions { align-items: flex-start; flex-direction: column; }
+  .shot-placeholder-actions .primary-button { width: 100%; }
+  .shot-placeholder-extra-fields { grid-template-columns: minmax(0, 1fr); }
+}

@@ -706,6 +706,54 @@
     };
   }
 
+  function applyShotPatch(project, shot, inputPatch, path) {
+    const patchPath = path || "$.args[1]";
+    const patch = assertPatch(
+      inputPatch,
+      ["chapterId", "title", "visual", "script", "super", "sound", "move", "tags", "duration", "art"],
+      "分鏡",
+      patchPath
+    );
+    const oldSceneId = shot.sceneId;
+    if (own(patch, "chapterId")) findById(project.scenes, patch.chapterId, "SCENE_NOT_FOUND", "場次");
+    ["title", "visual", "script", "super", "sound", "move", "tags"].forEach(function (key) {
+      if (own(patch, key)) text(patch[key], patchPath + "." + key, true);
+    });
+    if (own(patch, "duration")) {
+      if (typeof patch.duration !== "number" || !Number.isFinite(patch.duration) || patch.duration < 0 || !Number.isInteger(patch.duration * 10)) {
+        fail("INVALID_DURATION", "影片秒數必須是非負數且最多一位小數。", patchPath + ".duration");
+      }
+      shot.durationSeconds = patch.duration;
+    }
+    if (own(patch, "chapterId")) shot.sceneId = patch.chapterId;
+    ["title", "visual", "script", "super", "sound", "move", "tags"].forEach(function (key) {
+      if (own(patch, key)) shot[key] = patch[key];
+    });
+    if (own(patch, "art")) {
+      text(patch.art, patchPath + ".art", true);
+      shot.legacyArt = patch.art;
+    }
+    if (own(patch, "title")) {
+      project.scheduleEntries.forEach(function (entry) {
+        if (entry.type === "shot" && entry.shotId === shot.id) entry.title = patch.title;
+      });
+    }
+    if (shot.sceneId !== oldSceneId) {
+      const oldOrder = orderedIdsForScene(project, oldSceneId);
+      const oldIndex = oldOrder.indexOf(shot.id);
+      if (oldIndex >= 0) oldOrder.splice(oldIndex, 1);
+      const newOrder = orderedIdsForScene(project, shot.sceneId);
+      newOrder.push(shot.id);
+      if (shot.shotNoLocked === true && hasLockedShotNumberCollision(project, shot, shot.sceneId)) {
+        fail("LOCKED_SHOT_NUMBER_COLLISION", "無法搬入此場次：已有鏡頭鎖定相同鏡次。", patchPath + ".chapterId");
+      }
+      if (shot.shotNoLocked !== true && hasShotNumberCollision(project, shot, shot.sceneId)) {
+        shot.shotNo = uniqueShotNumber(project, shot.sceneId, newOrder.length, shot.id);
+      }
+    }
+    return shot;
+  }
+
   function copyDrawingForShot(project, drawing, shotId, allocate) {
     const copy = clone(drawing);
     copy.id = allocate("drawing");
@@ -1265,7 +1313,7 @@
         break;
       }
       case "addShot": {
-        assertArgs(type, values, 0, 1);
+        assertArgs(type, values, 0, 2);
         const sceneId = values.length === 0 || values[0] === null
           ? draft.sceneOrder[0]
           : values[0];
@@ -1276,55 +1324,14 @@
         const id = allocate("shot");
         draft.shots.push(createShot(draft.projectId, id, sceneId, uniqueShotNumber(draft, sceneId, order.length + 1)));
         order.push(id);
+        if (values.length > 1) applyShotPatch(draft, draft.shots[draft.shots.length - 1], values[1], "$.args[1]");
         value = id;
         break;
       }
       case "updateShot": {
         assertArgs(type, values, 2, 2);
         const shot = findById(draft.shots, values[0], "SHOT_NOT_FOUND", "分鏡");
-        const patch = assertPatch(
-          values[1],
-          ["chapterId", "title", "visual", "script", "super", "sound", "move", "tags", "duration", "art"],
-          "分鏡",
-          "$.args[1]"
-        );
-        const oldSceneId = shot.sceneId;
-        if (own(patch, "chapterId")) findById(draft.scenes, patch.chapterId, "SCENE_NOT_FOUND", "場次");
-        ["title", "visual", "script", "super", "sound", "move", "tags"].forEach(function (key) {
-          if (own(patch, key)) text(patch[key], "$.args[1]." + key, true);
-        });
-        if (own(patch, "duration")) {
-          if (typeof patch.duration !== "number" || !Number.isFinite(patch.duration) || patch.duration < 0 || !Number.isInteger(patch.duration * 10)) {
-            fail("INVALID_DURATION", "影片秒數必須是非負數且最多一位小數。", "$.args[1].duration");
-          }
-          shot.durationSeconds = patch.duration;
-        }
-        if (own(patch, "chapterId")) shot.sceneId = patch.chapterId;
-        ["title", "visual", "script", "super", "sound", "move", "tags"].forEach(function (key) {
-          if (own(patch, key)) shot[key] = patch[key];
-        });
-        if (own(patch, "art")) {
-          text(patch.art, "$.args[1].art", true);
-          shot.legacyArt = patch.art;
-        }
-        if (own(patch, "title")) {
-          draft.scheduleEntries.forEach(function (entry) {
-            if (entry.type === "shot" && entry.shotId === shot.id) entry.title = patch.title;
-          });
-        }
-        if (shot.sceneId !== oldSceneId) {
-          const oldOrder = orderedIdsForScene(draft, oldSceneId);
-          const oldIndex = oldOrder.indexOf(shot.id);
-          if (oldIndex >= 0) oldOrder.splice(oldIndex, 1);
-          const newOrder = orderedIdsForScene(draft, shot.sceneId);
-          newOrder.push(shot.id);
-          if (shot.shotNoLocked === true && hasLockedShotNumberCollision(draft, shot, shot.sceneId)) {
-            fail("LOCKED_SHOT_NUMBER_COLLISION", "無法搬入此場次：已有鏡頭鎖定相同鏡次。", "$.args[1].chapterId");
-          }
-          if (shot.shotNoLocked !== true && hasShotNumberCollision(draft, shot, shot.sceneId)) {
-            shot.shotNo = uniqueShotNumber(draft, shot.sceneId, newOrder.length, shot.id);
-          }
-        }
+        applyShotPatch(draft, shot, values[1], "$.args[1]");
         value = values[0];
         break;
       }
