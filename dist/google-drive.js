@@ -322,7 +322,7 @@
         const view = new pickerApi.DocsView(pickerApi.ViewId.DOCS)
           .setIncludeFolders(mode === "folder")
           .setMode(pickerApi.DocsViewMode.LIST);
-        if (mode === "folder") view.setSelectFolderEnabled(true);
+        if (mode === "folder") view.setMimeTypes("application/vnd.google-apps.folder").setSelectFolderEnabled(true);
         else view.setMimeTypes(PICKER_MIME_TYPES);
 
         const builder = new pickerApi.PickerBuilder()
@@ -356,6 +356,8 @@
             }
             finish(resolve, selected);
           });
+
+        if (typeof builder.setTitle === "function") builder.setTitle(mode === "folder" ? "選擇 ZIP 儲存位置" : "選擇要匯入的 ZIP");
 
         if (pickerApi.Feature && pickerApi.Feature.SUPPORT_DRIVES && typeof builder.enableFeature === "function") {
           builder.enableFeature(pickerApi.Feature.SUPPORT_DRIVES);
@@ -469,6 +471,32 @@
     });
     if (!response.ok) throw httpError(response, "檔案資訊讀取");
     return parseJson(response);
+  }
+
+  async function createDestinationFolder(operation, token, parent, name) {
+    const folderName = String(name || "").trim();
+    if (!folderName || folderName.length > 255 || /[\u0000-\u001f]/.test(folderName)) {
+      throw makeError("DRIVE_FOLDER_NAME_INVALID", "請輸入有效的資料夾名稱（最多 255 字）。");
+    }
+    let response;
+    try {
+      response = await fetchForOperation(operation, DRIVE_API + "/files?supportsAllDrives=true&fields=id%2Cname%2CmimeType", {
+        method: "POST",
+        headers: { Authorization: "Bearer " + token, "Content-Type": "application/json" },
+        body: JSON.stringify({ name: folderName, mimeType: "application/vnd.google-apps.folder", parents: [parent.id] }),
+      });
+    } catch (error) {
+      if (error && (error.code === "DRIVE_NETWORK_ERROR" || error.code === "DRIVE_CANCELLED")) {
+        throw makeError("DRIVE_FOLDER_CREATE_UNCONFIRMED", "資料夾建立結果無法確認；請先檢查 Google Drive 再重試，避免重複建立。");
+      }
+      throw error;
+    }
+    if (!response.ok) throw httpError(response, "新增資料夾");
+    const folder = await parseJson(response);
+    if (!folder || !folder.id || folder.mimeType !== "application/vnd.google-apps.folder") {
+      throw makeError("DRIVE_FOLDER_CREATE_UNCONFIRMED", "資料夾建立結果無法確認，請先檢查 Google Drive 再重試。");
+    }
+    return folder;
   }
 
   function validateZipMetadata(metadata) {
@@ -865,9 +893,14 @@
         token = await requestToken(operation);
       }
       setOperationPhase(operation, "pick-folder", 0, bytes.byteLength);
-      const folder = await pickFromDrive(operation, token, "folder");
+      let folder = await pickFromDrive(operation, token, "folder");
       if (!folder || !folder.id || folder.mimeType !== "application/vnd.google-apps.folder") {
         throw makeError("DRIVE_FOLDER_REQUIRED", "請在 Google Picker 選擇目的資料夾。", { retryable: true });
+      }
+      if (options && typeof options.chooseDestination === "function") {
+        const choice = await awaitOperationOrCancel(operation, options.chooseDestination({ id: folder.id, name: folder.name || "所選資料夾" }));
+        if (!choice) throw makeError("DRIVE_CANCELLED", "已取消 Google Drive 匯出。", { cancelled: true });
+        if (choice.createFolderName != null) folder = await createDestinationFolder(operation, token, folder, choice.createFolderName);
       }
       const pending = {
         bytes,

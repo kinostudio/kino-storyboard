@@ -8,7 +8,7 @@
   <meta name="theme-color" content="#18243b">
   <title>KINO Storyboard｜光落下的地方</title>
   <link rel="icon" type="image/svg+xml" href="kino-storyboard.svg">
-  <link rel="stylesheet" href="styles.css?v=20261031drive1">
+  <link rel="stylesheet" href="styles.css?v=20261031drive2">
   <link rel="stylesheet" href="output.css?v=20261030ui2">
   <link rel="stylesheet" href="drawing-editor.css?v=20261030ui2">
   <link rel="stylesheet" href="photo-crop-editor.css?v=20261029v38">
@@ -35,8 +35,8 @@
   <script defer src="production-timeline.js?v=20261029g"></script>
   <script defer src="time-input.js"></script>
   <script defer src="google-drive-config.js?v=20261031drive1"></script>
-  <script defer src="google-drive.js?v=20261031drive4"></script>
-  <script defer src="app.js?v=20261031drive1"></script>
+  <script defer src="google-drive.js?v=20261031drive5"></script>
+  <script defer src="app.js?v=20261031drive2"></script>
 </head>
 <body>
   <section class="lifecycle-gate" id="lifecycle-gate" aria-live="polite" aria-labelledby="lifecycle-title">
@@ -220,6 +220,14 @@
   <div id="photo-crop-editor-mount"></div>
   <input id="shot-photo-picker" type="file" hidden aria-label="選取照片">
   <input id="complete-package-picker" type="file" accept=".storyboard.zip,.zip,application/zip" hidden aria-label="選取完整專案 ZIP">
+  <dialog class="app-dialog drive-destination-dialog" id="drive-destination-dialog" aria-labelledby="drive-destination-title" aria-describedby="drive-destination-description">
+    <div class="dialog-top"><span class="dialog-mark" aria-hidden="true">Drive</span><button class="dialog-close" type="button" data-drive-destination-action="cancel" aria-label="取消 Google Drive 匯出">×</button></div>
+    <h2 id="drive-destination-title">確認 Google Drive 儲存位置</h2>
+    <p class="dialog-lead" id="drive-destination-description">請確認 ZIP 的儲存資料夾。確認前不會建立資料夾或上傳檔案。</p>
+    <div class="drive-destination-parent"><span>已選擇的資料夾</span><strong id="drive-destination-parent-name"></strong></div>
+    <div class="field-group drive-destination-folder-field"><label class="field-label" for="drive-destination-new-folder">新資料夾名稱（選填）</label><input class="text-field" id="drive-destination-new-folder" type="text" maxlength="255" autocomplete="off" aria-describedby="drive-destination-folder-note"><small class="field-note" id="drive-destination-folder-note">留空會直接儲存至上方資料夾；輸入名稱並選擇「新增資料夾」會先在其中建立子資料夾，再儲存 ZIP。</small></div>
+    <div class="dialog-actions"><button class="outline-button" type="button" data-drive-destination-action="cancel">取消</button><button class="outline-button" id="drive-destination-create-folder" type="button" data-drive-destination-action="create-folder">新增資料夾</button><button class="primary-button" id="drive-destination-save-parent" type="button" data-drive-destination-action="save-parent">儲存至此資料夾</button></div>
+  </dialog>
   <dialog class="app-dialog package-import-dialog" id="complete-package-import-dialog" aria-labelledby="complete-package-import-title" aria-describedby="complete-package-import-description">
     <div class="dialog-top"><span class="dialog-mark" aria-hidden="true">ZIP</span><button class="dialog-close" type="button" data-package-import-action="cancel" aria-label="取消匯入">×</button></div>
     <h2 id="complete-package-import-title">匯入完整專案包</h2>

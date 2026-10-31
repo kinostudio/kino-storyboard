@@ -133,6 +133,7 @@
   let googleDriveResumeAvailable = false;
   let googleDriveReadyState = "unknown";
   let googleDriveReadyStarted = false;
+  let googleDriveDestinationResolve = null;
   let drawingRoute = null;
   let drawingEditorHandle = null;
   let drawingChooserContext = null;
@@ -5461,6 +5462,51 @@
       return url.protocol === "https:" && url.hostname === "drive.google.com" ? url.href : "";
     } catch (_) { return ""; }
   }
+  function finishGoogleDriveDestination(choice, closeDialog) {
+    const resolve = googleDriveDestinationResolve;
+    if (!resolve) return;
+    googleDriveDestinationResolve = null;
+    const dialog = $("#drive-destination-dialog");
+    const nameInput = $("#drive-destination-new-folder", dialog);
+    const folderName = $("#drive-destination-parent-name", dialog);
+    if (nameInput) { nameInput.value = ""; nameInput.setCustomValidity(""); }
+    if (folderName) folderName.textContent = "";
+    if (closeDialog !== false && dialog && dialog.open) {
+      if (typeof dialog.close === "function") dialog.close();
+      else dialog.removeAttribute("open");
+    }
+    resolve(choice);
+  }
+  function chooseGoogleDriveDestination(parentFolder) {
+    return new Promise((resolve) => {
+      const dialog = $("#drive-destination-dialog");
+      const nameInput = $("#drive-destination-new-folder", dialog);
+      const folderName = $("#drive-destination-parent-name", dialog);
+      if (!dialog || !nameInput || !folderName) { resolve(null); return; }
+      if (googleDriveDestinationResolve) finishGoogleDriveDestination(null);
+      googleDriveDestinationResolve = resolve;
+      folderName.textContent = String(parentFolder && parentFolder.name || "").trim() || "所選資料夾";
+      nameInput.value = "";
+      nameInput.setCustomValidity("");
+      if (!dialog.dataset.destinationCancelBound) {
+        dialog.addEventListener("cancel", () => finishGoogleDriveDestination(null, false));
+        dialog.addEventListener("close", () => finishGoogleDriveDestination(null, false));
+        nameInput.addEventListener("keydown", (event) => {
+          if (event.key === "Enter") {
+            event.preventDefault();
+            const button = $("#drive-destination-create-folder", dialog);
+            if (button) button.click();
+          }
+        });
+        nameInput.addEventListener("input", () => nameInput.setCustomValidity(""));
+        dialog.dataset.destinationCancelBound = "true";
+      }
+      if (typeof dialog.showModal === "function") dialog.showModal();
+      else dialog.setAttribute("open", "open");
+      const saveButton = $("#drive-destination-save-parent", dialog);
+      if (saveButton) saveButton.focus();
+    });
+  }
   function setGoogleDriveStatus(text, options) {
     const opts = options || {};
     googleDriveStatus = { text: String(text || ""), kind: opts.kind || "info", link: safeDriveWebViewLink(opts.link) };
@@ -5607,6 +5653,7 @@
         setGoogleDriveStatus("本機 ZIP 已驗證；正在選擇 Google Drive 資料夾並上傳新檔。");
         return archive;
       }, undefined, {
+        chooseDestination: function (folder) { return chooseGoogleDriveDestination(folder); },
         onProgress: function (progress) { if (progress && progress.phase === "upload") setGoogleDriveStatus(formatDriveProgress(progress)); }
       });
       const result = await resultPromise;
@@ -6998,6 +7045,24 @@
     $("#shot-reorder-mode").addEventListener("click", () => toggleReorderMode("shots"));
     $("#schedule-reorder-mode").addEventListener("click", () => toggleReorderMode("entries"));
     document.addEventListener("click", async (event) => {
+      const driveDestinationAction = event.target.closest("[data-drive-destination-action]");
+      if (driveDestinationAction) {
+        event.preventDefault();
+        const action = driveDestinationAction.dataset.driveDestinationAction;
+        if (action === "cancel") finishGoogleDriveDestination(null);
+        else if (action === "save-parent") finishGoogleDriveDestination({});
+        else if (action === "create-folder") {
+          const nameInput = $("#drive-destination-new-folder");
+          const name = nameInput ? nameInput.value.trim() : "";
+          if (!name) {
+            if (nameInput) { nameInput.setCustomValidity("請輸入新資料夾名稱。"); nameInput.reportValidity(); nameInput.focus(); }
+            return;
+          }
+          if (nameInput) nameInput.setCustomValidity("");
+          finishGoogleDriveDestination({ createFolderName: name });
+        }
+        return;
+      }
       const callsheetAction = event.target.closest("[data-callsheet-action]");
       if (callsheetAction) { event.preventDefault(); await safely(() => handleCallsheetAction(callsheetAction.dataset.callsheetAction, callsheetAction)); return; }
       const driveAction = event.target.closest("[data-drive-action]");

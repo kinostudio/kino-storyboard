@@ -1403,6 +1403,7 @@ body.is-read-only #shot-list .shot-card.is-gallery .shot-card-text-preview:focus
 .google-drive-actions{display:flex;justify-content:flex-end;gap:6px;flex-wrap:wrap}
 .project-popover .google-drive-actions button{width:auto;min-height:34px;padding:6px 9px;font-size:9px}
 .google-drive-actions button[hidden]{display:none}
+.drive-destination-dialog{width:min(460px,calc(100vw - 32px))}.drive-destination-parent{margin:16px 0 13px;padding:12px 13px;border:1px solid #e5e6e1;border-radius:7px;background:#f8f9f6}.drive-destination-parent span{display:block;margin-bottom:5px;color:#9299a1;font-size:9px}.drive-destination-parent strong{display:block;color:#34445f;font-size:12px;line-height:1.5;overflow-wrap:anywhere}.drive-destination-folder-field{margin-bottom:0}.drive-destination-dialog .text-field{min-height:44px}.drive-destination-dialog .dialog-actions{gap:8px;flex-wrap:wrap}.drive-destination-dialog .dialog-actions button{min-height:44px;padding:0 12px}.drive-destination-dialog .dialog-actions button:focus-visible{outline:2px solid #526392;outline-offset:2px}
 .package-import-source{display:block;margin-top:3px;color:#718096;font-size:9px;line-height:1.4}
 .package-import-file>div{min-width:0}
 @media(max-width:480px){.google-drive-controls{margin-right:2px;margin-left:2px}.google-drive-actions button{flex:1 1 100%}}

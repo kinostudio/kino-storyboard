@@ -27,6 +27,7 @@ function createHarness(fetchImpl) {
     constructor() {}
     setIncludeFolders() { return this; }
     setMode() { return this; }
+    setMimeTypes() { return this; }
     setSelectFolderEnabled() { return this; }
   }
 
@@ -205,6 +206,26 @@ async function testRateLimit403CanResume() {
 }
 
 async function main() {
+  let folderCreates = 0;
+  const destination = createHarness(async (url, init) => {
+    if (url.startsWith("https://www.googleapis.com/drive/v3/files?")) {
+      folderCreates++;
+      const body = JSON.parse(init.body);
+      assert.deepEqual(body.parents, ["folder-1"]);
+      assert.equal(body.name, "新資料夾");
+      return jsonResponse({ id: "child-1", name: body.name, mimeType: "application/vnd.google-apps.folder" });
+    }
+    if (init.method === "POST") {
+      assert.deepEqual(JSON.parse(init.body).parents, ["child-1"]);
+      return new Response(null, { status: 200, headers: { Location: sessionUrl } });
+    }
+    return jsonResponse({ id: "zip-1", name: "test.zip", mimeType: "application/zip", size: "1" }, 200);
+  });
+  const result = await destination.exportZip(Uint8Array.from([1]), "test.zip", { chooseDestination: async () => ({ createFolderName: "新資料夾" }) });
+  assert.equal(folderCreates, 1);
+  assert.equal(result.folderId, "child-1");
+  const cancelled = createHarness(async () => { throw new Error("No network requests expected after cancellation"); });
+  await assert.rejects(cancelled.exportZip(Uint8Array.from([1]), "test.zip", { chooseDestination: async () => null }), error => error.code === "DRIVE_CANCELLED");
   await testQuota403ExpiresSession();
   await testRateLimit403CanResume();
   console.log(JSON.stringify({
