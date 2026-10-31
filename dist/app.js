@@ -4317,7 +4317,8 @@
         const body = page.querySelector(".output-page-body");
         if (!body) return;
         const pageRecords = context.pages[index] || [];
-        const capacity = Math.max(Number(context.density) || 1,pageRecords.length);
+        const capacity = Math.max(Number(context.worksheetLayoutCapacity || context.density) || 1,pageRecords.length);
+        page.dataset.effectiveDensity = String(capacity);
         let columns = context.template === "proposal" ? 2 : 1;
         if (context.template === "contact" && body.clientWidth > 0 && body.clientHeight > 0) {
           let bestArea = -1;
@@ -4504,6 +4505,11 @@
     activeOutputContext = context;
     context.layoutReady = false;
     context.layoutBlocked = false;
+    if (context.kind === "storyboard" && context.template === "worksheet") {
+      context.worksheetLayoutCapacity = Math.max(1,Number(context.density) || 1);
+      context.pages = paginateOutputRecords(context.records,context.worksheetLayoutCapacity);
+      renderOutputPages(context);
+    }
     updateOutputPrintAvailability(context);
     requestAnimationFrame(() => balanceOutputPages(context,version,0));
   }
@@ -4629,6 +4635,16 @@
       context.layoutBlocked = true; context.layoutReady = true;
       message("A4 分頁仍有溢出，內容完整保留但暫停列印；請調低每頁數量或調整紙張方向。",true);
       updateOutputPrintAvailability(context);
+      return;
+    }
+    // Fixed-capacity worksheet tracks do not grow when a record is carried.
+    // Retry untouched records at a lower shared capacity before splitting text;
+    // otherwise each page collapses to one tiny row and unnecessary continuations.
+    if (context.kind === "storyboard" && context.template === "worksheet" && context.worksheetLayoutCapacity > 1) {
+      context.worksheetLayoutCapacity -= 1;
+      context.pages = paginateOutputRecords(context.records,context.worksheetLayoutCapacity);
+      renderOutputPages(context);
+      requestAnimationFrame(() => balanceOutputPages(context,version,pass + 1));
       return;
     }
     const pageRecords = context.pages[overflowIndex];

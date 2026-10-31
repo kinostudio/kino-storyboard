@@ -124,6 +124,7 @@ async function readState(page, label) {
           layout:page.dataset.layout || "",
           template:page.dataset.template || "",
           density:Number(page.dataset.density || 0),
+          effectiveDensity:Number(page.dataset.effectiveDensity || page.dataset.density || 0),
           orientation:page.classList.contains("is-portrait") ? "portrait" : "landscape",
           pageSize:{ width:Math.round(rect.width*100)/100, height:Math.round(rect.height*100)/100 },
           overflow:page.scrollWidth > page.clientWidth + 2 || page.scrollHeight > page.clientHeight + 2 || !!body && (body.scrollWidth > body.clientWidth + 2 || body.scrollHeight > body.clientHeight + 2),
@@ -140,6 +141,7 @@ async function readState(page, label) {
             return {
               id:wrap.getAttribute("data-output-record") || "",
               shotId:wrap.getAttribute("data-shot-id") || wrap.querySelector("[data-shot-id]")?.getAttribute("data-shot-id") || "",
+              wrapperClass:wrap.className,
               visibleId:ids,
               visible,
               labels,
@@ -338,18 +340,51 @@ async function main() {
     for(const requested of densitySweepSamples){
       await setDensity(page,requested);
       const state=await readState(page,`${densitySweepTemplate}-landscape-density-${requested}`);
+      report.densityDiagnostics=report.densityDiagnostics||[];
+      report.densityDiagnostics.push({name:state.label,pages:state.pages});
+      if(densitySweepTemplate==="worksheet"&&requested===6){
+        for(const [suffix,pageIndex] of [["first",0],["last",state.pages.length-1]]){
+          const file=path.join(outputDir,"worksheet-landscape-density-06-"+suffix+".png");
+          await page.locator("#print-document > .output-page").nth(pageIndex).screenshot({path:file,animations:"disabled"});
+          report.screenshots.push(file);
+        }
+      }
       assert.equal(state.requestedDensity,requested,`${state.label}: user density preference must not be silently rewritten`);
       const records=state.pages.flatMap((outputPage)=>outputPage.records);
-      assert.deepEqual(records.map((record)=>record.id),fixture.shots.map((shot)=>shot.id),`${state.label}: all 9 identifiers should remain 1:1 and ordered`);
+      const sourceOrder=records.map((record)=>record.id).filter((id,index,ids)=>index===0||id!==ids[index-1]);
+      assert.deepEqual(sourceOrder,fixture.shots.map((shot)=>shot.id),`${state.label}: continuation rows must remain grouped by source Shot and preserve source order`);
+      assert.deepEqual(records.map((record)=>record.shotId),records.map((record)=>record.id),`${state.label}: each physical output row must point to its source Shot`);
       assert.ok(state.pages.every((outputPage)=>outputPage.layout===densitySweepTemplate&&outputPage.template===densitySweepTemplate&&!outputPage.overflow),`${state.label}: pages must stay in their template and fit`);
-      assert.ok(state.pages.every((outputPage)=>outputPage.density>0&&outputPage.records.length<=outputPage.density),`${state.label}: page record count should respect its effective density`);
+      assert.ok(state.pages.every((outputPage)=>outputPage.density===requested),`${state.label}: rendered slot capacity should remain ${requested}`);
+      const effectiveCapacities=[...new Set(state.pages.map((outputPage)=>outputPage.effectiveDensity))];
+      assert.equal(effectiveCapacities.length,1,`${state.label}: effective row capacity should stay consistent across pages`);
+      const effectiveCapacity=effectiveCapacities[0];
+      assert.ok(effectiveCapacity>0&&effectiveCapacity<=requested,`${state.label}: effective row capacity should be within the requested maximum`);
+      assert.ok(state.pages.every((outputPage)=>outputPage.records.length<=effectiveCapacity),`${state.label}: page record count should respect its effective row capacity`);
+      assert.ok(state.pages.every((outputPage)=>outputPage.records.every((record)=>!record.overflow)),`${state.label}: continuation rows must not overflow or clip`);
+      const expectedPackedPages=Math.ceil(records.length/effectiveCapacity);
+      assert.ok(state.pages.length<=expectedPackedPages+1,`${state.label}: ${records.length} physical rows should pack near ${expectedPackedPages} pages at capacity ${requested}, observed ${state.pages.length}`);
       const first=state.pages[0].records[0].cardBox,partial=state.pages.at(-1).records[0].cardBox;
       assert.ok(first&&partial&&Math.abs(first.width-partial.width)<=3&&Math.abs(first.height-partial.height)<=3,`${state.label}: partial page must retain slot sizing`);
-      report.cases.push({name:state.label,requestedDensity:requested,effectiveDensity:state.pages[0]?.density,pageCount:state.pages.length,split:state.pages.map((outputPage)=>outputPage.records.length)});
+      if(densitySweepTemplate==="worksheet"){
+        for(const shot of fixture.shots){
+          const shotIndex=fixture.shots.indexOf(shot)+1;
+          const suffix=String(shotIndex).padStart(2,"0");
+          const shotText=records.filter((record)=>record.id===shot.id).map((record)=>record.visible).join(" ");
+          const markers=[shot.title,"VISUAL-QA-"+suffix,"VO-QA-"+suffix,"SOUND-QA-"+suffix,"SUPER-QA-"+suffix,"MOVE-QA-"+suffix];
+          for(const marker of markers){
+            assert.ok(shotText.includes(marker),`${state.label}: continuation rows must preserve ${marker}`);
+            assert.equal(shotText.split(marker).length-1,1,`${state.label}: ${marker} should appear once across continuations`);
+          }
+        }
+      }
+      report.cases.push({name:state.label,requestedDensity:requested,effectiveDensity:effectiveCapacity,physicalRows:records.length,expectedPackedPages,pageCount:state.pages.length,split:state.pages.map((outputPage)=>outputPage.records.length)});
       if(requested===12||requested===2){
-        const file=path.join(outputDir,`${densitySweepTemplate}-landscape-density-${String(requested).padStart(2,"0")}-first.png`);
-        await page.locator("#print-document > .output-page").first().screenshot({path:file,animations:"disabled"});
-        report.screenshots.push(file);
+        for(const [suffix,pageIndex] of [["first",0],["last",state.pages.length-1]]){
+          const file=path.join(outputDir,densitySweepTemplate+"-landscape-density-"+String(requested).padStart(2,"0")+"-"+suffix+".png");
+          await page.locator("#print-document > .output-page").nth(pageIndex).screenshot({path:file,animations:"disabled"});
+          report.screenshots.push(file);
+        }
       }
     }
     }
