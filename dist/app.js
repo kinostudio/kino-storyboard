@@ -2641,7 +2641,7 @@
     $("#runtime-label").textContent = "預估片長 " + formatDuration(seconds) + (unknown ? " · " + unknown + " 鏡未估" : "");
     if (!shots.length) {
       disconnectShotPhotoObservation(list);
-      list.innerHTML = '<div class="empty-state"><div class="empty-icon">' + icon("info", 16) + '</div><strong>' + (state.shots.length ? "沒有符合條件的鏡頭" : "從第一個鏡頭開始") + '</strong><p>' + (state.shots.length ? "調整搜尋文字或切換場次，查看其他分鏡。" : "把畫面、聲音與節奏逐鏡整理起來。") + '</p>' + (state.shots.length ? '<button class="small-action" data-action="clear-search">清除搜尋</button>' : '<button class="outline-button empty-add" data-action="add-shot">' + icon("plus", 14) + '新增第一鏡</button>') + '</div>' + placeholderMarkup;
+      list.innerHTML = placeholderMarkup || '<div class="empty-state"><div class="empty-icon">' + icon("info", 16) + '</div><strong>沒有符合條件的鏡頭</strong><p>調整搜尋文字或切換場次，查看其他分鏡。</p><button class="small-action" data-action="clear-search">清除搜尋</button></div>';
       reconcileShotPhotoUrls(); reconcileShotDrawingUrls(); renderPhotoImportBanner(); updateReorderSelectionUi();
       applyReadonlyControls();
       if (focusSnapshot && focusSnapshot.placeholder && focusSnapshot.placeholderField) {
