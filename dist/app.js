@@ -89,7 +89,12 @@
   let shotPlaceholderContextKey = "";
   let shotPlaceholderDraft = null;
   const shotPlaceholderDrafts = new Map();
+  const shotPlaceholderDraftVersions = new Map();
   let shotPlaceholderPromotionPromise = null;
+  let shotPlaceholderAutoPromotionTimer = null;
+  let shotPlaceholderFocusTransfer = null;
+  const shotPlaceholderPromotedShots = new Map();
+  let shotPlaceholderRetryContext = null;
   let shotPlaceholderMessage = "";
   const shotPlaceholderComposingFields = new Set();
   let shotNumberResolution = null;
@@ -2118,6 +2123,7 @@
           if (photoImportSession === session) {
             photoImportSession = null;
             renderPhotoImportBanner();
+            if (session.placeholder) resumeShotPlaceholderAutoPromotion(session.contextKey);
           }
         }
       });
@@ -2128,6 +2134,7 @@
         if (photoImportSession === session && session.status === "cropping") {
           photoImportSession = null;
           renderPhotoImportBanner();
+          if (session.placeholder) resumeShotPlaceholderAutoPromotion(session.contextKey);
         }
       }, { once: true });
       void editor.open().catch((error) => {
@@ -2148,13 +2155,23 @@
     const target = photoPickerTarget; photoPickerTarget = null;
     const files = Array.from(input.files || []); input.value = "";
     if (target && target.placeholder) {
-      if (!files.length) return;
+      if (!files.length) { resumeShotPlaceholderAutoPromotion(target.contextKey); return; }
       if (!state || state.projectId !== target.projectId || !state.chapters.some((chapter) => chapter.id === target.sceneId)) {
-        message("專案或場次已切換；照片沒有寫入，也沒有建立鏡頭。", true); return;
+        message("專案或場次已切換；照片沒有寫入，也沒有建立鏡頭。", true);
+        resumeShotPlaceholderAutoPromotion(target.contextKey);
+        return;
       }
-      if (files.length !== 1) { message("每個鏡頭一次只選取一張照片；沒有建立鏡頭。", true); return; }
+      if (files.length !== 1) {
+        message("每個鏡頭一次只選取一張照片；沒有建立鏡頭。", true);
+        resumeShotPlaceholderAutoPromotion(target.contextKey);
+        return;
+      }
       const policy = photoImportPolicy();
-      if (policy && policy.maxBytes !== null && files[0].size > policy.maxBytes) { message("照片超過目前匯入大小上限；沒有建立鏡頭。", true); return; }
+      if (policy && policy.maxBytes !== null && files[0].size > policy.maxBytes) {
+        message("照片超過目前匯入大小上限；沒有建立鏡頭。", true);
+        resumeShotPlaceholderAutoPromotion(target.contextKey);
+        return;
+      }
       const session = {
         id: ++photoImportSessionSequence,
         ...target,
@@ -2330,8 +2347,10 @@
   }
   function clearPhotoImportSession() {
     if (!photoImportSession || ["importing", "retrying", "save_failed", "reconcile_required"].includes(photoImportSession.status)) return;
-    disposePhotoImportEditor(photoImportSession);
+    const session = photoImportSession;
+    disposePhotoImportEditor(session);
     photoImportSession = null; renderPhotoImportBanner();
+    if (session.placeholder) resumeShotPlaceholderAutoPromotion(session.contextKey);
   }
   function handleShotPhotoAction(action, target) {
     const session = photoImportSession;
@@ -2389,6 +2408,13 @@
     $("#chapter-count").textContent = state.chapters.length;
   }
   const SHOT_PLACEHOLDER_TEXT_FIELDS = ["title", "visual", "script", "super", "sound", "move", "tags"];
+  const SHOT_PLACEHOLDER_AUTO_PROMOTION_DELAY = 850;
+  function cancelShotPlaceholderAutoPromotion() {
+    if (shotPlaceholderAutoPromotionTimer !== null) {
+      clearTimeout(shotPlaceholderAutoPromotionTimer);
+      shotPlaceholderAutoPromotionTimer = null;
+    }
+  }
   function shotPlaceholderSceneId() {
     if (!state || !Array.isArray(state.chapters) || !state.chapters.length) return null;
     return activeChapterId !== "all" && state.chapters.some((chapter) => chapter.id === activeChapterId)
@@ -2398,8 +2424,10 @@
   function ensureShotPlaceholderDraft(sceneId) {
     const key = sceneId && state ? String(state.projectId) + "\u0000" + String(sceneId) : "";
     if (key !== shotPlaceholderContextKey) {
+      cancelShotPlaceholderAutoPromotion();
       shotPlaceholderContextKey = key;
       if (key && !shotPlaceholderDrafts.has(key)) shotPlaceholderDrafts.set(key, { title: "", visual: "", script: "", super: "", sound: "", move: "", tags: "", duration: "" });
+      if (key && !shotPlaceholderDraftVersions.has(key)) shotPlaceholderDraftVersions.set(key, 0);
       shotPlaceholderDraft = key ? shotPlaceholderDrafts.get(key) : null;
       shotPlaceholderMessage = "";
     }
@@ -2409,17 +2437,18 @@
     }
     return key;
   }
-  function shotPlaceholderAssessment() {
+  function shotPlaceholderAssessment(draft) {
+    draft = draft || shotPlaceholderDraft;
     const patch = {};
     let hasText = false;
     SHOT_PLACEHOLDER_TEXT_FIELDS.forEach((key) => {
-      const value = String(shotPlaceholderDraft && shotPlaceholderDraft[key] || "");
+      const value = String(draft && draft[key] || "");
       if (value.replace(/[\s\u200B\uFEFF]/gu, "")) {
         hasText = true;
         patch[key] = value;
       }
     });
-    const rawDuration = String(shotPlaceholderDraft && shotPlaceholderDraft.duration || "").trim();
+    const rawDuration = String(draft && draft.duration || "").trim();
     let positiveDuration = false;
     if (rawDuration) {
       const duration = Number(rawDuration);
@@ -2430,6 +2459,44 @@
       positiveDuration = duration > 0;
     }
     return { valid: true, meaningful: hasText || positiveDuration, patch, error: "" };
+  }
+  function shotPlaceholderCompletePatch(draft) {
+    const patch = {};
+    SHOT_PLACEHOLDER_TEXT_FIELDS.forEach((key) => { patch[key] = String(draft && draft[key] || ""); });
+    const rawDuration = String(draft && draft.duration || "").trim();
+    patch.duration = rawDuration ? Number(rawDuration) : 0;
+    return patch;
+  }
+  function shotPlaceholderEmptySnapshot() {
+    const snapshot = {};
+    SHOT_PLACEHOLDER_TEXT_FIELDS.forEach((key) => { snapshot[key] = ""; });
+    snapshot.duration = 0;
+    return snapshot;
+  }
+  function shotPlaceholderSnapshotFromShot(shot) {
+    const snapshot = {};
+    SHOT_PLACEHOLDER_TEXT_FIELDS.forEach((key) => { snapshot[key] = String(shot && shot[key] || ""); });
+    snapshot.duration = Number(shot && (shot.durationSeconds == null ? shot.duration : shot.durationSeconds)) || 0;
+    return snapshot;
+  }
+  function shotPlaceholderChangedPatch(base, draft) {
+    const snapshot = shotPlaceholderCompletePatch(draft);
+    const patch = {};
+    const previous = base || shotPlaceholderEmptySnapshot();
+    SHOT_PLACEHOLDER_TEXT_FIELDS.concat("duration").forEach((key) => {
+      if (!Object.is(previous[key], snapshot[key])) patch[key] = snapshot[key];
+    });
+    return { snapshot, patch };
+  }
+  function rememberShotPlaceholderPromotedShot(contextKey, shotId, base) {
+    shotPlaceholderPromotedShots.set(contextKey, { shotId, base: Object.assign({}, base || shotPlaceholderEmptySnapshot()) });
+  }
+  function shotPlaceholderPromotedAnchor(contextKey, shotId, canonical) {
+    const remembered = shotPlaceholderPromotedShots.get(contextKey);
+    if (remembered && remembered.shotId === shotId && remembered.base) return remembered;
+    const shot = canonical && Array.isArray(canonical.shots) && canonical.shots.find((item) => item.id === shotId);
+    if (!shot) return null;
+    return { shotId, base: shotPlaceholderSnapshotFromShot(shot) };
   }
   function shotPlaceholderCardMarkup() {
     const sceneId = shotPlaceholderSceneId();
@@ -2451,17 +2518,16 @@
       '<div class="shot-card-text-preview shot-card-super-preview"><label class="shot-preview-label" for="shot-placeholder-super"><strong>SUPER</strong><span>字卡</span></label><textarea id="shot-placeholder-super" class="shot-preview-text shot-inline-super" data-shot-placeholder-field="super" aria-label="新鏡頭字卡" rows="2" placeholder="輸入畫面字卡…"' + disabled + '>' + value("super") + '</textarea></div>' +
       '<div class="field-group shot-inline-field shot-duration-field"><label class="field-label" for="shot-placeholder-duration">影片秒數</label><div class="shot-duration-control"><input id="shot-placeholder-duration" class="shot-inline-duration" type="text" inputmode="decimal" data-shot-placeholder-field="duration" aria-label="新鏡頭影片秒數" value="' + value("duration") + '" placeholder="0" autocomplete="off"' + disabled + '><span class="shot-duration-unit">秒</span></div><span class="shot-duration-estimate">未估</span></div>' +
       '<details class="shot-placeholder-extra"><summary>其他鏡頭資料</summary><div class="shot-placeholder-extra-fields"><label>聲音設計<textarea class="textarea-field" data-shot-placeholder-field="sound" placeholder="環境音、音樂或轉場…"' + disabled + '>' + value("sound") + '</textarea></label><label>景別／運鏡<input class="text-field" type="text" data-shot-placeholder-field="move" value="' + value("move") + '" placeholder="例如：中景・推近"' + disabled + '></label><label>標籤<input class="text-field" type="text" data-shot-placeholder-field="tags" value="' + value("tags") + '" placeholder="以頓號分隔，例如：人物、黃昏"' + disabled + '></label></div></details>' +
-      '<div class="shot-photo-actions shot-placeholder-actions"><span class="shot-placeholder-media-note">' + (canCreatePhoto ? "選擇照片後，確認裁切時才建立鏡頭。" : "照片保存流程尚未載入。") + (canCreateDrawing ? " 手繪按下「儲存並關閉」時才建立鏡頭；返回會捨棄畫布。" : " 手繪保存流程尚未載入。") + '</span>' + (canCreatePhoto ? '<button type="button" class="outline-button" data-placeholder-action="photo"' + disabled + '>選擇照片</button>' : '') + (canCreateDrawing ? '<button type="button" class="outline-button" data-placeholder-action="drawing"' + disabled + '>手繪</button>' : '') + '<button type="button" class="primary-button" data-placeholder-action="promote"' + (disabled || !assessment.valid || !assessment.meaningful || shotPlaceholderPromotionPromise ? " disabled" : "") + '>加入鏡頭</button></div>' +
-      '<div class="shot-placeholder-status" role="status" aria-live="polite" data-kind="' + (shotPlaceholderMessage || shotPlaceholderAssessment().error ? "error" : "info") + '">' + escapeHtml(shotPlaceholderMessage || shotPlaceholderAssessment().error || "輸入文字或大於 0 的秒數後，才會建立鏡頭。空白與 0 秒會保留為草稿。") + '</div>' +
+      '<div class="shot-photo-actions shot-placeholder-actions"><span class="shot-placeholder-media-note">' + (canCreatePhoto ? "選擇照片後，確認裁切時才建立鏡頭。" : "照片保存流程尚未載入。") + (canCreateDrawing ? " 手繪按下「儲存並關閉」時才建立鏡頭；返回會捨棄畫布。" : " 手繪保存流程尚未載入。") + '</span>' + (canCreatePhoto ? '<button type="button" class="outline-button" data-placeholder-action="photo"' + disabled + '>選擇照片</button>' : '') + (canCreateDrawing ? '<button type="button" class="outline-button" data-placeholder-action="drawing"' + disabled + '>手繪</button>' : '') + '</div>' +
+      '<div class="shot-placeholder-status" role="status" aria-live="polite" data-kind="' + (shotPlaceholderMessage || shotPlaceholderAssessment().error ? "error" : "info") + '">' + escapeHtml(shotPlaceholderMessage || shotPlaceholderAssessment().error || "輸入完成後會自動保存；空白與 0 秒會保留為草稿。") + '</div>' +
       '</article>';
   }
   function refreshShotPlaceholderControls(card) {
     if (!card || !card.isConnected || !card.matches("[data-shot-placeholder]")) return;
     const assessment = shotPlaceholderAssessment();
-    const locked = isReadOnly() || !!shotPlaceholderPromotionPromise;
-    card.querySelectorAll("[data-shot-placeholder-field],[data-placeholder-action]").forEach((field) => { field.disabled = locked; });
-    const promote = card.querySelector('[data-placeholder-action="promote"]');
-    if (promote) promote.disabled = isReadOnly() || !assessment.valid || !assessment.meaningful || !!shotPlaceholderPromotionPromise;
+    const readonly = isReadOnly();
+    card.querySelectorAll("[data-shot-placeholder-field]").forEach((field) => { field.disabled = readonly; });
+    card.querySelectorAll("[data-placeholder-action]").forEach((field) => { field.disabled = readonly || !!shotPlaceholderPromotionPromise; });
     const photo = card.querySelector('[data-placeholder-action="photo"]');
     if (photo) photo.disabled = isReadOnly() || !assessment.valid || !!shotPlaceholderPromotionPromise;
     const drawing = card.querySelector('[data-placeholder-action="drawing"]');
@@ -2469,7 +2535,7 @@
     const status = card.querySelector(".shot-placeholder-status");
     if (status) {
       const text = shotPlaceholderMessage || assessment.error || (assessment.meaningful
-        ? "輸入完成後移開此卡片，或選擇「加入鏡頭」保存。"
+        ? shotPlaceholderPromotionPromise ? "正在保存鏡頭…" : "停止輸入片刻後會自動保存。"
         : "輸入文字或大於 0 的秒數後，才會建立鏡頭。空白與 0 秒會保留為草稿。");
       status.textContent = text;
       status.dataset.kind = shotPlaceholderMessage || assessment.error ? "error" : "info";
@@ -2483,6 +2549,7 @@
     if (shotPlaceholderContextKey !== String(state.projectId) + "\u0000" + String(card.dataset.placeholderSceneId)) return false;
     shotPlaceholderDraft[key] = field.value;
     shotPlaceholderDrafts.set(shotPlaceholderContextKey, shotPlaceholderDraft);
+    shotPlaceholderDraftVersions.set(shotPlaceholderContextKey, (shotPlaceholderDraftVersions.get(shotPlaceholderContextKey) || 0) + 1);
     shotPlaceholderMessage = "";
     if (key === "duration") {
       const estimate = card.querySelector(".shot-duration-estimate");
@@ -2493,17 +2560,51 @@
     refreshShotPlaceholderControls(card);
     return true;
   }
+  function scheduleShotPlaceholderAutoPromotion() {
+    cancelShotPlaceholderAutoPromotion();
+    if (isReadOnly() || modelLifecycle().phase === "save_failed" || shotPlaceholderMessage || shotPlaceholderPromotionPromise || photoImportSession || drawingRoute || shotPlaceholderComposingFields.size) return;
+    const contextKey = shotPlaceholderContextKey;
+    const assessment = shotPlaceholderAssessment();
+    if (!contextKey || !assessment.valid || !assessment.meaningful) return;
+    shotPlaceholderAutoPromotionTimer = setTimeout(() => {
+      shotPlaceholderAutoPromotionTimer = null;
+      if (contextKey !== shotPlaceholderContextKey || isReadOnly() || modelLifecycle().phase === "save_failed" || shotPlaceholderMessage || shotPlaceholderPromotionPromise || photoImportSession || drawingRoute || shotPlaceholderComposingFields.size) return;
+      const current = shotPlaceholderAssessment();
+      if (current.valid && current.meaningful) void promoteShotPlaceholder();
+    }, SHOT_PLACEHOLDER_AUTO_PROMOTION_DELAY);
+  }
+  function flushShotPlaceholderAutoPromotion() {
+    if (shotPlaceholderAutoPromotionTimer === null) return false;
+    cancelShotPlaceholderAutoPromotion();
+    const assessment = shotPlaceholderAssessment();
+    if (assessment.valid && assessment.meaningful) void promoteShotPlaceholder();
+    return true;
+  }
+  function resumeShotPlaceholderAutoPromotion(contextKey) {
+    if (!contextKey) return;
+    setTimeout(() => {
+      if (contextKey !== shotPlaceholderContextKey || !state || !shotPlaceholderDrafts.has(contextKey) || photoImportSession || drawingRoute) return;
+      scheduleShotPlaceholderAutoPromotion();
+    }, 0);
+  }
   function openShotPlaceholderPhotoPicker(card) {
+    cancelShotPlaceholderAutoPromotion();
     if (isReadOnly()) { message("目前為唯讀瀏覽；請重新取得編輯權後再選取照片。", true); return; }
     if (!photoImportPolicy() || !model || typeof model.addShotWithPhoto !== "function" || typeof model.getShotPhoto !== "function" || !window.DirectorStoryboardPhotoCropEditor || typeof window.DirectorStoryboardPhotoCropEditor.mount !== "function") {
-      message("新鏡頭照片保存流程尚未載入；沒有建立鏡頭。", true); return;
+      message("新鏡頭照片保存流程尚未載入；沒有建立鏡頭。", true);
+      resumeShotPlaceholderAutoPromotion(shotPlaceholderContextKey);
+      return;
     }
     if (photoImportSession) { message("目前仍有待處理照片；請先完成、重試或清除候選。", true); return; }
     if (!card || card.dataset.placeholderProjectId !== (state && state.projectId) || card.dataset.placeholderSceneId !== shotPlaceholderSceneId()) return;
     const assessment = shotPlaceholderAssessment();
     if (!assessment.valid) { shotPlaceholderMessage = assessment.error; refreshShotPlaceholderControls(card); return; }
     const input = $("#shot-photo-picker");
-    if (!input || !configureShotPhotoPicker()) { message("照片匯入政策尚未載入，無法開啟檔案選擇器。", true); return; }
+    if (!input || !configureShotPhotoPicker()) {
+      message("照片匯入政策尚未載入，無法開啟檔案選擇器。", true);
+      resumeShotPlaceholderAutoPromotion(shotPlaceholderContextKey);
+      return;
+    }
     photoPickerTarget = {
       placeholder: true,
       projectId: state.projectId,
@@ -2518,9 +2619,12 @@
     input.click();
   }
   function openShotPlaceholderDrawingRoute(card) {
+    cancelShotPlaceholderAutoPromotion();
     if (isReadOnly()) { message("目前為唯讀瀏覽；請重新取得編輯權後再開啟手繪。", true); return; }
     if (!drawingUiAvailable() || !model || typeof model.addShotWithDrawing !== "function") {
-      message("新鏡頭手繪保存流程尚未載入；沒有建立鏡頭。", true); return;
+      message("新鏡頭手繪保存流程尚未載入；沒有建立鏡頭。", true);
+      resumeShotPlaceholderAutoPromotion(shotPlaceholderContextKey);
+      return;
     }
     if (photoImportSession) { message("目前有待處理照片；先完成或取消照片裁切，再開啟手繪。", true); return; }
     if (!card || card.dataset.placeholderProjectId !== (state && state.projectId) || card.dataset.placeholderSceneId !== shotPlaceholderSceneId()) return;
@@ -2552,48 +2656,174 @@
     }
   }
   async function handleShotPlaceholderAction(action, card) {
-    if (action === "promote") { await promoteShotPlaceholder(); return; }
     if (action === "photo") { openShotPlaceholderPhotoPicker(card); return; }
     if (action === "drawing") { openShotPlaceholderDrawingRoute(card); return; }
   }
+  async function reconcileShotPlaceholderDraft(context, shotId, appliedVersion) {
+    let currentVersion = shotPlaceholderDraftVersions.get(context.contextKey) || 0;
+    let preserveDraft = false;
+    let preserveEmptyDraft = false;
+    let anchor = shotPlaceholderPromotedAnchor(context.contextKey, shotId, model && model.getState && model.getState());
+    if (!anchor) throw Object.assign(new Error("找不到已保存鏡頭的欄位基線；草稿仍保留。"), { code: "SHOT_PROMOTION_ANCHOR_MISSING" });
+    while (currentVersion !== appliedVersion) {
+      const latestDraft = shotPlaceholderDrafts.get(context.contextKey);
+      const latestAssessment = shotPlaceholderAssessment(latestDraft);
+      if (!latestAssessment.valid) { preserveDraft = true; break; }
+      if (!latestAssessment.meaningful) { preserveDraft = true; preserveEmptyDraft = true; break; }
+      const versionBeingSaved = currentVersion;
+      const changed = shotPlaceholderChangedPatch(anchor.base, latestDraft);
+      if (Object.keys(changed.patch).length) {
+        shotPlaceholderRetryContext = Object.assign({}, context, {
+          kind: "update",
+          shotId,
+          appliedVersion: versionBeingSaved,
+          baseSnapshot: Object.assign({}, anchor.base),
+          patch: Object.assign({}, changed.patch)
+        });
+        await withMutation(() => model.updateShot(shotId, changed.patch));
+        const canonical = model.getState && model.getState();
+        if (!canonical || canonical.projectId !== context.projectId || !canonical.shots.some((shot) => shot.id === shotId && shot.chapterId === context.sceneId)) {
+          throw Object.assign(new Error("鏡頭更新尚未在目前專案確認；草稿仍保留。"), { code: "SHOT_PROMOTION_NOT_VISIBLE" });
+        }
+        state = canonical;
+        anchor = { shotId, base: Object.assign({}, anchor.base, changed.patch) };
+        rememberShotPlaceholderPromotedShot(context.contextKey, shotId, anchor.base);
+      }
+      appliedVersion = versionBeingSaved;
+      currentVersion = shotPlaceholderDraftVersions.get(context.contextKey) || 0;
+    }
+    const finalDraft = shotPlaceholderDrafts.get(context.contextKey);
+    const finalAssessment = shotPlaceholderAssessment(finalDraft);
+    if (!preserveDraft && currentVersion === appliedVersion && finalAssessment.valid && finalAssessment.meaningful) {
+      const emptyDraft = { title: "", visual: "", script: "", super: "", sound: "", move: "", tags: "", duration: "" };
+      shotPlaceholderDrafts.set(context.contextKey, emptyDraft);
+      shotPlaceholderDraftVersions.set(context.contextKey, 0);
+      if (shotPlaceholderContextKey === context.contextKey) shotPlaceholderDraft = emptyDraft;
+      const remembered = shotPlaceholderPromotedShots.get(context.contextKey);
+      if (remembered && remembered.shotId === shotId) shotPlaceholderPromotedShots.delete(context.contextKey);
+    } else {
+      preserveDraft = true;
+      if (finalAssessment.valid && !finalAssessment.meaningful) preserveEmptyDraft = true;
+      if (preserveEmptyDraft) {
+        const remembered = shotPlaceholderPromotedShots.get(context.contextKey);
+        if (remembered && remembered.shotId === shotId) shotPlaceholderPromotedShots.delete(context.contextKey);
+      } else rememberShotPlaceholderPromotedShot(context.contextKey, shotId, anchor.base);
+    }
+    return { preserveDraft, preserveEmptyDraft, assessment: finalAssessment, version: currentVersion };
+  }
+  async function finishShotPlaceholderPromotionRetry(result) {
+    const pending = shotPlaceholderRetryContext;
+    if (!pending || !pending.projectId || !pending.contextKey) return false;
+    const shotId = pending.shotId || result;
+    const canonical = model && model.getState && model.getState();
+    if (!shotId || !canonical || canonical.projectId !== pending.projectId || !canonical.shots.some((shot) => shot.id === shotId && shot.chapterId === pending.sceneId)) return false;
+    state = canonical;
+    const retryBase = pending.kind === "create"
+      ? pending.baseSnapshot
+      : Object.assign({}, pending.baseSnapshot || shotPlaceholderEmptySnapshot(), pending.patch || {});
+    rememberShotPlaceholderPromotedShot(pending.contextKey, shotId, retryBase);
+    const reconciled = await reconcileShotPlaceholderDraft(pending, shotId, pending.appliedVersion);
+    shotPlaceholderRetryContext = null;
+    const sameDraftContext = shotPlaceholderContextKey === pending.contextKey && state.projectId === pending.projectId && shotPlaceholderSceneId() === pending.sceneId;
+    if (sameDraftContext) {
+      shotPlaceholderDraft = shotPlaceholderDrafts.get(pending.contextKey);
+      shotPlaceholderMessage = reconciled.preserveDraft ? reconciled.assessment.error : "";
+      selectedShotId = shotId;
+      activeChapterId = pending.sceneId;
+    } else shotPlaceholderMessage = "";
+    renderAll();
+    message(reconciled.preserveEmptyDraft
+      ? "先前已輸入的鏡頭已保存；空白與 0 秒草稿不會清除該鏡頭。"
+      : reconciled.preserveDraft ? "原鏡頭已保存；未完成輸入仍保留於尾端草稿。" : "原鏡頭保存重試成功；尾端草稿已清空。");
+    return true;
+  }
   async function promoteShotPlaceholder() {
+    cancelShotPlaceholderAutoPromotion();
     if (shotPlaceholderPromotionPromise) return shotPlaceholderPromotionPromise;
-    if (isReadOnly() || !state || !model || typeof model.addShot !== "function") return false;
+    if (isReadOnly() || modelLifecycle().phase === "save_failed" || !state || !model || typeof model.addShot !== "function") return false;
     const sceneId = shotPlaceholderSceneId();
     const contextKey = ensureShotPlaceholderDraft(sceneId);
-    const assessment = shotPlaceholderAssessment();
+    const draft = shotPlaceholderDrafts.get(contextKey) || shotPlaceholderDraft;
+    const assessment = shotPlaceholderAssessment(draft);
     const card = $("#shot-list [data-shot-placeholder]");
     if (!assessment.valid || !assessment.meaningful) { refreshShotPlaceholderControls(card); return false; }
+    const active = document.activeElement;
+    const activeField = active && active.closest ? active.closest("[data-shot-placeholder-field]") : null;
+    const focusFieldName = activeField && card && card.contains(activeField) ? activeField.dataset.shotPlaceholderField : "";
     const projectId = state.projectId;
-    const patch = assessment.patch;
+    const appliedVersion = shotPlaceholderDraftVersions.get(contextKey) || 0;
+    const context = { projectId, sceneId, contextKey, appliedVersion };
+    const rememberedAnchor = shotPlaceholderPromotedShots.get(contextKey);
+    const contextPromotedShotId = rememberedAnchor && rememberedAnchor.shotId;
+    const existingShotId = contextPromotedShotId && state.shots.some((shot) => shot.id === contextPromotedShotId && shot.chapterId === sceneId)
+      ? contextPromotedShotId
+      : null;
+    const initialBase = shotPlaceholderEmptySnapshot();
+    Object.assign(initialBase, assessment.patch);
+    const anchor = existingShotId
+      ? shotPlaceholderPromotedAnchor(contextKey, existingShotId, state)
+      : null;
+    if (existingShotId && !anchor) return false;
+    const changed = existingShotId ? shotPlaceholderChangedPatch(anchor.base, draft) : { patch: assessment.patch };
+    const retryBase = existingShotId ? anchor.base : initialBase;
     shotPlaceholderMessage = "正在保存新鏡頭…";
+    shotPlaceholderRetryContext = Object.assign({}, context, {
+      kind: existingShotId ? "update" : "create",
+      shotId: existingShotId,
+      baseSnapshot: Object.assign({}, retryBase),
+      patch: Object.assign({}, changed.patch)
+    });
     refreshShotPlaceholderControls(card);
     shotPlaceholderPromotionPromise = (async () => {
-      const shotId = await withMutation(() => model.addShot(sceneId, patch));
+      const shotId = existingShotId
+        ? Object.keys(changed.patch).length
+          ? await withMutation(() => model.updateShot(existingShotId, changed.patch))
+          : existingShotId
+        : await withMutation(() => model.addShot(sceneId, assessment.patch));
       const canonical = model.getState && model.getState();
       if (!canonical || canonical.projectId !== projectId || !canonical.shots.some((shot) => shot.id === shotId && shot.chapterId === sceneId)) {
         throw Object.assign(new Error("新鏡頭保存尚未在目前專案確認；草稿仍保留。"), { code: "SHOT_PROMOTION_NOT_VISIBLE" });
       }
       state = canonical;
+      rememberShotPlaceholderPromotedShot(contextKey, shotId, existingShotId
+        ? Object.assign({}, anchor.base, changed.patch)
+        : initialBase);
+      const reconciled = await reconcileShotPlaceholderDraft(context, shotId, appliedVersion);
+      shotPlaceholderRetryContext = null;
       const sameDraftContext = shotPlaceholderContextKey === contextKey && state.projectId === projectId && shotPlaceholderSceneId() === sceneId;
-      const emptyDraft = { title: "", visual: "", script: "", super: "", sound: "", move: "", tags: "", duration: "" };
-      shotPlaceholderDrafts.set(contextKey, emptyDraft);
       if (sameDraftContext) {
-        shotPlaceholderDraft = emptyDraft;
-        shotPlaceholderMessage = "";
+        shotPlaceholderMessage = reconciled.preserveDraft ? reconciled.assessment.error : "";
+        shotPlaceholderDraft = shotPlaceholderDrafts.get(contextKey);
         selectedShotId = shotId;
         activeChapterId = sceneId;
+      } else shotPlaceholderMessage = "";
+      const activeNow = document.activeElement;
+      const currentPlaceholderField = activeNow && activeNow.closest ? activeNow.closest("[data-shot-placeholder-field]") : null;
+      const currentPlaceholderCard = currentPlaceholderField && currentPlaceholderField.closest("[data-shot-placeholder]");
+      if (sameDraftContext && !reconciled.preserveDraft && currentPlaceholderCard && currentPlaceholderCard.dataset.placeholderProjectId === projectId && currentPlaceholderCard.dataset.placeholderSceneId === sceneId) {
+        shotPlaceholderFocusTransfer = {
+          shotId,
+          field: currentPlaceholderField.dataset.shotPlaceholderField || focusFieldName,
+          start: typeof currentPlaceholderField.selectionStart === "number" ? currentPlaceholderField.selectionStart : null,
+          end: typeof currentPlaceholderField.selectionEnd === "number" ? currentPlaceholderField.selectionEnd : null
+        };
       }
       renderAll();
-      message(sameDraftContext ? "已保存新鏡頭；尾端保留下一張空白草稿。" : "新鏡頭已保存至原場次。");
+      shotPlaceholderFocusTransfer = null;
+      message(reconciled.preserveEmptyDraft
+        ? "先前已輸入的鏡頭已保存；空白與 0 秒草稿不會清除該鏡頭。"
+        : reconciled.preserveDraft ? "鏡頭已保存；未完成輸入仍保留於尾端草稿。" : sameDraftContext ? "已保存新鏡頭；尾端保留下一張空白草稿。" : "新鏡頭已保存至原場次。");
       return true;
     })().catch((error) => {
+      if (modelLifecycle().phase !== "save_failed") shotPlaceholderRetryContext = null;
       shotPlaceholderMessage = (error && error.code ? error.code + " · " : "") + (error && error.message || "新鏡頭保存失敗；輸入仍保留。");
       refreshShotPlaceholderControls($("#shot-list [data-shot-placeholder]"));
       return false;
     }).finally(() => {
       shotPlaceholderPromotionPromise = null;
-      refreshShotPlaceholderControls($("#shot-list [data-shot-placeholder]"));
+      const placeholder = $("#shot-list [data-shot-placeholder]");
+      refreshShotPlaceholderControls(placeholder);
+      if (placeholder && !shotPlaceholderRetryContext) scheduleShotPlaceholderAutoPromotion();
     });
     refreshShotPlaceholderControls(card);
     return shotPlaceholderPromotionPromise;
@@ -2689,22 +2919,28 @@
     });
     if (shotView === "gallery") resizeShotVisualBatch(visualFields);
     applyReadonlyControls(); updateReorderSelectionUi();
-    if (focusSnapshot) {
-      const card = focusSnapshot.placeholder
-        ? $("#shot-list [data-shot-placeholder]")
-        : $$("#shot-list .shot-card[data-shot]").find((item) => item.dataset.shot === focusSnapshot.shotId);
+    if (focusSnapshot || shotPlaceholderFocusTransfer) {
+      const focusTransfer = shotPlaceholderFocusTransfer && (!focusSnapshot || focusSnapshot.placeholder) ? shotPlaceholderFocusTransfer : null;
+      const card = focusTransfer
+        ? $$("#shot-list .shot-card[data-shot]").find((item) => item.dataset.shot === focusTransfer.shotId)
+        : focusSnapshot.placeholder
+          ? $("#shot-list [data-shot-placeholder]")
+          : $$("#shot-list .shot-card[data-shot]").find((item) => item.dataset.shot === focusSnapshot.shotId);
       let target = null;
-      if (card && focusSnapshot.placeholderField) target = card.querySelector('[data-shot-placeholder-field="' + focusSnapshot.placeholderField + '"]');
+      if (focusTransfer && card) target = card.querySelector('[data-shot-field="' + focusTransfer.field + '"]');
+      else if (card && focusSnapshot.placeholderField) target = card.querySelector('[data-shot-placeholder-field="' + focusSnapshot.placeholderField + '"]');
       else if (card && focusSnapshot.field) target = card.querySelector('[data-shot-field="' + focusSnapshot.field + '"]');
       else if (card && focusSnapshot.photoAction && focusSnapshot.photoAssetId) {
         target = Array.from(card.querySelectorAll("[data-shot-photo-action][data-asset-id]")).find((item) => item.dataset.shotPhotoAction === focusSnapshot.photoAction && item.dataset.assetId === focusSnapshot.photoAssetId) || null;
       }
-      if (!target && card && focusSnapshot.photoManager) target = card.querySelector(".shot-photo-manager summary");
-      if (!target && card && !focusSnapshot.placeholder) target = card;
+      if (!target && card && focusSnapshot && focusSnapshot.photoManager) target = card.querySelector(".shot-photo-manager summary");
+      if (!target && card && focusSnapshot && !focusSnapshot.placeholder) target = card;
       if (target) {
         target.focus({preventScroll:true});
-        if (focusSnapshot.start != null && typeof target.setSelectionRange === "function") {
-          try { target.setSelectionRange(focusSnapshot.start, focusSnapshot.end); } catch (_) {}
+        const start = focusTransfer ? focusTransfer.start : focusSnapshot && focusSnapshot.start;
+        const end = focusTransfer ? focusTransfer.end : focusSnapshot && focusSnapshot.end;
+        if (start != null && typeof target.setSelectionRange === "function") {
+          try { target.setSelectionRange(start, end); } catch (_) {}
         }
       }
     }
@@ -4896,6 +5132,7 @@
       const button = card && card.querySelector('[data-placeholder-action="drawing"]');
       if (button) button.focus({ preventScroll: true });
       message("手繪草稿已捨棄；沒有建立鏡頭。");
+      resumeShotPlaceholderAutoPromotion(route.contextKey);
     }
     return true;
   }
@@ -5110,6 +5347,9 @@
   function setView(view, options) {
     if (!["storyboard", "schedule", "output", "drawing", "voiceover"].includes(view)) return false;
     const previousView = currentView;
+    if (currentView === "storyboard" && view !== "storyboard" && shotPlaceholderAutoPromotionTimer !== null && !(view === "drawing" && drawingRoute && drawingRoute.placeholder)) {
+      flushShotPlaceholderAutoPromotion();
+    }
     if (currentView !== view && outputPrintPreparation && !outputPrintPreparation.printInvoked && !outputPrintPreparation.allowOutputViewTransition) cancelOutputPrintPreparation();
     if (currentView !== view) cancelReorderGesture();
     if (currentView === "storyboard" && view !== "storyboard" && view !== "drawing") releaseAllShotPhotoUrls();
@@ -7193,7 +7433,9 @@
     }
     if (action === "retry-pending") {
       return lifecycleTask(async () => {
-        await model.retryPending();
+        const result = await model.retryPending();
+        await finishShotPlaceholderPromotionRetry(result);
+        scheduleShotPlaceholderAutoPromotion();
         refreshLifecycle(modelLifecycle());
         if (model.getState()) showProjectUI();
       });
@@ -7319,6 +7561,8 @@
           try { finishDrawingCreate(drawingRetryRoute, result); }
           catch (error) { drawingRetryRoute.error = error; drawingRetryRoute.status = "error"; renderDrawingRouteStatus(); }
         }
+        await finishShotPlaceholderPromotionRetry(result);
+        scheduleShotPlaceholderAutoPromotion();
         refreshLifecycle(modelLifecycle()); reconcileSavedDrafts(); message("保存佇列已完成。");
       }
       catch (error) {
@@ -7380,6 +7624,11 @@
       drawingBackgroundChoiceDialog.addEventListener("cancel", () => { drawingBackgroundChoiceContext = null; });
     }
     $("#shot-photo-picker").addEventListener("change", (event) => handleShotPhotoPickerChange(event.target));
+    $("#shot-photo-picker").addEventListener("cancel", () => {
+      const target = photoPickerTarget;
+      photoPickerTarget = null;
+      if (target && target.placeholder) resumeShotPlaceholderAutoPromotion(target.contextKey);
+    });
     $("#complete-package-picker").addEventListener("change", (event) => { void handleCompletePackageFile(event.target); });
     const packageDialog = $("#complete-package-import-dialog");
     if (packageDialog) {
@@ -7408,6 +7657,7 @@
     });
     $("#chapter-list").addEventListener("click", (event) => {
       const button = event.target.closest("[data-chapter]"); if (!button) return;
+      if (button.dataset.chapter !== activeChapterId) flushShotPlaceholderAutoPromotion();
       activeChapterId = button.dataset.chapter;
       shotReorderSelection = new Set(); shotSelectionAnchorId = null;
       if (activeChapterId !== "all") selectedShotId = (inChapter(activeChapterId)[0] || {}).id || null;
@@ -7481,34 +7731,28 @@
     }
     $("#shot-list").addEventListener("input", (event) => {
       const field = event.target.closest && event.target.closest("[data-shot-placeholder-field]");
-      if (field) handleShotPlaceholderInput(field);
+      if (field && handleShotPlaceholderInput(field)) scheduleShotPlaceholderAutoPromotion();
     });
     $("#shot-list").addEventListener("compositionstart", (event) => {
       const field = event.target.closest && event.target.closest("[data-shot-placeholder-field]");
-      if (field) shotPlaceholderComposingFields.add(field);
+      if (field) {
+        cancelShotPlaceholderAutoPromotion();
+        shotPlaceholderComposingFields.add(field);
+      }
     });
     $("#shot-list").addEventListener("compositionend", (event) => {
       const field = event.target.closest && event.target.closest("[data-shot-placeholder-field]");
       if (!field) return;
       shotPlaceholderComposingFields.delete(field);
       const card = field.closest("[data-shot-placeholder]");
-      if (card && !card.contains(document.activeElement)) setTimeout(() => { if (card.isConnected) void safely(() => promoteShotPlaceholder()); }, 0);
-    });
-    $("#shot-list").addEventListener("focusout", (event) => {
-      const field = event.target.closest && event.target.closest("[data-shot-placeholder-field]");
-      const card = field && field.closest("[data-shot-placeholder]");
-      if (!card || card.contains(event.relatedTarget)) return;
-      setTimeout(() => {
-        if (card.isConnected && !card.contains(document.activeElement) && !shotPlaceholderComposingFields.has(field)) {
-          void safely(() => promoteShotPlaceholder());
-        }
-      }, 0);
+      if (card && handleShotPlaceholderInput(field)) setTimeout(() => { if (card.isConnected && !shotPlaceholderComposingFields.size) scheduleShotPlaceholderAutoPromotion(); }, 0);
     });
     $("#shot-list").addEventListener("click", (event) => {
       const placeholderAction = event.target.closest && event.target.closest("[data-placeholder-action]");
       const placeholderCard = placeholderAction && placeholderAction.closest("[data-shot-placeholder]");
       if (placeholderAction && placeholderCard) {
         event.preventDefault();
+        cancelShotPlaceholderAutoPromotion();
         void handleShotPlaceholderAction(placeholderAction.dataset.placeholderAction, placeholderCard);
         return;
       }

@@ -1452,7 +1452,6 @@ body.is-read-only #shot-list .shot-card.is-gallery .shot-card-text-preview:focus
   border-top: 1px solid #e9ece9;
 }
 .shot-placeholder-media-note { min-width: 0; color: #879099; font-size: 9px; line-height: 1.45; }
-.shot-placeholder-actions .primary-button { flex: 0 0 auto; min-height: 35px; padding: 0 12px; }
 .shot-placeholder-extra,
 .shot-placeholder-status { grid-column: 1 / -1; min-width: 0; }
 .shot-placeholder-extra { border-top: 1px solid #e9ece9; padding-top: 8px; color: #697586; font-size: 10px; }
@@ -1466,9 +1465,7 @@ body.is-read-only #shot-list .shot-card.is-gallery .shot-card-text-preview:focus
 .shot-placeholder-card [data-placeholder-action]:disabled { opacity: .52; cursor: not-allowed; }
 .shot-placeholder-card [data-shot-placeholder-field]:disabled { color: #758092; cursor: not-allowed; }
 .shot-placeholder-card.is-gallery .shot-placeholder-actions { justify-content: stretch; flex-wrap: wrap; }
-.shot-placeholder-card.is-gallery .shot-placeholder-actions .primary-button { margin-left: auto; }
 @media(max-width:640px) {
   .shot-placeholder-card .shot-placeholder-actions { align-items: flex-start; flex-direction: column; }
-  .shot-placeholder-actions .primary-button { width: 100%; }
   .shot-placeholder-extra-fields { grid-template-columns: minmax(0, 1fr); }
 }
