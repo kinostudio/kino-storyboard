@@ -996,7 +996,8 @@ body.is-read-only .shot-photo-readonly-note{display:block}
 
 .shot-card.is-list .shot-inline-field:focus-within::after,
 .shot-card.is-list .shot-card-text-preview:focus-within::after {
-  content: "";
+  /* Keep the native caret aligned with text, selection, and IME composition. */
+  content: none;
   position: absolute;
   z-index: 1;
   top: 50%;
@@ -1315,7 +1316,8 @@ body.is-read-only #shot-list .shot-card.is-list .shot-card-text-preview:focus-wi
 
 .shot-card.is-gallery .shot-inline-field:focus-within::after,
 .shot-card.is-gallery .shot-card-text-preview:focus-within::after {
-  content: "";
+  /* Keep the native caret aligned with text, selection, and IME composition. */
+  content: none;
   position: absolute;
   z-index: 1;
   top: 50%;
