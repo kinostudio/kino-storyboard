@@ -28,6 +28,7 @@ function createHarness(fetchImpl) {
     setIncludeFolders() { return this; }
     setMode() { return this; }
     setMimeTypes() { return this; }
+    setParent(parent) { assert.equal(parent, "root"); return this; }
     setSelectFolderEnabled() { return this; }
   }
 
@@ -213,7 +214,7 @@ async function main() {
     }
     return jsonResponse({ id: "root-zip", name: "root.zip", mimeType: "application/zip", size: "1" }, 200);
   });
-  const rootResult = await rootDestination.exportZip(Uint8Array.from([1]), "root.zip", { chooseRootOrFolder: async () => "root", chooseDestination: async () => ({}) });
+  const rootResult = await rootDestination.exportZip(Uint8Array.from([1]), "root.zip", { chooseDestination: async () => ({}) });
   assert.equal(rootResult.folderId, "root");
   let folderCreates = 0;
   const destination = createHarness(async (url, init) => {
@@ -230,7 +231,7 @@ async function main() {
     }
     return jsonResponse({ id: "zip-1", name: "test.zip", mimeType: "application/zip", size: "1" }, 200);
   });
-  const result = await destination.exportZip(Uint8Array.from([1]), "test.zip", { chooseDestination: async () => ({ createFolderName: "新資料夾" }) });
+  const result = await destination.exportZip(Uint8Array.from([1]), "test.zip", { chooseDestination: async (_, pickFolder) => ({ folder: await pickFolder(), createFolderName: "新資料夾" }) });
   assert.equal(folderCreates, 1);
   assert.equal(result.folderId, "child-1");
   const cancelled = createHarness(async () => { throw new Error("No network requests expected after cancellation"); });

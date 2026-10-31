@@ -322,7 +322,7 @@
         const view = new pickerApi.DocsView(pickerApi.ViewId.DOCS)
           .setIncludeFolders(mode === "folder")
           .setMode(pickerApi.DocsViewMode.LIST);
-        if (mode === "folder") view.setMimeTypes("application/vnd.google-apps.folder").setSelectFolderEnabled(true);
+        if (mode === "folder") view.setMimeTypes("application/vnd.google-apps.folder").setSelectFolderEnabled(true).setParent("root");
         else view.setMimeTypes(PICKER_MIME_TYPES);
 
         const builder = new pickerApi.PickerBuilder()
@@ -893,21 +893,18 @@
         token = await requestToken(operation);
       }
       setOperationPhase(operation, "pick-folder", 0, bytes.byteLength);
-      const destinationType = options && typeof options.chooseRootOrFolder === "function"
-        ? await awaitOperationOrCancel(operation, options.chooseRootOrFolder())
-        : "folder";
-      if (!destinationType) throw makeError("DRIVE_CANCELLED", "已取消 Google Drive 匯出。", { cancelled: true });
-      if (destinationType !== "root" && destinationType !== "folder") throw makeError("DRIVE_FOLDER_REQUIRED", "請選擇儲存位置。");
-      let folder = destinationType === "root"
-        ? { id: "root", name: "我的雲端硬碟", mimeType: "application/vnd.google-apps.folder" }
-        : await pickFromDrive(operation, token, "folder");
+      let folder = { id: "root", name: "我的雲端硬碟", mimeType: "application/vnd.google-apps.folder" };
+      if (options && typeof options.chooseDestination === "function") {
+        const choice = await awaitOperationOrCancel(operation, options.chooseDestination(folder, () => pickFromDrive(operation, token, "folder")));
+        if (!choice) throw makeError("DRIVE_CANCELLED", "已取消 Google Drive 匯出。", { cancelled: true });
+        folder = choice.folder || folder;
+        if (!folder.id || folder.mimeType !== "application/vnd.google-apps.folder") throw makeError("DRIVE_FOLDER_REQUIRED", "請選擇有效的儲存資料夾。");
+        if (choice.createFolderName != null) folder = await createDestinationFolder(operation, token, folder, choice.createFolderName);
+      } else {
+        folder = await pickFromDrive(operation, token, "folder");
+      }
       if (!folder || !folder.id || folder.mimeType !== "application/vnd.google-apps.folder") {
         throw makeError("DRIVE_FOLDER_REQUIRED", "請在 Google Picker 選擇目的資料夾。", { retryable: true });
-      }
-      if (options && typeof options.chooseDestination === "function") {
-        const choice = await awaitOperationOrCancel(operation, options.chooseDestination({ id: folder.id, name: folder.name || "所選資料夾" }));
-        if (!choice) throw makeError("DRIVE_CANCELLED", "已取消 Google Drive 匯出。", { cancelled: true });
-        if (choice.createFolderName != null) folder = await createDestinationFolder(operation, token, folder, choice.createFolderName);
       }
       const pending = {
         bytes,
