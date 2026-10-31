@@ -16,6 +16,7 @@
   const ENTRY_TYPES = Object.freeze(["shot", "break"]);
   const OUTPUT_FIELDS = Object.freeze(["visual", "script", "super", "sound", "move", "duration"]);
   const IMAGE_OUTPUT_FIELDS = Object.freeze(["shotNumber", "title", "voiceover", "super", "duration"]);
+  const OUTPUT_TEMPLATES = Object.freeze(["worksheet", "proposal", "production", "av", "contact", "vo"]);
   const SCHEDULE_BOOLEAN_FIELDS = Object.freeze([
     "rundownThumbnails", "rundownNotes", "rundownStatus", "storyboardShotNumber", "storyboardTitle"
   ]);
@@ -220,6 +221,23 @@
     }
     integer(prefs.density, path + ".density", 1);
     if (prefs.density > 12) fail("INVALID_DENSITY", path + ".density", "每頁密度必須介於 1–12。");
+    if (Object.prototype.hasOwnProperty.call(prefs, "template") && !OUTPUT_TEMPLATES.includes(prefs.template)) {
+      fail("INVALID_OUTPUT_TEMPLATE", path + ".template", "不支援此分鏡輸出版型。");
+    }
+    if (Object.prototype.hasOwnProperty.call(prefs, "densityByTemplate")) {
+      const densityByTemplate = record(prefs.densityByTemplate, path + ".densityByTemplate");
+      Object.keys(densityByTemplate).forEach(function (template) {
+        if (!OUTPUT_TEMPLATES.includes(template)) fail("INVALID_OUTPUT_TEMPLATE", path + ".densityByTemplate." + template, "不支援此分鏡輸出版型。");
+        integer(densityByTemplate[template], path + ".densityByTemplate." + template, 1);
+        if (densityByTemplate[template] > 12) fail("INVALID_DENSITY", path + ".densityByTemplate." + template, "每頁密度必須介於 1–12。");
+      });
+      if (prefs.template && densityByTemplate[prefs.template] !== prefs.density) {
+        fail("INVALID_DENSITY", path + ".density", "density 必須與目前版型的 densityByTemplate 相同。");
+      }
+    }
+    if (prefs.template && prefs.mode !== (prefs.template === "contact" ? "images" : "details")) {
+      fail("INVALID_OUTPUT_MODE", path + ".mode", "mode 必須與目前分鏡輸出版型相同。");
+    }
     const fields = record(prefs.fields, path + ".fields");
     const groupedV2 = prefs.schemaVersion === PREFERENCE_SCHEMA_VERSION &&
       (Object.prototype.hasOwnProperty.call(fields, "images") || Object.prototype.hasOwnProperty.call(fields, "details"));
@@ -670,6 +688,7 @@
     ENTRY_TYPES: ENTRY_TYPES,
     OUTPUT_FIELDS: OUTPUT_FIELDS,
     IMAGE_OUTPUT_FIELDS: IMAGE_OUTPUT_FIELDS,
+    OUTPUT_TEMPLATES: OUTPUT_TEMPLATES,
     SCHEDULE_BOOLEAN_FIELDS: SCHEDULE_BOOLEAN_FIELDS,
     ProjectValidationError: ProjectValidationError,
     validateProject: validateProject,

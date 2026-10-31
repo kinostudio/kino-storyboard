@@ -77,7 +77,7 @@
   const LAYER_KEYS = shape("projectId drawingId id kind visible locked opacity order strokes");
   const STROKE_KEYS = shape("id kind color baseWidth points");
   const POINT_KEYS = shape("x y t pressure tiltX tiltY");
-  const PREFERENCES_KEYS = shape("schemaVersion revision mode orientation density fields schedule densityByMode");
+  const PREFERENCES_KEYS = shape("schemaVersion revision mode orientation density fields schedule densityByMode template densityByTemplate");
   const FLAT_PREFERENCE_FIELDS_KEYS = shape("visual script super sound move duration");
   const GROUPED_PREFERENCE_FIELDS_KEYS = shape("visual script super sound move duration images details");
   const SCHEDULE_PREFERENCE_KEYS = shape("dayScope selectedDayId showEstimatedWrap rundownThumbnails rundownNotes rundownStatus storyboardShotNumber storyboardTitle");
@@ -144,6 +144,9 @@
     }
     if (Object.prototype.hasOwnProperty.call(preferences, "densityByMode")) {
       exactShape(preferences.densityByMode, shape("images details"), "project.outputPreferences.densityByMode");
+    }
+    if (Object.prototype.hasOwnProperty.call(preferences, "densityByTemplate")) {
+      exactShape(preferences.densityByTemplate, shape("worksheet proposal production av contact vo"), "project.outputPreferences.densityByTemplate");
     }
 
     const assetsById = new Map(project.assets.map(function (asset) { return [asset.id, asset]; }));

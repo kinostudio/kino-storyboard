@@ -310,7 +310,7 @@
       duration: true
     };
     const fields = {
-      images: { shotNumber: false, title: false, voiceover: false, super: false, duration: false },
+      images: { shotNumber: true, title: true, voiceover: false, super: false, duration: true },
       details: details
     };
     // Keep the former flat detail flags available to old renderers while all
@@ -347,6 +347,8 @@
         orientation: "auto",
         density: 4,
         densityByMode: { images: 4, details: 4 },
+        template: "worksheet",
+        densityByTemplate: { worksheet: 4, proposal: 4, production: 6, av: 4, contact: 8, vo: 8 },
         fields: fields,
         schedule: { dayScope: "selected", selectedDayId: null }
       }

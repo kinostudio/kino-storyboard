@@ -9,24 +9,24 @@
   <title>KINO Storyboard｜光落下的地方</title>
   <link rel="icon" type="image/svg+xml" href="kino-storyboard.svg">
   <link rel="stylesheet" href="styles.css?v=20261101status2">
-  <link rel="stylesheet" href="output.css?v=20261030ui2">
+  <link rel="stylesheet" href="output.css?v=20261101out5">
   <link rel="stylesheet" href="drawing-editor.css?v=20261030ui2">
   <link rel="stylesheet" href="photo-crop-editor.css?v=20261029v38">
   <link rel="stylesheet" href="production-timeline.css?v=20261029g">
   <link rel="stylesheet" href="project-metadata.css?v=20261028b">
   <link rel="stylesheet" href="time-input.css">
-  <script defer src="project-schema.js?v=20261029v48"></script>
+  <script defer src="project-schema.js?v=20261101out5"></script>
   <script defer src="history-engine.js?v=20261029v36"></script>
   <script defer src="storage-contract.js"></script>
-  <script defer src="project-migrations.js?v=20261028b"></script>
+  <script defer src="project-migrations.js?v=20261101out5"></script>
   <script defer src="project-bootstrap.js"></script>
   <script defer src="idb-repository.js?v=20261029c"></script>
-  <script defer src="project-bridge.js?v=20261031placeholder1"></script>
+  <script defer src="project-bridge.js?v=20261101out5"></script>
   <script defer src="photo-import.js?v=20261028l"></script>
   <script defer src="vendor/fflate/fflate-0.8.3.umd.js"></script>
   <script defer src="zip-adapter.js?v=20261028k"></script>
   <script defer src="project-package.js?v=20261029v48"></script>
-  <script defer src="package-copy.js?v=20261029v48"></script>
+  <script defer src="package-copy.js?v=20261101out5"></script>
   <script defer src="model.js?v=20261031placeholder1"></script>
   <script defer src="storyboard-renderer.js?v=20261029drawingcrop1"></script>
   <script defer src="photo-crop-renderer.js?v=20261029v38"></script>
@@ -36,7 +36,7 @@
   <script defer src="time-input.js"></script>
   <script defer src="google-drive-config.js?v=20261031drive1"></script>
   <script defer src="google-drive.js?v=20261031drive8"></script>
-  <script defer src="app.js?v=20261101status2"></script>
+  <script defer src="app.js?v=20261101out5"></script>
 </head>
 <body>
   <section class="lifecycle-gate" id="lifecycle-gate" aria-live="polite" aria-labelledby="lifecycle-title">
@@ -165,6 +165,8 @@
             <label class="field-label" for="output-type">文件類型</label><select id="output-type" class="select-control"><option value="storyboard">分鏡文件</option><option value="schedule">拍攝安排</option></select>
             <div class="field-gap"></div>
             <div id="storyboard-scope-group"><label class="field-label" for="output-scope">輸出範圍</label><select id="output-scope" class="select-control"><option value="all">全部分鏡</option><option value="chapter">目前場次</option><option value="selected">目前選取鏡頭</option></select><span class="field-note">搜尋條件不會自動縮減輸出內容。</span></div>
+            <div class="field-gap"></div>
+            <div id="output-template-group"><label class="field-label" for="output-template">分鏡版型</label><select id="output-template" class="select-control"><option value="worksheet">導演工作表</option><option value="proposal">影像提案</option><option value="production">製片執行表</option><option value="av">視聽對照</option><option value="contact">全片索引</option><option value="vo">VO／台詞稿</option></select><span class="field-note">版型與每頁鏡數會保存於專案。</span></div>
             <div id="schedule-scope-group" hidden><label class="field-label" for="output-day-scope">拍攝日範圍</label><select id="output-day-scope" class="select-control"><option value="selected">單一拍攝日</option><option value="all">全部拍攝日</option></select><div id="output-selected-day-group"><label class="field-label" for="output-day">拍攝日</label><select id="output-day" class="select-control"></select></div><span class="field-note">全部拍攝日依已保存日序分組；項目仍依各日現場順序輸出。</span><div class="schedule-output-options" id="schedule-output-options"><div class="field-label">Rundown 選項</div><label class="schedule-output-option"><span>顯示 Shot 縮圖</span><input type="checkbox" role="switch" data-schedule-pref="rundownThumbnails"><span class="toggle-track" aria-hidden="true"></span></label><label class="schedule-output-option"><span>顯示現場備註</span><input type="checkbox" role="switch" data-schedule-pref="rundownNotes"><span class="toggle-track" aria-hidden="true"></span></label><label class="schedule-output-option"><span>顯示拍攝狀態</span><input type="checkbox" role="switch" data-schedule-pref="rundownStatus"><span class="toggle-track" aria-hidden="true"></span></label><div class="field-label">分鏡圖標籤</div><label class="schedule-output-option"><span>顯示鏡次</span><input type="checkbox" role="switch" data-schedule-pref="storyboardShotNumber"><span class="toggle-track" aria-hidden="true"></span></label><label class="schedule-output-option"><span>顯示標題</span><input type="checkbox" role="switch" data-schedule-pref="storyboardTitle"><span class="toggle-track" aria-hidden="true"></span></label></div></div>
             <div class="field-gap"></div>
             <div id="output-content-settings">
@@ -178,7 +180,7 @@
             <div class="field-label">紙張方向</div><div class="orientation-control" role="group" aria-label="紙張方向"><button class="orientation-button" data-orientation="auto"><span class="paper-icon auto"></span><span>自動</span></button><button class="orientation-button is-active" data-orientation="landscape"><span class="paper-icon landscape"></span><span>橫式</span></button><button class="orientation-button" data-orientation="portrait"><span class="paper-icon portrait"></span><span>直式</span></button></div>
             <div class="field-gap"></div>
             <div class="output-density-heading"><label class="field-label" id="output-page-density-label" for="output-items-per-page">每頁鏡數</label><output id="output-density-value" for="output-items-per-page">4 鏡／頁</output></div>
-            <div class="output-density-control"><button type="button" class="density-step" id="output-density-less" aria-label="每頁減少一鏡">−</button><input type="range" id="output-items-per-page" min="1" max="12" step="1" value="4" aria-label="每頁鏡數" aria-describedby="output-density-hint output-density-limit-note"><button type="button" class="density-step" id="output-density-more" aria-label="每頁增加一鏡">＋</button></div><div class="output-range-limits"><span>1</span><span id="output-density-limit-value">12</span></div><span class="field-note" id="output-density-hint">上限依模式、方向、畫幅與實際文字估算；長文會依版面減少本頁鏡數並續頁，不會裁字。</span><span class="output-density-limit-note" id="output-density-limit-note" aria-live="polite"></span>
+            <div class="output-density-control"><button type="button" class="density-step" id="output-density-less" aria-label="每頁減少一鏡">−</button><input type="range" id="output-items-per-page" min="1" max="12" step="1" value="4" aria-label="每頁鏡數" aria-describedby="output-density-hint output-density-limit-note"><button type="button" class="density-step" id="output-density-more" aria-label="每頁增加一鏡">＋</button></div><div class="output-range-limits"><span>1</span><span id="output-density-limit-value">12</span></div><span class="field-note" id="output-density-hint">可設定每頁 1–12 鏡；長文會依原序續頁，最後一頁版面維持所選容量。</span><span class="output-density-limit-note" id="output-density-limit-note" aria-live="polite"></span>
             <div class="form-divider"></div>
             <div class="output-scope-note" id="scope-note"></div>
             <button class="primary-button print-button" id="print-output" disabled><svg viewBox="0 0 20 20" aria-hidden="true"><path d="M6 7V3.5h8V7M5 14H3.5V8.5h13V14H15M6 11.5h8v5H6z"/><path d="M14 10.5h.1"/></svg><span>列印 / 另存 PDF</span></button>

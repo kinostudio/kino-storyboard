@@ -180,7 +180,7 @@
     "#shot-pool [data-action='schedule-shot']", "#shot-list [data-shot-field]", "#inspector input", "#inspector textarea", "#inspector select", "#inspector button:not([data-action='preview-shot-number-renumber'])",
     "#schedule-inspector input", "#schedule-inspector textarea", "#schedule-inspector select", "#schedule-inspector button",
     "#day-summary [data-day-field]", "#day-callsheet-fields [data-day-field]", "#day-callsheet-fields [data-callsheet-action]", "#output-show-estimated-wrap", "[data-schedule-pref]", "#output-items-per-page", "#output-density-less", "#output-density-more",
-    "#output-include-details", "[data-output-field]", "[data-orientation]", "#undo-btn", "#redo-btn",
+    "#output-template", "#output-include-details", "[data-output-field]", "[data-orientation]", "#undo-btn", "#redo-btn",
     "#shot-list .shot-photo-write-action", "#shot-photo-import-banner .shot-photo-write-action", "#shot-photo-picker",
     "#project-popover #project-aspect-ratio", "#project-popover [data-project-field]", "#project-popover [data-project-metadata-save]", "#scene-dialog input", "#scene-dialog button[type='submit']",
     "#day-dialog input", "#day-dialog button[type='submit']", "#shot-number-preview-dialog [data-action='apply-shot-number-renumber']"
@@ -3525,16 +3525,20 @@
     }
     return state.shots.slice();
   }
+  const OUTPUT_TEMPLATES = Object.freeze(["worksheet","proposal","production","av","contact","vo"]);
+  const OUTPUT_TEMPLATE_DEFAULT_DENSITY = Object.freeze({worksheet:4,proposal:4,production:6,av:4,contact:8,vo:8});
+  let outputTemplate = "worksheet";
   let outputItemsPerPage = 4;
   let outputIncludeDetails = true;
   const outputFields = {
-    images: { shotNumber:false, title:false, voiceover:false, super:false, duration:false },
+    images: { shotNumber:true, title:true, voiceover:false, super:false, duration:true },
     details: { visual:true, script:true, super:false, sound:true, move:true, duration:true }
   };
   let outputDayScope = "selected";
   let outputScheduleSection = "timeline";
   const outputScheduleFields = { rundownThumbnails:false, rundownNotes:false, rundownStatus:false, storyboardShotNumber:false, storyboardTitle:false };
   let outputDensityByMode = { images:4, details:4 };
+  let outputDensityByTemplate = Object.assign({},OUTPUT_TEMPLATE_DEFAULT_DENSITY);
   const outputImageSourceChoices = new Map();
   let outputCaptureVersion = 0;
   let outputCapturePromise = Promise.resolve(null);
@@ -3550,16 +3554,18 @@
   let outputPrintPreparation = null;
   let callsheetDrag = null;
   let callsheetRowSequence = 0;
-  function activeOutputMode() { return outputIncludeDetails ? "details" : "images"; }
+  function activeOutputMode() { return outputTemplate === "contact" ? "images" : "details"; }
   function outputPreferenceSnapshot() {
     const base = state && state.outputPreferences || {};
     return {
       schemaVersion: base.schemaVersion || 2,
       revision: Number(base.revision) || 0,
       mode: activeOutputMode(),
+      template: outputTemplate,
       orientation: orientation,
       density: outputItemsPerPage,
-      densityByMode: { images:Number(outputDensityByMode.images) || 4, details:Number(outputDensityByMode.details) || 4 },
+      densityByMode: Object.assign({},outputDensityByMode,{[activeOutputMode()]:outputItemsPerPage}),
+      densityByTemplate: Object.assign({},outputDensityByTemplate,{[outputTemplate]:outputItemsPerPage}),
       fields: {
         images:Object.assign({},outputFields.images),
         details:Object.assign({},outputFields.details)
@@ -3630,40 +3636,15 @@
     return Math.max(1,Math.min(12,columns * rows));
   }
   function effectiveOutputDensityLimit(mode, resolvedOrientation, snapshotUi, scheduleMode) {
+    if (!scheduleMode) return 12;
     const aspectRatio = snapshotUi && snapshotUi.aspectRatio || state && state.aspectRatio;
-    if (scheduleMode) {
-      const entries = snapshotUi ? snapshotUi.entries || [] : [];
-      const shots = new Map((snapshotUi ? snapshotUi.shots || [] : []).map((shot) => [shot.id,shot]));
-      const values = entries.map((entry) => {
-        const shot = entry.shotId && shots.get(entry.shotId);
-        return [entry.title,entry.notes,shot && shot.title,shot && shot.visual,shot && shot.script,shot && shot.super].filter(Boolean).join(" ");
-      });
-      return estimateOutputDensityLimit(mode,resolvedOrientation,aspectRatio,values,true);
-    }
-    if (mode === "details") {
-      const allShots = snapshotUi ? snapshotUi.shots || [] : [];
-      let shots = allShots;
-      if (outputScope === "selected") shots = allShots.filter((shot) => shot.id === selectedShotId);
-      else if (outputScope === "chapter") {
-        const selected = allShots.find((shot) => shot.id === selectedShotId);
-        const chapterId = activeChapterId !== "all" ? activeChapterId : selected && selected.chapterId;
-        shots = allShots.filter((shot) => shot.chapterId === chapterId);
-      }
-      const fields = selectedOutputFields("details");
-      const records = shots.map((shot) => {
-        const rows = [];
-        if (fields.visual && String(shot.visual || "").trim()) rows.push("畫面描述｜" + shot.visual);
-        if (fields.script && String(shot.script || "").trim()) rows.push("VO／台詞旁白｜" + shot.script);
-        if (fields.super && String(shot.super || "").trim()) rows.push("SUPER｜" + shot.super);
-        if (fields.sound && String(shot.sound || "").trim()) rows.push("聲音設計｜" + shot.sound);
-        if (fields.move && String(shot.move || "").trim()) rows.push("景別／運鏡｜" + shot.move);
-        if (fields.duration) rows.push("秒數｜" + (Number(shot.duration) === 0 ? "秒數未估" : formatSeconds(shot.duration)));
-        rows.title = String(shot.title || "").trim();
-        return rows;
-      });
-      return estimateOutputDensityLimit(mode,resolvedOrientation,aspectRatio,records,false);
-    }
-    return estimateOutputDensityLimit(mode,resolvedOrientation,aspectRatio,selectedOutputFields(mode),false);
+    const entries = snapshotUi ? snapshotUi.entries || [] : [];
+    const shots = new Map((snapshotUi ? snapshotUi.shots || [] : []).map((shot) => [shot.id,shot]));
+    const values = entries.map((entry) => {
+      const shot = entry.shotId && shots.get(entry.shotId);
+      return [entry.title,entry.notes,shot && shot.title,shot && shot.visual,shot && shot.script,shot && shot.super].filter(Boolean).join(" ");
+    });
+    return estimateOutputDensityLimit(mode,resolvedOrientation,aspectRatio,values,true);
   }
   function resolveOutputOrientation(mode, aspectRatio, fields, scheduleMode, snapshotUi) {
     if (orientation === "portrait" || orientation === "landscape") return orientation;
@@ -3673,17 +3654,50 @@
     const densitySnapshot = snapshotUi || state;
     const portraitLimit = effectiveOutputDensityLimit(mode,"portrait",densitySnapshot,scheduleMode);
     const landscapeLimit = effectiveOutputDensityLimit(mode,"landscape",densitySnapshot,scheduleMode);
-    const requestedDensity = Math.max(1,Math.min(12,Number(outputDensityByMode[mode]) || outputItemsPerPage || 4));
+    const templateName = OUTPUT_TEMPLATES.includes(outputTemplate) ? outputTemplate : "worksheet";
+    const requestedDensity = Math.max(1,Math.min(12,Number(outputDensityByTemplate[templateName]) || outputItemsPerPage || 4));
     const portraitFits = portraitLimit >= requestedDensity;
     const landscapeFits = landscapeLimit >= requestedDensity;
     if (portraitFits !== landscapeFits) return portraitFits ? "portrait" : "landscape";
     if (!portraitFits && !landscapeFits && portraitLimit !== landscapeLimit) return portraitLimit > landscapeLimit ? "portrait" : "landscape";
     if (scheduleMode) return "landscape";
-    const density = Math.max(1,Math.min(12,outputItemsPerPage));
+    const density = requestedDensity;
     const fieldCount = typeof fields === "number" ? fields : Object.values(fields || {}).filter(Boolean).length;
     function score(orientationName) {
       const width = orientationName === "landscape" ? 271 : 184;
       const height = orientationName === "landscape" ? 127 : 214;
+      if (templateName === "worksheet") {
+        const rowHeight = height / density;
+        const imageWidth = Math.min(width * .34,rowHeight * ratio);
+        const textWidth = Math.max(1,width - imageWidth);
+        return Math.min(imageWidth * rowHeight,textWidth * Math.max(18,rowHeight) * .42) * density;
+      }
+      if (templateName === "proposal") {
+        const columns = 2, rows = Math.ceil(density / columns), cellWidth = width / columns, cellHeight = height / rows;
+        const imageHeight = Math.max(1,cellHeight * .58), imageWidth = Math.min(cellWidth - 8,imageHeight * ratio);
+        return imageWidth * imageHeight * density + Math.max(1,cellWidth - imageWidth) * cellHeight * density * .3;
+      }
+      if (templateName === "production") {
+        const idWidth = Math.max(16,width * .09), imageWidth = width * .24;
+        const textWidth = Math.max(1,(width - idWidth - imageWidth) / 2);
+        return Math.min(idWidth + imageWidth + textWidth * .5,width) * (height / density) * density;
+      }
+      if (templateName === "av") {
+        const imageWidth = width * .34, textWidth = (width - imageWidth) / 2;
+        const rowHeight = height / density;
+        const imageHeight = Math.min(rowHeight,imageWidth / ratio);
+        return (imageWidth * imageHeight + textWidth * rowHeight * .7) * density;
+      }
+      if (templateName === "contact") {
+        let best = 0;
+        for (let columns = 1; columns <= Math.min(density,6); columns += 1) {
+          const rows = Math.ceil(density / columns), cellWidth = width / columns, cellHeight = height / rows;
+          const frameHeight = Math.max(1,cellHeight - 13), frameWidth = Math.min(cellWidth - 4,frameHeight * ratio);
+          best = Math.max(best,frameWidth * frameHeight * density);
+        }
+        return best;
+      }
+      if (templateName === "vo") return width * height * (orientationName === "portrait" ? 1.05 : .92);
       if (mode === "details") {
         const imageWidth = width * (orientationName === "landscape" ? 0.36 : 0.72);
         const imageHeight = imageWidth / ratio;
@@ -3724,6 +3738,7 @@
     context.density = outputItemsPerPage;
     context.preferences.density = outputItemsPerPage;
     context.preferences.densityByMode = Object.assign({},context.preferences.densityByMode,{[mode]:outputItemsPerPage});
+    if (context.template) context.preferences.densityByTemplate = Object.assign({},context.preferences.densityByTemplate,{[context.template]:outputItemsPerPage});
     return true;
   }
   function updateOutputDensityPreview(mode) {
@@ -3763,8 +3778,9 @@
     if (!project || project.projectId !== context.projectId || Number(project.revision) !== Number(snapshot.revision)) return false;
     const preferences = normalizeOutputPreferences(project.outputPreferences);
     const expected = context.preferences;
-    if (preferences.mode !== expected.mode || preferences.orientation !== expected.orientation ||
+    if (preferences.mode !== expected.mode || preferences.template !== expected.template || preferences.orientation !== expected.orientation ||
         JSON.stringify(preferences.densityByMode) !== JSON.stringify(expected.densityByMode) ||
+        JSON.stringify(preferences.densityByTemplate) !== JSON.stringify(expected.densityByTemplate) ||
         JSON.stringify(preferences.fields) !== JSON.stringify(expected.fields) ||
         JSON.stringify(preferences.schedule) !== JSON.stringify(expected.schedule)) return false;
     context.project = project;
@@ -3782,12 +3798,13 @@
     if (!slider) return;
     if (!slider.dataset.bound) {
       const changeDensity = (value, persist) => {
-        const limit = Number(slider.max) || 12;
+        const limit = 12;
         outputItemsPerPage = Math.max(1,Math.min(limit,Math.round(Number(value) || 1)));
         const mode = activeOutputMode();
         outputDensityByMode[mode] = outputItemsPerPage;
+        outputDensityByTemplate[outputTemplate] = outputItemsPerPage;
         ensureOutputSettings(outputType === "schedule");
-        const patch = { density:outputItemsPerPage, densityByMode:{ [mode]:outputItemsPerPage } };
+        const patch = { template:outputTemplate, mode:mode, density:outputItemsPerPage, densityByMode:{ [mode]:outputItemsPerPage }, densityByTemplate:{ [outputTemplate]:outputItemsPerPage } };
         stageOutputPreference(patch);
         const scheduleMode = outputType === "schedule";
         const previewContext = scheduleMode ? (renderOutput(),null) : scheduleOutputDensityPreview(mode,!!persist);
@@ -3810,12 +3827,27 @@
       slider.addEventListener("change", async () => { try { await changeDensity(slider.value,true); } catch (error) { message(error.message || "輸出偏好保存失敗。", true); } });
       $("#output-density-less").addEventListener("click", async () => { try { await changeDensity(outputItemsPerPage - 1,true); } catch (error) { message(error.message || "輸出偏好保存失敗。", true); } });
       $("#output-density-more").addEventListener("click", async () => { try { await changeDensity(outputItemsPerPage + 1,true); } catch (error) { message(error.message || "輸出偏好保存失敗。", true); } });
-      $("#output-include-details").addEventListener("change", async event => {
-        const nextMode = event.target.checked ? "details" : "images";
-        outputIncludeDetails = nextMode === "details";
-        outputItemsPerPage = Math.max(1,Number(outputDensityByMode[nextMode]) || 4);
+      $("#output-template").addEventListener("change", async (event) => {
+        const nextTemplate = OUTPUT_TEMPLATES.includes(event.target.value) ? event.target.value : "worksheet";
+        outputTemplate = nextTemplate;
+        outputIncludeDetails = nextTemplate !== "contact";
+        const mode = activeOutputMode();
+        outputItemsPerPage = Math.max(1,Math.min(12,Number(outputDensityByTemplate[nextTemplate]) || OUTPUT_TEMPLATE_DEFAULT_DENSITY[nextTemplate] || 4));
+        outputDensityByTemplate[nextTemplate] = outputItemsPerPage;
+        outputDensityByMode[mode] = outputItemsPerPage;
         renderOutput();
-        try { await saveOutputPreference({ mode:nextMode }); } catch (error) { message(error.message || "輸出偏好保存失敗。", true); }
+        const patch = {template:nextTemplate,mode:mode,density:outputItemsPerPage,densityByMode:{[mode]:outputItemsPerPage},densityByTemplate:{[nextTemplate]:outputItemsPerPage}};
+        try { await saveOutputPreference(patch); } catch (error) { message(error.message || "分鏡版型保存失敗。", true); }
+      });
+      $("#output-include-details").addEventListener("change", async event => {
+        const nextTemplate = event.target.checked ? "worksheet" : "contact";
+        outputTemplate = nextTemplate; $("#output-template").value = nextTemplate;
+        outputIncludeDetails = event.target.checked;
+        const nextMode = activeOutputMode();
+        outputItemsPerPage = Math.max(1,Number(outputDensityByTemplate[nextTemplate]) || OUTPUT_TEMPLATE_DEFAULT_DENSITY[nextTemplate]);
+        renderOutput();
+        outputDensityByMode[nextMode] = outputItemsPerPage;
+        try { await saveOutputPreference({ template:nextTemplate,mode:nextMode,density:outputItemsPerPage,densityByMode:{[nextMode]:outputItemsPerPage},densityByTemplate:{[nextTemplate]:outputItemsPerPage} }); } catch (error) { message(error.message || "輸出偏好保存失敗。", true); }
       });
       $$('[data-output-field]').forEach(input => input.addEventListener("change", async () => {
         const [mode,key] = input.dataset.outputField.split(".");
@@ -3867,21 +3899,15 @@
     }
     const currentMode = activeOutputMode();
     const resolved = resolveOutputOrientation(currentMode,state && state.aspectRatio,selectedOutputFields(currentMode),scheduleMode);
-    const limit = effectiveOutputDensityLimit(currentMode,resolved,state,scheduleMode);
-    slider.min = "1"; slider.max = String(limit);
-    const previous = outputItemsPerPage;
-    const requestedDensity = Math.max(1,Math.min(12,Number(outputDensityByMode[currentMode]) || outputItemsPerPage || 4));
-    outputItemsPerPage = Math.min(requestedDensity,limit);
+    const limit = 12;
+    slider.min = "1"; slider.max = "12";
+    const requestedDensity = Math.max(1,Math.min(12,Number(outputDensityByTemplate[outputTemplate]) || outputItemsPerPage || OUTPUT_TEMPLATE_DEFAULT_DENSITY[outputTemplate] || 4));
+    outputItemsPerPage = requestedDensity;
+    outputDensityByMode[currentMode] = outputItemsPerPage;
+    outputDensityByTemplate[outputTemplate] = outputItemsPerPage;
     const densityUnit = scheduleMode ? "項目／頁" : "鏡／頁";
     const note = $("#output-density-limit-note");
-    if (requestedDensity > limit) {
-      const prefix = isReadOnly() ? "唯讀預覽：" : "";
-      if (note) note.textContent = prefix + "目前可讀性上限為 " + limit + "；已將偏好 " + requestedDensity + " " + densityUnit + "暫時夾限至 " + limit + "，偏好仍保留，版面可容納時會自動恢復。";
-    } else if (previous < requestedDensity) {
-      if (note) note.textContent = "目前可讀性上限為 " + limit + "；版面已可容納偏好，已自動恢復為 " + requestedDensity + " " + densityUnit + "。";
-    } else if (note) {
-      note.textContent = "依目前模式、方向、畫幅與欄位選項計算，上限 " + limit + "；目前偏好 " + requestedDensity + " " + densityUnit + "。";
-    }
+    if (note) note.textContent = "可選 1–12 " + densityUnit + "；若長文超出單頁，會依原序續頁，不裁切內容。";
     slider.value = String(outputItemsPerPage);
     const densityText = outputItemsPerPage + (scheduleMode ? " 項目／頁" : " 鏡／頁");
     $("#output-density-value").textContent = densityText;
@@ -3889,7 +3915,11 @@
     $("#output-density-less").disabled = outputItemsPerPage === 1;
     $("#output-density-more").disabled = outputItemsPerPage === limit;
     $("#output-density-limit-value").textContent = String(limit);
-    $("#output-content-settings").hidden = scheduleMode;
+    $("#output-template-group").hidden = scheduleMode;
+    $("#output-template").value = outputTemplate;
+    $("#output-content-settings").hidden = scheduleMode || outputTemplate === "vo";
+    const modeToggle = $("#output-include-details").closest(".output-toggle-row");
+    if (modeToggle) modeToggle.hidden = !["worksheet","contact"].includes(outputTemplate);
     $("#output-field-options").hidden = !outputIncludeDetails;
     $("#output-image-field-options").hidden = outputIncludeDetails;
     $("#output-day-scope").value = outputDayScope;
@@ -3897,8 +3927,8 @@
     $("#output-selected-field-count").textContent = outputFieldCount("details") + " 項";
     $("#output-image-field-count").textContent = outputFieldCount("images") + " 項";
     slider.setAttribute("aria-label",scheduleMode ? "每頁拍攝項目" : "每頁鏡數");
-    $("#output-density-hint").textContent = "上限依模式、方向、畫幅與實際文字估算；超出時暫時夾限並保留偏好，版面可容納時自動恢復。長文會續頁，不會裁字或縮至 9 pt 以下。";
-    $("#output-layout-hint").textContent = scheduleMode ? "拍攝安排按拍攝日分組，保留現場順序與時段資訊。" : outputIncludeDetails ? "細項模式保留鏡次；空標題不會顯示佔位文字。" : outputFieldCount("images") ? "純圖附加欄位依鏡次、標題、VO、SUPER、秒數順序排列。" : "純圖不顯示附加文字；四鏡預設採 2×2。";
+    $("#output-density-hint").textContent = "可設定每頁 1–12 項；若完整內容超出單頁，會依原序接續下一頁，最後頁仍依所選容量配置。";
+    $("#output-layout-hint").textContent = scheduleMode ? "拍攝安排按拍攝日分組，保留現場順序與時段資訊。" : (({worksheet:"圖片與細項左右排列。",proposal:"雙欄卡片呈現分鏡圖與提案文字。",production:"縮圖、鏡次、畫面與聲音資料緊湊對齊。",av:"畫面、視覺描述與聲音分欄比較。",contact:"圖像索引；可附鏡次、標題、VO、SUPER、秒數。",vo:"只輸出台詞／旁白；空白台詞的鏡頭會略過。"})[outputTemplate] || "");
     const label = $("#output-page-density-label");
     if (label) label.textContent = scheduleMode ? "每頁拍攝項目" : "每頁鏡數";
   }
@@ -3982,6 +4012,19 @@
     const availableHeight = Math.max(0,cellH - Math.max(0,Number(fieldsHeight) || 0) - Math.max(0,Number(cardGap) || 0) - Math.max(0,Number(verticalPadding) || 0));
     return Math.max(minWidth,Math.min(maxWidth,availableHeight * safeRatio));
   }
+  function outputTextGroupAt(text, offset, fallback) {
+    const source = String(text || "");
+    const at = Math.max(0,Math.min(source.length - 1,Number(offset) || 0));
+    const lineStart = source.lastIndexOf("\n",at) + 1;
+    const nextBreak = source.indexOf("\n",at);
+    const line = source.slice(lineStart,nextBreak < 0 ? source.length : nextBreak);
+    const divider = line.indexOf("｜");
+    const label = divider >= 0 ? line.slice(0,divider).trim() : "";
+    if (label === "秒數") return "meta";
+    if (/VO|台詞|旁白|聲音/.test(label)) return "audio";
+    if (label) return "visual";
+    return fallback === "audio" ? "audio" : "visual";
+  }
   function splitOutputRecord(record) {
     if (record.kind === "day-callsheet") {
       const value = String(record.value || "");
@@ -4011,9 +4054,12 @@
     const text = String(record.text || "");
     if (text.length > 1) {
       const chunks = outputTextChunks(text,Math.max(1,Math.floor(text.length / 2)));
-      if (chunks.length > 1) return [Object.assign({},record,{text:chunks[0]}),Object.assign({},record,{text:chunks.slice(1).join(""),continuation:true,art:"",gapNotice:""})];
+      if (chunks.length > 1) {
+        const firstText = chunks[0], continuationText = chunks.slice(1).join("");
+        return [Object.assign({},record,{text:firstText}),Object.assign({},record,{text:continuationText,continuation:true,densityItem:false,continuationGroup:outputTextGroupAt(text,firstText.length,record.continuationGroup),art:"",gapNotice:""})];
+      }
     }
-    if (Array.from(text).length === 1 && record.art) return [Object.assign({},record,{text:""}),Object.assign({},record,{text:text,continuation:true,art:"",gapNotice:""})];
+    if (Array.from(text).length === 1 && record.art) return [Object.assign({},record,{text:""}),Object.assign({},record,{text:text,continuation:true,densityItem:false,art:"",gapNotice:""})];
     return null;
   }
   function outputRecordHtml(record) {
@@ -4031,6 +4077,7 @@
       const titleMarkup = title ? '<strong>' + escapeHtml(title + (record.continuation ? "（續）" : "")) + '</strong>' : "";
       return '<div class="output-record-wrap" data-output-record="' + escapeHtml(record.key || "") + '"><article class="output-timeline-entry ' + (record.isBreak ? "is-break " : "") + (record.continuation ? "is-continuation" : "") + '"><span class="output-timeline-order">' + escapeHtml(record.continuation ? "" : record.order || "") + '</span><div class="output-timeline-main"><div class="output-timeline-top">' + titleMarkup + '<span>' + escapeHtml(timing) + '</span></div>' + (!record.continuation && record.numberHtml ? '<div class="output-timeline-shot">' + record.numberHtml + '</div>' : "") + (notices ? '<div class="output-card-notes">' + notices + '</div>' : "") + '</div></article></div>';
     }
+    if (record.kind === "shot" && record.template) return outputTemplateRecordHtml(record,record.template);
     const artMarkup = record.art || '<div class="output-empty-art ' + (record.imageMessage ? "is-error" : "") + '" role="img" aria-label="' + escapeHtml(record.imageMessage || "尚未建立分鏡圖") + '">' + escapeHtml(record.imageMessage || "尚未建立分鏡圖") + '</div>';
     if (record.kind === "shot" && record.mode === "images") {
       const continuation = Boolean(record.continuation);
@@ -4053,15 +4100,76 @@
     const scheduleOrder = isSchedule ? '<span class="output-card-order">現場 ' + escapeHtml(record.order || "") + '</span>' : "";
     return '<div class="output-record-wrap" data-output-record="' + escapeHtml(record.key || "") + '">' + gap + '<article class="output-card ' + (isSchedule ? "is-schedule " : "") + (showArt ? "has-art " : "") + (record.isBreak ? "is-break " : "") + (continuation ? "is-continuation " : "") + (record.forceCompact ? "is-force-compact" : "") + '">' + art + '<div class="output-card-main"><div class="output-card-top"><div class="output-card-heading">' + scheduleOrder + '<div class="output-card-number">' + (record.numberHtml || "") + '</div>' + (title ? '<h3>' + escapeHtml(title) + '</h3>' : '') + '</div><div class="output-card-time">' + (record.timeLabel ? '<strong>' + escapeHtml(record.timeLabel) + '</strong>' : "") + (record.durationLabel ? '<small>' + escapeHtml(record.durationLabel) + '</small>' : "") + '</div></div>' + (extras ? '<div class="output-card-notes">' + extras + '</div>' : "") + (detail ? '<div class="output-card-detail">' + detail + '</div>' : '') + '</div></article></div>';
   }
+  function outputTextHtml(value) { return escapeHtml(String(value == null ? "" : value)).replace(/\r?\n/g,"<br>"); }
+  function outputTemplateFields(record) {
+    const lines = String(record.text || "").split(/\r?\n/).filter((line) => line.trim() !== "");
+    return lines.map((line) => {
+      const divider = line.indexOf("｜");
+      const label = divider >= 0 ? line.slice(0,divider).trim() : "";
+      const value = divider >= 0 ? line.slice(divider + 1) : line;
+      const group = label === "秒數" ? "meta" : /VO|台詞|旁白|聲音/.test(label) ? "audio" : (record.continuationGroup || "visual");
+      return {label:label,value:value,group:group};
+    });
+  }
+  function outputTemplateFieldMarkup(fields, group, className) {
+    return (fields || []).filter((field) => !group || field.group === group).map((field) => '<div class="' + (className || "output-template-field") + '">' + (field.label ? '<strong>' + escapeHtml(field.label) + '</strong>' : "") + '<span>' + outputTextHtml(field.value) + '</span></div>').join("");
+  }
+  function outputTemplateRecordHtml(record, template) {
+    const id = record.numberHtml || '<span class="output-compact-id">—</span>';
+    const shotId = escapeHtml(record.shotId || record.key || "");
+    const art = record.art || '<div class="output-empty-art ' + (record.imageMessage ? "is-error" : "") + '" role="img" aria-label="' + escapeHtml(record.imageMessage || "尚未建立分鏡圖") + '">' + escapeHtml(record.imageMessage || "尚未建立分鏡圖") + '</div>';
+    const title = String(record.title || "").trim();
+    const duration = record.durationLabel ? '<span class="output-template-duration">' + escapeHtml(record.durationLabel) + '</span>' : "";
+    const fields = outputTemplateFields(record);
+    const wrapStart = '<div class="output-record-wrap" data-output-record="' + escapeHtml(record.key || "") + '" data-shot-id="' + shotId + '">';
+    const wrapEnd = '</div>';
+    if (template === "contact") {
+      if (record.continuation) {
+        const rows = (record.imageFields || []).filter((row) => String(row.value == null ? "" : row.value).trim() !== "").map((row) => '<div class="output-image-field"><strong>' + escapeHtml(row.label) + (row.continuationValue ? ' <span class="output-field-continuation-mark">（續）</span>' : '') + '</strong><span>' + outputTextHtml(row.value) + '</span></div>').join("");
+        return wrapStart + '<article class="output-card output-contact-continuation"><div class="output-image-only-continuation-label"><strong>' + id + '（續）</strong></div><div class="output-image-fields">' + rows + '</div></article>' + wrapEnd;
+      }
+      const selectedFields = record.imageFields || [];
+      const shotNumber = selectedFields.find((row) => row.label === "鏡次");
+      const titleField = selectedFields.find((row) => row.label === "標題");
+      const durationField = selectedFields.find((row) => row.label === "秒數");
+      const captionParts = [];
+      if (shotNumber) captionParts.push('<strong class="output-compact-id">' + escapeHtml(shotNumber.value) + '</strong>');
+      if (titleField) captionParts.push('<span class="output-contact-title">' + outputTextHtml(titleField.value) + '</span>');
+      if (durationField) captionParts.push('<span class="output-template-duration">' + outputTextHtml(durationField.value) + '</span>');
+      const caption = captionParts.length ? '<div class="output-contact-caption">' + captionParts.join("") + '</div>' : "";
+      const rows = selectedFields.filter((row) => !["鏡次","標題","秒數"].includes(String(row.label || "")) && String(row.value == null ? "" : row.value).trim() !== "").map((row) => '<div class="output-image-field"><strong>' + escapeHtml(row.label) + '</strong><span>' + outputTextHtml(row.value) + '</span></div>').join("");
+      return wrapStart + '<article class="output-card output-contact-card"><div class="output-card-art">' + art + '</div>' + caption + (rows ? '<div class="output-image-fields">' + rows + '</div>' : "") + '</article>' + wrapEnd;
+    }
+    if (template === "vo") {
+      const script = outputTextHtml(record.text || "");
+      return wrapStart + '<article class="output-vo-row ' + (record.continuation ? "is-continuation" : "") + '"><div class="output-vo-id">' + id + '</div><div class="output-vo-script">' + script + '</div></article>' + wrapEnd;
+    }
+    if (record.continuation) {
+      const group = record.continuationGroup || "visual";
+      const text = outputTextHtml(record.text || "");
+      if (template === "av") return wrapStart + '<article class="output-av-row output-template-continuation"><div class="output-av-image output-av-empty">' + id + '（續）</div><div class="output-av-visual">' + (group !== "audio" ? '<div class="output-template-continuation-text">' + text + '</div>' : "") + '</div><div class="output-av-audio">' + (group === "audio" ? '<div class="output-template-continuation-text">' + text + '</div>' : "") + '</div></article>' + wrapEnd;
+      if (template === "production") return wrapStart + '<article class="output-production-row output-template-continuation"><div class="output-production-id">' + id + '（續）</div><div class="output-production-art"></div><div class="output-production-visual">' + (group === "visual" ? '<div class="output-template-continuation-text">' + text + '</div>' : "") + '</div><div class="output-production-audio">' + (group !== "visual" ? '<div class="output-template-continuation-text">' + text + '</div>' : "") + '</div></article>' + wrapEnd;
+      return wrapStart + '<article class="output-template-row output-template-continuation"><div class="output-template-row-art"></div><div class="output-template-main"><div class="output-template-identity"><strong>' + id + '（續）</strong></div><div class="output-template-continuation-text">' + text + '</div></div></article>' + wrapEnd;
+    }
+    const visualFields = outputTemplateFieldMarkup(fields,"visual","output-template-field");
+    const audioFields = outputTemplateFieldMarkup(fields,"audio","output-template-field");
+    const metadataFields = outputTemplateFieldMarkup(fields,"meta","output-template-field");
+    const allFields = outputTemplateFieldMarkup(fields.filter((field) => field.group !== "meta"),null,"output-template-field");
+    const identity = '<div class="output-template-identity"><strong>' + id + '</strong>' + (title ? '<span class="output-template-title">' + escapeHtml(title) + '</span>' : "") + duration + '</div>';
+    if (template === "av") return wrapStart + '<article class="output-av-row"><div class="output-av-image"><div class="output-card-art">' + art + '</div>' + identity + '</div><div class="output-av-visual"><h3>畫面／視覺</h3>' + visualFields + '</div><div class="output-av-audio"><h3>聲音／台詞</h3>' + audioFields + '</div></article>' + wrapEnd;
+    if (template === "production") return wrapStart + '<article class="output-production-row"><div class="output-production-id">' + id + '</div><div class="output-production-art"><div class="output-card-art">' + art + '</div></div><div class="output-production-visual"><h3>' + escapeHtml(title || "畫面／現場") + '</h3>' + visualFields + '</div><div class="output-production-audio">' + audioFields + metadataFields + (audioFields || metadataFields ? "" : duration) + '</div></article>' + wrapEnd;
+    if (template === "proposal") return wrapStart + '<article class="output-proposal-card"><div class="output-card-art">' + art + '</div><div class="output-proposal-main">' + identity + '<div class="output-proposal-content">' + allFields + '</div></div></article>' + wrapEnd;
+    return wrapStart + '<article class="output-worksheet-row"><div class="output-card-art output-worksheet-art">' + art + '</div><div class="output-worksheet-main">' + identity + '<div class="output-worksheet-content">' + allFields + '</div></div></article>' + wrapEnd;
+  }
   function outputPageHtml(context, records, pageIndex, pageCount) {
-    const body = records.length ? records.map(outputRecordHtml).join("") : '<div class="output-page-empty">此輸出範圍目前沒有項目。</div>';
+    const body = records.length ? records.map((record) => outputRecordHtml(record,context)).join("") : '<div class="output-page-empty">' + escapeHtml(context.template === "vo" ? "此範圍沒有台詞或旁白；空白台詞的鏡頭已略過。" : "此輸出範圍目前沒有項目。") + '</div>';
     const section = records.map((record) => record && record.section).find(Boolean) || context.activeSection || "timeline";
     const pageDayIds = Array.from(new Set(records.map((record) => record.dayId).filter(Boolean)));
     const pageDay = pageDayIds.length === 1 && context.dayMeta ? context.dayMeta[pageDayIds[0]] : null;
     const pageSubtitle = context.kind === "schedule" ? scheduleSectionLabel(section) + "　·　" + (context.subtitle || "") : pageDay ? (context.subtitle || "") + "　·　" + formatDate(pageDay.date,true) + "　·　" + pageDay.title : context.subtitle || "";
     const pageFooter = pageDay ? (pageDay.title || "拍攝日") + " · " + pageDay.date : context.footer || context.projectTitle || state.title;
-    const layout = context.kind === "schedule" ? (section === "timeline" ? "schedule-timeline" : section === "storyboard" ? "images" : "schedule") : (context.kind === "storyboard" && context.mode === "images" ? "images" : "details");
-    return '<section class="output-page ' + (context.orientation === "portrait" ? "is-portrait" : "is-landscape") + '" data-section="' + escapeHtml(section) + '" data-layout="' + layout + '" data-density="' + context.density + '"><header class="output-page-header"><div class="output-page-heading"><div class="output-page-brand">KINO STORYBOARD　·　' + escapeHtml(context.brand || "OUTPUT") + '</div><h1>' + escapeHtml(context.projectTitle || state.title) + '</h1><p>' + escapeHtml(pageSubtitle) + '</p></div><div class="output-page-summary"><strong>' + escapeHtml(context.scope || "") + '</strong><span>' + escapeHtml(context.summary || "") + '</span></div></header><div class="output-page-body">' + body + '</div><footer class="output-page-footer"><span>' + escapeHtml(pageFooter) + ' · Project revision ' + escapeHtml(context.projectRevision == null ? "—" : context.projectRevision) + ' · Preference revision ' + escapeHtml(context.preferenceRevision == null ? "—" : context.preferenceRevision) + '</span><span>第 ' + (pageIndex + 1) + ' 頁／共 ' + pageCount + ' 頁</span></footer></section>';
+    const layout = context.kind === "schedule" ? (section === "timeline" ? "schedule-timeline" : section === "storyboard" ? "images" : "schedule") : context.template || "worksheet";
+    return '<section class="output-page ' + (context.orientation === "portrait" ? "is-portrait" : "is-landscape") + '" data-section="' + escapeHtml(section) + '" data-layout="' + layout + '"' + (context.template ? ' data-template="' + escapeHtml(context.template) + '"' : "") + ' data-density="' + context.density + '"><header class="output-page-header"><div class="output-page-heading"><div class="output-page-brand">KINO STORYBOARD　·　' + escapeHtml(context.brand || "OUTPUT") + '</div><h1>' + escapeHtml(context.projectTitle || state.title) + '</h1><p>' + escapeHtml(pageSubtitle) + '</p></div><div class="output-page-summary"><strong>' + escapeHtml(context.scope || "") + '</strong><span>' + escapeHtml(context.summary || "") + '</span></div></header><div class="output-page-body">' + body + '</div><footer class="output-page-footer"><span>' + escapeHtml(pageFooter) + ' · Project revision ' + escapeHtml(context.projectRevision == null ? "—" : context.projectRevision) + ' · Preference revision ' + escapeHtml(context.preferenceRevision == null ? "—" : context.preferenceRevision) + '</span><span>第 ' + (pageIndex + 1) + ' 頁／共 ' + pageCount + ' 頁</span></footer></section>';
   }
   function paginateOutputRecords(records, pageSize) {
     const pages = [];
@@ -4097,18 +4205,19 @@
     insertScheduleCarryPage(pages,sourceIndex,page.splice(moveAt,1)[0]);
     return true;
   }
-  function enforceOutputPageLimit(pages, pageSize, scheduleMode) {
+  function enforceOutputPageLimit(pages, pageSize, scheduleMode, countContinuations) {
     const schedulePages = scheduleMode === true || pages.some((page) => schedulePageHeading(page));
-    const countsTowardDensity = (record) => !(record && record.densityItem === false);
+    const countsTowardDensity = (record) => countContinuations === true || !(record && record.densityItem === false);
     for (let i = 0; i < pages.length; i += 1) while (pages[i].filter(countsTowardDensity).length > pageSize) {
       let moveAt = -1;
-      for (let index = pages[i].length - 1; index >= 0; index -= 1) if (countsTowardDensity(pages[i][index])) { moveAt = index; break; }
+      if (countContinuations === true) moveAt = pages[i].length - 1;
+      else for (let index = pages[i].length - 1; index >= 0; index -= 1) if (countsTowardDensity(pages[i][index])) { moveAt = index; break; }
       if (moveAt < 0) break;
-      const carry = pages[i].splice(moveAt,1)[0];
-      if (schedulePages) insertScheduleCarryPage(pages,i,carry);
+      const carry = pages[i].splice(moveAt,countContinuations === true ? pages[i].length - moveAt : 1);
+      if (schedulePages) insertScheduleCarryPage(pages,i,carry[0]);
       else {
         if (!pages[i + 1]) pages.splice(i + 1,0,[]);
-        pages[i + 1].unshift(carry);
+        pages[i + 1].unshift(...carry);
       }
     }
     for (let i = pages.length - 1; i > 0; i -= 1) if (!pages[i].length) pages.splice(i,1);
@@ -4184,6 +4293,8 @@
   function renderOutputPages(context) {
     context.doc.innerHTML = context.pages.map((records,index) => outputPageHtml(context,records,index,context.pages.length)).join("");
     context.doc.classList.remove("has-overflow");
+    if (context.template) context.doc.dataset.template = context.template;
+    else delete context.doc.dataset.template;
     if (context.kind === "schedule") {
       context.doc.dataset.activeSection = context.activeSection || outputScheduleSection;
       $$("#print-document .output-page[data-section]").forEach((page) => page.setAttribute("aria-hidden",page.dataset.section === context.doc.dataset.activeSection ? "false" : "true"));
@@ -4197,6 +4308,87 @@
       const width = page.getBoundingClientRect().width;
       if (width > 0) page.style.setProperty("--page-scale",String(Math.min(1.35,width / referenceWidth)));
     });
+    if (context.kind === "storyboard" && context.template) {
+      const parts = String(context.aspectRatio || "16:9").split(":").map(Number);
+      const ratio = Math.max(.01,(parts[0] || 16) / (parts[1] || 9));
+      const proposalPages = [];
+      const mediaPages = [];
+      pages.forEach((page,index) => {
+        const body = page.querySelector(".output-page-body");
+        if (!body) return;
+        const pageRecords = context.pages[index] || [];
+        const capacity = Math.max(Number(context.density) || 1,pageRecords.length);
+        let columns = context.template === "proposal" ? 2 : 1;
+        if (context.template === "contact" && body.clientWidth > 0 && body.clientHeight > 0) {
+          let bestArea = -1;
+          for (let candidate=1;candidate<=Math.min(capacity,6);candidate+=1) {
+            const rows = Math.ceil(capacity / candidate);
+            const cellWidth = Math.max(1,body.clientWidth / candidate - 8);
+            const cellHeight = Math.max(1,body.clientHeight / rows - 28);
+            const frameWidth = Math.min(cellWidth,cellHeight * ratio);
+            const area = frameWidth * frameWidth / ratio * capacity;
+            if (area > bestArea + .5 || (Math.abs(area - bestArea) <= .5 && candidate > columns)) { bestArea = area; columns = candidate; }
+          }
+        }
+        page.style.setProperty("--output-columns",String(columns));
+        page.style.setProperty("--output-rows",String(Math.max(1,Math.ceil(capacity / columns))));
+        page.style.setProperty("--output-frame-width","100%");
+        if (context.template === "proposal" && body.clientWidth > 0 && body.clientHeight > 0) {
+          const bodyStyle = getComputedStyle(body);
+          const columnGap = parseFloat(bodyStyle.columnGap) || 0;
+          const rowGap = parseFloat(bodyStyle.rowGap) || 0;
+          const rows = Math.max(1,Math.ceil(capacity / columns));
+          proposalPages.push({page:page,body:body,columns:columns,rows:rows,columnGap:columnGap,rowGap:rowGap});
+        }
+        if (["production","av"].includes(context.template) && body.clientWidth > 0 && body.clientHeight > 0) {
+          const bodyStyle = getComputedStyle(body);
+          const rowGap = parseFloat(bodyStyle.rowGap) || 0;
+          mediaPages.push({page:page,body:body,rows:Math.max(1,Math.ceil(capacity / columns)),rowGap:rowGap});
+        }
+        if (context.template === "worksheet" && body.clientWidth > 0 && body.clientHeight > 0) {
+          const rowHeight = body.clientHeight / Math.max(1,capacity);
+          const artWidth = Math.min(body.clientWidth * .34,rowHeight * ratio);
+          page.style.setProperty("--worksheet-art-width",String(artWidth) + "px");
+        }
+      });
+      if (context.template === "proposal" && proposalPages.length) {
+        const mains = pages.flatMap((page) => Array.from(page.querySelectorAll(".output-proposal-main")));
+        const mainHeight = mains.reduce((height,main) => Math.max(height,main.scrollHeight,main.getBoundingClientRect().height),0);
+        proposalPages.forEach((layout) => {
+          const card = layout.body.querySelector(".output-proposal-card");
+          const cardStyle = card ? getComputedStyle(card) : null;
+          const padX = cardStyle ? (parseFloat(cardStyle.paddingLeft) || 0) + (parseFloat(cardStyle.paddingRight) || 0) : 0;
+          const padY = cardStyle ? (parseFloat(cardStyle.paddingTop) || 0) + (parseFloat(cardStyle.paddingBottom) || 0) : 0;
+          const cardGap = cardStyle ? (parseFloat(cardStyle.rowGap) || 0) : 0;
+          const cellWidth = Math.max(1,(layout.body.clientWidth - layout.columnGap * (layout.columns - 1)) / layout.columns - padX);
+          const cellHeight = Math.max(1,(layout.body.clientHeight - layout.rowGap * (layout.rows - 1)) / layout.rows);
+          const artHeight = Math.max(1,cellHeight - padY - mainHeight - cardGap);
+          const artWidth = Math.max(1,Math.min(cellWidth,artHeight * ratio));
+          layout.page.style.setProperty("--proposal-art-width",String(artWidth) + "px");
+        });
+      }
+      if (mediaPages.length) {
+        const identityHeight = context.template === "av"
+          ? pages.flatMap((page) => Array.from(page.querySelectorAll(".output-av-image .output-template-identity"))).reduce((height,identity) => Math.max(height,identity.scrollHeight,identity.getBoundingClientRect().height),0)
+          : 0;
+        mediaPages.forEach((layout) => {
+          const row = layout.body.querySelector(context.template === "av" ? ".output-av-row" : ".output-production-row");
+          const rowStyle = row ? getComputedStyle(row) : null;
+          const verticalPadding = rowStyle ? (parseFloat(rowStyle.paddingTop) || 0) + (parseFloat(rowStyle.paddingBottom) || 0) : 0;
+          const artSelector = context.template === "av" ? ".output-av-image .output-card-art" : ".output-production-art .output-card-art";
+          const columnSelector = context.template === "av" ? ".output-av-image" : ".output-production-art";
+          const art = layout.body.querySelector(artSelector);
+          const column = layout.body.querySelector(columnSelector);
+          if (!art || !column) return;
+          const artMargin = parseFloat(getComputedStyle(art).marginBottom) || 0;
+          const cellHeight = Math.max(1,(layout.body.clientHeight - layout.rowGap * (layout.rows - 1)) / layout.rows);
+          const availableArtHeight = Math.max(1,cellHeight - verticalPadding - identityHeight - artMargin);
+          const artWidth = Math.max(1,Math.min(column.getBoundingClientRect().width,availableArtHeight * ratio));
+          layout.page.style.setProperty(context.template === "av" ? "--av-art-width" : "--production-art-width",String(artWidth) + "px");
+        });
+      }
+      return pages;
+    }
     const imageLayouts = pages.filter((page) => page.dataset.layout === "images").map((page) => {
       const body = page.querySelector(".output-page-body");
       const imageWraps = Array.from(body.querySelectorAll(".output-record-wrap.is-image-only:not(.is-image-only-continuation)"));
@@ -4444,7 +4636,7 @@
     const scheduleMode = context.kind === "schedule";
     const callsheetIndexes = scheduleMode ? pageRecords.map((record,index) => record && record.kind === "day-callsheet" ? index : -1).filter((index) => index >= 0) : [];
     if (densityIndexes.length > 1 || (!scheduleMode && pageRecords.length > 1)) {
-      const moveAt = densityIndexes.length ? densityIndexes[densityIndexes.length - 1] : pageRecords.length - 1;
+      const moveAt = scheduleMode ? densityIndexes[densityIndexes.length - 1] : pageRecords.length - 1;
       const moved = pageRecords.splice(moveAt,1)[0];
       if (scheduleMode) insertScheduleCarryPage(context.pages,overflowIndex,moved);
       else {
@@ -4487,7 +4679,7 @@
       updateOutputPrintAvailability(context);
       return;
     }
-    context.pages = enforceOutputPageLimit(context.pages,context.density,scheduleMode);
+    context.pages = enforceOutputPageLimit(context.pages,context.density,scheduleMode,context.kind === "storyboard" && !!context.template);
     renderOutputPages(context);
     requestAnimationFrame(() => balanceOutputPages(context,version,pass + 1));
   }
@@ -4499,7 +4691,7 @@
       if (!width || Math.abs(width - outputStageWidth) < 2) return;
       outputStageWidth = width;
       if (activeOutputContext) {
-        activeOutputContext.pages = enforceOutputPageLimit(activeOutputContext.pages || paginateOutputRecords(activeOutputContext.records,activeOutputContext.density),activeOutputContext.density,activeOutputContext.kind === "schedule");
+        activeOutputContext.pages = enforceOutputPageLimit(activeOutputContext.pages || paginateOutputRecords(activeOutputContext.records,activeOutputContext.density),activeOutputContext.density,activeOutputContext.kind === "schedule",activeOutputContext.kind === "storyboard" && !!activeOutputContext.template);
         renderOutputPages(activeOutputContext); scheduleOutputLayout(activeOutputContext);
       }
     };
@@ -4509,7 +4701,7 @@
     } else window.addEventListener("resize",() => handleWidth(stage ? stage.clientWidth : window.innerWidth));
   }
   function renderPagedOutput(context) {
-    context.pages = enforceOutputPageLimit(context.pages || paginateOutputRecords(context.records,context.density),context.density,context.kind === "schedule");
+    context.pages = enforceOutputPageLimit(context.pages || paginateOutputRecords(context.records,context.density),context.density,context.kind === "schedule",context.kind === "storyboard" && !!context.template);
     renderOutputPages(context); bindOutputResize(); scheduleOutputLayout(context);
   }
   function outputShotNumberResolution(snapshot) {
@@ -4544,11 +4736,10 @@
   }
   function snapshotShotNumber(snapshot, shot) {
     const sceneIndex = snapshot.ui.chapters.findIndex((scene) => scene.id === shot.chapterId);
-    return "場次 " + (sceneIndex + 1) + "／鏡次 " + snapshotShotSequence(snapshot,shot);
+    return (sceneIndex + 1) + "-" + snapshotShotSequence(snapshot,shot);
   }
   function snapshotShotLabel(snapshot, shot) {
-    const sceneIndex = snapshot.ui.chapters.findIndex((scene) => scene.id === shot.chapterId);
-    return '<span class="shot-identifiers">' + numberLabel("場次",sceneIndex + 1) + '<span class="number-divider" aria-hidden="true">／</span>' + numberLabel("鏡次",snapshotShotSequence(snapshot,shot)) + '</span>';
+    return '<span class="shot-identifiers output-compact-id">' + escapeHtml(snapshotShotNumber(snapshot,shot)) + '</span>';
   }
   function snapshotOutputShots(snapshot) {
     if (outputScope === "selected") return snapshot.ui.shots.filter((shot) => shot.id === selectedShotId);
@@ -4681,8 +4872,9 @@
   }
   function snapshotOutputContext(captured, version) {
     const prefs = normalizeOutputPreferences(pendingPreferencePatch || captured.project.outputPreferences);
-    prefs.mode = activeOutputMode(); prefs.orientation = orientation; prefs.density = outputItemsPerPage;
+    prefs.mode = activeOutputMode(); prefs.template = outputTemplate; prefs.orientation = orientation; prefs.density = outputItemsPerPage;
     prefs.densityByMode = Object.assign({},prefs.densityByMode,{[prefs.mode]:outputItemsPerPage});
+    prefs.densityByTemplate = Object.assign({},prefs.densityByTemplate,{[prefs.template]:outputItemsPerPage});
     prefs.fields = {images:Object.assign({},outputFields.images),details:Object.assign({},outputFields.details)};
     prefs.schedule = Object.assign({},prefs.schedule,{dayScope:outputDayScope,selectedDayId:outputDayId || null,showEstimatedWrap:outputShowEstimatedWrap},outputScheduleFields);
     const scheduleMode = outputType === "schedule";
@@ -4691,7 +4883,7 @@
     const density = Math.max(1,Math.min(12,Number(outputItemsPerPage) || 1));
     return {doc:$("#print-document"),kind:scheduleMode ? "schedule" : "storyboard",project:captured.project,ui:captured.ui,
       projectId:captured.project.projectId,projectRevision:captured.project.revision,preferenceRevision:Number(captured.project.outputPreferences && captured.project.outputPreferences.revision) || 0,
-      preferences:prefs,mode:prefs.mode,orientation:resolvedOrientation,density:density,aspectRatio:captured.project.aspectRatio,imageFieldCount:scheduleMode ? Number(prefs.schedule.storyboardShotNumber) + Number(prefs.schedule.storyboardTitle) : outputFieldCount("images"),
+      preferences:prefs,mode:prefs.mode,template:scheduleMode ? null : prefs.template,orientation:resolvedOrientation,density:density,aspectRatio:captured.project.aspectRatio,imageFieldCount:scheduleMode ? Number(prefs.schedule.storyboardShotNumber) + Number(prefs.schedule.storyboardTitle) : outputFieldCount("images"),
       projectTitle:captured.project.title,brand:scheduleMode ? "SHOOTING PLAN" : "STORYBOARD",records:[],pages:null,objectUrls:new Set(),imageSources:[],captureBlockers:[],capturePending:true,version:version,
       dayMeta:Object.create(null),selectedDayId:outputDayId,itemCount:0,itemLabel:scheduleMode ? "拍攝項目" : "鏡頭",noteBase:"",subtitle:"",scope:"",summary:"",footer:""};
   }
@@ -4735,9 +4927,12 @@
     return shots.length + " 鏡 · " + durationLabel + formatDuration(totalShotSeconds(shots)) + (unknown ? " · " + unknown + " 鏡未估" : "");
   }
   async function buildStoryboardOutputContext(context) {
-    const shots = snapshotOutputShots(context); renderOutputSourceChoices(context,shots);
+    const template = OUTPUT_TEMPLATES.includes(context.template) ? context.template : "worksheet";
+    const scopedShots = snapshotOutputShots(context);
+    const shots = template === "vo" ? scopedShots.filter((shot) => String(shot.script || "").trim() !== "") : scopedShots;
+    renderOutputSourceChoices(context,template === "vo" ? [] : shots);
     const selected = shots.map((shot) => ({shot:shot,source:outputSourceForShot(context,shot)}));
-    for (const item of selected) {
+    for (const item of (template === "vo" ? [] : selected)) {
       if (!item.source.source && item.source.sources.length > 1) {
         context.captureBlockers.push({code:"OUTPUT_SOURCE_REQUIRED",message:snapshotShotNumber(context,item.shot) + " 有多個照片／Drawing，請在左側明確選擇本次輸出來源。"});
         context.imageSources.push({shotId:item.shot.id,type:null,id:null,requiresSelection:true});
@@ -4748,13 +4943,16 @@
     const scopeText = outputScope === "all" ? "全部分鏡" : outputScope === "chapter" ? (chapter ? "場次：" + (context.ui.chapters.findIndex((item) => item.id === chapter.id) + 1) + "／" + chapter.title : "目前場次") : (shots[0] ? "單鏡：" + snapshotShotNumber(context,shots[0]) : "目前選取鏡頭");
     const records = [];
     for (const item of selected) {
-      const shot = item.shot; const art = await prepareShotArt(context,shot,item.source);
-      records.push({kind:"shot",mode:context.mode,key:shot.id,numberHtml:snapshotShotLabel(context,shot),title:String(shot.title || "").trim() ? String(shot.title) : "",text:detailRows(shot,context).join("\n"),imageFields:imageFieldRows(shot,context),art:art,showArt:context.mode === "details",imageMessage:item.source.source && !art ? "圖像讀取失敗，列印已暫停" : "",densityItem:true});
+      const shot = item.shot; const art = template === "vo" ? "" : await prepareShotArt(context,shot,item.source);
+      const text = template === "vo" ? String(shot.script || "") : detailRows(shot,context).join("\n");
+      records.push({kind:"shot",mode:context.mode,template:template,key:shot.id,shotId:shot.id,numberHtml:snapshotShotLabel(context,shot),title:String(shot.title || "").trim() ? String(shot.title) : "",durationLabel:template !== "contact" && template !== "vo" && context.preferences.fields.details.duration ? (Number(shot.duration) === 0 ? "秒數未估" : formatSeconds(shot.duration)) : "",text:text,imageFields:template === "contact" ? imageFieldRows(shot,context) : [],art:art,showArt:template !== "vo",imageMessage:item.source.source && !art ? "圖像讀取失敗，列印已暫停" : "",densityItem:true});
     }
-    context.records = records; context.itemCount = shots.length; context.scope = scopeText;
-    context.noteBase = shots.length ? "預覽範圍：" + scopeText + "。共 " + shots.length + " 鏡；搜尋條件不影響輸出集合。" : "此輸出範圍目前沒有鏡頭。";
+    context.records = records; context.itemCount = template === "vo" ? records.length : scopedShots.length; context.itemLabel = template === "vo" ? "段" : "鏡"; context.scope = scopeText;
+    context.noteBase = template === "vo"
+      ? (records.length ? "預覽範圍：" + scopeText + "。共 " + records.length + " 段台詞／旁白；空白台詞已略過。" : "此輸出範圍沒有台詞或旁白；空白台詞的鏡頭已略過。")
+      : scopedShots.length ? "預覽範圍：" + scopeText + "。共 " + scopedShots.length + " 鏡；搜尋條件不影響輸出集合。" : "此輸出範圍目前沒有鏡頭。";
     context.subtitle = (context.project.projectType || "分鏡文件") + "　·　" + scopeText;
-    context.summary = formatStoryboardOutputSummary(shots);
+    context.summary = template === "vo" ? records.length + " 段台詞／旁白" : formatStoryboardOutputSummary(scopedShots);
     context.footer = context.projectTitle + " · " + scopeText;
   }
   function scheduleOutputDays(context) {
@@ -4860,7 +5058,7 @@
     $("#schedule-output-tabs").hidden=!scheduleMode;
     if (scheduleMode) setOutputScheduleSection(outputScheduleSection,false);
     else $("#print-document").removeAttribute("data-active-section");
-    $("#preview-title").textContent=scheduleMode?"拍攝安排文件":"分鏡文件";
+    $("#preview-title").textContent=scheduleMode ? "拍攝安排文件" : (({worksheet:"導演工作表",proposal:"影像提案",production:"製片執行表",av:"視聽對照",contact:"全片索引",vo:"VO／台詞稿"})[outputTemplate] || "分鏡文件");
     let captured;
     try { captured=captureOutputSnapshot(); }
     catch (error) { outputCaptureStatus(null,error); $("#print-output").disabled=true; return Promise.resolve(null); }
@@ -4914,13 +5112,21 @@
     const prefs = preferences || {};
     const rawFields = prefs.fields || {};
     const detailsDefaults = {visual:true,script:true,super:false,sound:true,move:true,duration:true};
-    const imagesDefaults = {shotNumber:false,title:false,voiceover:false,super:false,duration:false};
+    const imagesDefaults = {shotNumber:true,title:true,voiceover:false,super:false,duration:true};
     const details = Object.assign({},detailsDefaults,rawFields.details || {});
     if (!rawFields.details) Object.keys(detailsDefaults).forEach((key) => { if (typeof rawFields[key] === "boolean") details[key] = rawFields[key]; });
     const images = Object.assign({},imagesDefaults,rawFields.images || {});
-    const mode = prefs.mode === "images" ? "images" : "details";
+    const legacyMode = prefs.mode === "images" ? "images" : "details";
     const densityByMode = Object.assign({images:4,details:4},prefs.densityByMode || {});
-    const density = Number(densityByMode[mode]) || Number(prefs.density) || 4;
+    const template = OUTPUT_TEMPLATES.includes(prefs.template) ? prefs.template : (legacyMode === "images" ? "contact" : "worksheet");
+    const suppliedTemplateDensities = prefs.densityByTemplate || {};
+    const densityByTemplate = Object.assign({},OUTPUT_TEMPLATE_DEFAULT_DENSITY,suppliedTemplateDensities);
+    if (!Object.prototype.hasOwnProperty.call(suppliedTemplateDensities,"contact")) densityByTemplate.contact = Number(densityByMode.images) || Number(prefs.density) || OUTPUT_TEMPLATE_DEFAULT_DENSITY.contact;
+    if (!Object.prototype.hasOwnProperty.call(suppliedTemplateDensities,"worksheet")) densityByTemplate.worksheet = Number(densityByMode.details) || Number(prefs.density) || OUTPUT_TEMPLATE_DEFAULT_DENSITY.worksheet;
+    const mode = template === "contact" ? "images" : "details";
+    if (!Object.prototype.hasOwnProperty.call(suppliedTemplateDensities,template)) densityByTemplate[template] = Number(densityByMode[mode]) || Number(prefs.density) || OUTPUT_TEMPLATE_DEFAULT_DENSITY[template];
+    const density = Number(densityByTemplate[template]) || Number(densityByMode[mode]) || Number(prefs.density) || OUTPUT_TEMPLATE_DEFAULT_DENSITY[template];
+    densityByTemplate[template] = density;
     densityByMode[mode] = density;
     const schedule = Object.assign({dayScope:"selected",selectedDayId:null,showEstimatedWrap:false,rundownThumbnails:false,rundownNotes:false,rundownStatus:false,storyboardShotNumber:false,storyboardTitle:false},prefs.schedule || {});
     schedule.dayScope = schedule.dayScope === "all" ? "all" : "selected";
@@ -4928,8 +5134,9 @@
     Object.keys(outputScheduleFields).forEach((key) => { schedule[key] = schedule[key] === true; });
     return {
       schemaVersion:2, revision:Number(prefs.revision) || 0, mode:mode,
+      template:template,
       orientation:["auto","portrait","landscape"].includes(prefs.orientation) ? prefs.orientation : "landscape",
-      density:density, densityByMode:densityByMode,
+      density:density, densityByMode:densityByMode, densityByTemplate:densityByTemplate,
       fields:{images:images,details:details},
       schedule:schedule
     };
@@ -4939,13 +5146,20 @@
     const prior = normalizeOutputPreferences(priorInput || base);
     const request = requestInput || {};
     const merged = normalizeOutputPreferences(Object.assign({},base,prior,request));
+    if (request.template && OUTPUT_TEMPLATES.includes(request.template)) merged.template = request.template;
+    else if (request.mode === "images") merged.template = "contact";
+    else if (request.mode === "details") merged.template = "worksheet";
     merged.fields = {
       images:Object.assign({},base.fields.images,prior.fields.images,request.fields && request.fields.images || {}),
       details:Object.assign({},base.fields.details,prior.fields.details,request.fields && request.fields.details || {})
     };
     merged.densityByMode = Object.assign({},base.densityByMode,prior.densityByMode,request.densityByMode || {});
+    merged.densityByTemplate = Object.assign({},base.densityByTemplate,prior.densityByTemplate,request.densityByTemplate || {});
     merged.schedule = Object.assign({},base.schedule,prior.schedule,request.schedule || {});
-    if (request.mode && request.density == null && !(request.densityByMode && request.densityByMode[request.mode] != null)) merged.density = merged.densityByMode[request.mode];
+    merged.mode = merged.template === "contact" ? "images" : "details";
+    if (request.density != null) merged.densityByTemplate[merged.template] = Number(request.density);
+    merged.density = Number(merged.densityByTemplate[merged.template]) || Number(merged.densityByMode[merged.mode]) || 4;
+    merged.densityByMode[merged.mode] = merged.density;
     return merged;
   }
   function stageOutputPreference(requestedPatch) {
@@ -4961,16 +5175,19 @@
   function hydrateOutputPreferences(preferences) {
     if (!preferences) return;
     const normalized = normalizeOutputPreferences(preferences);
-    outputIncludeDetails = normalized.mode !== "images";
+    outputTemplate = normalized.template;
+    outputIncludeDetails = normalized.template !== "contact";
     orientation = normalized.orientation;
     outputDensityByMode = Object.assign({},normalized.densityByMode);
-    outputItemsPerPage = Math.max(1,Math.min(12,Number(outputDensityByMode[normalized.mode]) || normalized.density || 4));
+    outputDensityByTemplate = Object.assign({},OUTPUT_TEMPLATE_DEFAULT_DENSITY,normalized.densityByTemplate);
+    outputItemsPerPage = Math.max(1,Math.min(12,Number(outputDensityByTemplate[normalized.template]) || normalized.density || 4));
     Object.keys(outputFields).forEach((mode) => Object.keys(outputFields[mode]).forEach((key) => { outputFields[mode][key] = !!normalized.fields[mode][key]; }));
     outputDayScope = normalized.schedule.dayScope === "all" ? "all" : "selected";
     outputDayId = normalized.schedule.selectedDayId || null;
     outputShowEstimatedWrap = !!normalized.schedule.showEstimatedWrap;
     Object.keys(outputScheduleFields).forEach((key) => { outputScheduleFields[key] = !!normalized.schedule[key]; });
     setOrientationUI(orientation);
+    $("#output-template").value = outputTemplate;
     $("#output-include-details").checked = outputIncludeDetails;
     $$('[data-output-field]').forEach((input) => { const [mode,key] = input.dataset.outputField.split("."); if (outputFields[mode]) input.checked = !!outputFields[mode][key]; });
     $("#output-day-scope").value = outputDayScope;
@@ -4996,6 +5213,8 @@
         orientation:captured.orientation,
         density:captured.density,
         densityByMode:captured.densityByMode,
+        template:captured.template,
+        densityByTemplate:captured.densityByTemplate,
         fields:captured.fields,
         schedule:captured.schedule
       };

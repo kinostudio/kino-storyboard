@@ -88,11 +88,11 @@
   }
 
   const IMAGE_OUTPUT_DEFAULTS = Object.freeze({
-    shotNumber: false,
-    title: false,
+    shotNumber: true,
+    title: true,
     voiceover: false,
     super: false,
-    duration: false
+    duration: true
   });
   const DETAIL_OUTPUT_DEFAULTS = Object.freeze({
     visual: true,
@@ -109,6 +109,27 @@
     storyboardShotNumber: false,
     storyboardTitle: false
   });
+  const OUTPUT_TEMPLATE_DEFAULT_DENSITY = Object.freeze({ worksheet: 4, proposal: 4, production: 6, av: 4, contact: 8, vo: 8 });
+
+  function normalizeTemplatePreferences(next, fallbackMode) {
+    const mode = fallbackMode === "images" || next.mode === "images" ? "images" : "details";
+    const templates = ProjectSchema.OUTPUT_TEMPLATES || ["worksheet", "proposal", "production", "av", "contact", "vo"];
+    next.template = templates.indexOf(next.template) >= 0 ? next.template : (mode === "images" ? "contact" : "worksheet");
+    const activeMode = next.template === "contact" ? "images" : "details";
+    const suppliedTemplateDensities = isRecord(next.densityByTemplate) ? next.densityByTemplate : {};
+    const hasTemplateDensity = Object.prototype.hasOwnProperty.call(suppliedTemplateDensities, next.template);
+    const legacyDensity = Number(next.densityByMode && next.densityByMode[activeMode]) || Number(next.density) || OUTPUT_TEMPLATE_DEFAULT_DENSITY[next.template];
+    next.densityByTemplate = Object.assign({}, OUTPUT_TEMPLATE_DEFAULT_DENSITY, suppliedTemplateDensities);
+    if (!Object.prototype.hasOwnProperty.call(suppliedTemplateDensities, "contact")) next.densityByTemplate.contact = Number(next.densityByMode && next.densityByMode.images) || Number(next.density) || OUTPUT_TEMPLATE_DEFAULT_DENSITY.contact;
+    if (!Object.prototype.hasOwnProperty.call(suppliedTemplateDensities, "worksheet")) next.densityByTemplate.worksheet = Number(next.densityByMode && next.densityByMode.details) || Number(next.density) || OUTPUT_TEMPLATE_DEFAULT_DENSITY.worksheet;
+    if (!hasTemplateDensity) next.densityByTemplate[next.template] = legacyDensity;
+    next.mode = next.template === "contact" ? "images" : "details";
+    next.density = Number(next.densityByTemplate[next.template]) || Number(next.density) || OUTPUT_TEMPLATE_DEFAULT_DENSITY[next.template];
+    next.densityByTemplate[next.template] = next.density;
+    next.densityByMode = Object.assign({ images: 4, details: 4 }, next.densityByMode || {});
+    next.densityByMode[next.mode] = next.density;
+    return next;
+  }
 
   function makeDefaultOutputPreferences() {
     const details = Object.assign({}, DETAIL_OUTPUT_DEFAULTS);
@@ -129,6 +150,8 @@
       orientation: "auto",
       density: 4,
       densityByMode: { images: 4, details: 4 },
+      template: "worksheet",
+      densityByTemplate: Object.assign({}, OUTPUT_TEMPLATE_DEFAULT_DENSITY),
       fields: fields,
       schedule: Object.assign({ dayScope: "selected", selectedDayId: null, showEstimatedWrap: false }, SCHEDULE_BOOLEAN_DEFAULTS)
     };
@@ -141,14 +164,14 @@
     if (isGrouped) {
       next.densityByMode = Object.assign({ images: next.density, details: next.density }, next.densityByMode || {});
       next.schedule = Object.assign({ dayScope: "selected", selectedDayId: null, showEstimatedWrap: false }, SCHEDULE_BOOLEAN_DEFAULTS, next.schedule || {});
-      return next;
+      return normalizeTemplatePreferences(next, next.mode);
     }
     if (next.schemaVersion === ProjectSchema.PREFERENCE_SCHEMA_VERSION) {
       // Tolerate v2 callers still using the pre-v2 flat shape. This path is
       // only for compatibility; newly created Projects use grouped fields.
       next.densityByMode = Object.assign({ images: next.density, details: next.density }, next.densityByMode || {});
       next.schedule = Object.assign({ dayScope: "selected", selectedDayId: null, showEstimatedWrap: false }, SCHEDULE_BOOLEAN_DEFAULTS, next.schedule || {});
-      return next;
+      return normalizeTemplatePreferences(next, next.mode);
     }
 
     const previousFields = isRecord(next.fields) ? next.fields : {};
@@ -167,7 +190,7 @@
     next.densityByMode = { images: next.density, details: next.density };
     next.fields = fields;
     next.schedule = Object.assign({ dayScope: "selected", selectedDayId: null, showEstimatedWrap: false }, SCHEDULE_BOOLEAN_DEFAULTS);
-    return next;
+    return normalizeTemplatePreferences(next, next.mode);
   }
 
   function mergeOutputFieldPatch(targetFields, fieldPatch) {
@@ -203,6 +226,17 @@
         fail("INVALID_DENSITY", "每頁密度必須介於 1–12。", "$.args[0].densityByMode." + mode);
       }
       target[mode] = patch[mode];
+    });
+  }
+
+  function mergeDensityByTemplate(target, value) {
+    const templates = ProjectSchema.OUTPUT_TEMPLATES || ["worksheet", "proposal", "production", "av", "contact", "vo"];
+    const patch = assertPatch(value, templates, "每種版型的輸出密度", "$.args[0].densityByTemplate");
+    Object.keys(patch).forEach(function (template) {
+      if (!Number.isInteger(patch[template]) || patch[template] < 1 || patch[template] > 12) {
+        fail("INVALID_DENSITY", "每頁密度必須介於 1–12。", "$.args[0].densityByTemplate." + template);
+      }
+      target[template] = patch[template];
     });
   }
 
@@ -1724,7 +1758,7 @@
         assertArgs(type, values, 1, 1);
         const patch = assertPatch(
           values[0],
-          ["mode", "orientation", "density", "densityByMode", "fields", "schedule"],
+          ["mode", "orientation", "density", "densityByMode", "densityByTemplate", "template", "fields", "schedule"],
           "輸出偏好",
           "$.args[0]"
         );
@@ -1762,15 +1796,33 @@
           });
           Object.assign(next.schedule, clone(schedulePatch));
         }
-        ["mode", "orientation"].forEach(function (key) { if (own(patch, key)) next[key] = patch[key]; });
+        if (own(patch, "orientation")) next.orientation = patch.orientation;
+        if (own(patch, "template")) {
+          const templates = ProjectSchema.OUTPUT_TEMPLATES || ["worksheet", "proposal", "production", "av", "contact", "vo"];
+          if (templates.indexOf(patch.template) < 0) fail("INVALID_OUTPUT_TEMPLATE", "不支援此分鏡輸出版型。", "$.args[0].template");
+          next.template = patch.template;
+        } else if (own(patch, "mode")) {
+          if (patch.mode !== "images" && patch.mode !== "details") fail("INVALID_OUTPUT_MODE", "輸出模式只能是 details 或 images。", "$.args[0].mode");
+          next.template = patch.mode === "images" ? "contact" : "worksheet";
+        }
+        if (own(patch, "mode") && patch.mode !== (next.template === "contact" ? "images" : "details")) {
+          fail("INVALID_OUTPUT_MODE", "mode 必須與目前分鏡輸出版型相同。", "$.args[0].mode");
+        }
+        next.mode = next.template === "contact" ? "images" : "details";
         if (own(patch, "densityByMode")) mergeDensityByMode(next.densityByMode, patch.densityByMode);
+        if (own(patch, "densityByTemplate")) mergeDensityByTemplate(next.densityByTemplate, patch.densityByTemplate);
+        const hasTemplateDensityPatch = own(patch, "density") || (own(patch, "densityByTemplate") && own(patch.densityByTemplate, next.template));
+        if (!hasTemplateDensityPatch && own(patch.densityByMode || {}, next.mode)) {
+          next.densityByTemplate[next.template] = patch.densityByMode[next.mode];
+        }
         if (own(patch, "density")) {
           if (!Number.isInteger(patch.density) || patch.density < 1 || patch.density > 12) {
             fail("INVALID_DENSITY", "每頁密度必須介於 1–12。", "$.args[0].density");
           }
-          next.densityByMode[next.mode] = patch.density;
+          next.densityByTemplate[next.template] = patch.density;
         }
-        next.density = next.densityByMode[next.mode];
+        next.density = Number(next.densityByTemplate[next.template]) || OUTPUT_TEMPLATE_DEFAULT_DENSITY[next.template];
+        next.densityByMode[next.mode] = next.density;
         if (!sameJson(current, next)) {
           next.revision = current.revision + 1;
           draft.outputPreferences = next;
