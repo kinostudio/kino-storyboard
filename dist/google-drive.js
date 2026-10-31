@@ -357,7 +357,7 @@
             finish(resolve, selected);
           });
 
-        if (typeof builder.setTitle === "function") builder.setTitle(mode === "folder" ? "選擇 ZIP 儲存位置" : "選擇要匯入的 ZIP");
+        if (typeof builder.setTitle === "function") builder.setTitle(mode === "folder" ? "選擇儲存資料夾：單擊資料夾名稱後按「選取」" : "選擇要匯入的 ZIP");
 
         if (pickerApi.Feature && pickerApi.Feature.SUPPORT_DRIVES && typeof builder.enableFeature === "function") {
           builder.enableFeature(pickerApi.Feature.SUPPORT_DRIVES);
