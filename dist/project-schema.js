@@ -341,6 +341,7 @@
     });
     sameMembers(project.sceneOrder, scenes.map(function (scene) { return scene.id; }), rootPath + ".sceneOrder");
 
+    const shotIdsByScene = new Map();
     const shotById = new Map();
     shots.forEach(function (shot, index) {
       const path = rootPath + ".shots[" + index + "]";
@@ -364,6 +365,8 @@
       validateShotPhotoCrops(shot, path);
       array(shot.drawingIds, path + ".drawingIds").forEach(function (drawingId, drawingIndex) { id(drawingId, path + ".drawingIds[" + drawingIndex + "]"); });
       shotById.set(shot.id, shot);
+      if (!shotIdsByScene.has(shot.sceneId)) shotIdsByScene.set(shot.sceneId, []);
+      shotIdsByScene.get(shot.sceneId).push(shot.id);
     });
 
     record(project.shotOrderByScene, rootPath + ".shotOrderByScene");
@@ -373,7 +376,7 @@
     }
     scenes.forEach(function (scene) {
       const orderedIds = project.shotOrderByScene[scene.id];
-      const expectedIds = shots.filter(function (shot) { return shot.sceneId === scene.id; }).map(function (shot) { return shot.id; });
+      const expectedIds = (shotIdsByScene.get(scene.id) || []);
       sameMembers(orderedIds, expectedIds, rootPath + ".shotOrderByScene." + scene.id);
       orderedIds.forEach(function (shotId) {
         if (shotById.get(shotId).sceneId !== scene.id) {

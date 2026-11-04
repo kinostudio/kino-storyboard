@@ -1,0 +1,2 @@
+const {test}=require('node:test');const assert=require('node:assert/strict');const {accepted}=require('../tools/deploy-after-ci.cjs');
+test('deployment requires successful exact-commit push CI',()=>{const sha='a'.repeat(40),run={head_sha:sha,path:'.github/workflows/ci.yml',event:'push',status:'completed',conclusion:'success'};assert(accepted(run,sha));for(const patch of [{head_sha:'b'.repeat(40)},{path:'.github/workflows/other.yml'},{event:'pull_request'},{status:'in_progress'},{conclusion:'failure'},{conclusion:'cancelled'}])assert(!accepted({...run,...patch},sha));});

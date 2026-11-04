@@ -1728,8 +1728,10 @@
     }
     const pending = (async () => {
       try {
-        const photo = await model.getShotPhoto(shotId, assetId);
-        const blob = photo && (photo.thumbnailBlob || photo.originalBlob);
+        const metadata = model.getProject().assets.find((asset) => asset.id === assetId);
+        const thumbnail = await window.KinoThumbnails.get(projectId, metadata, () => model.getShotPhoto(shotId, assetId));
+        const photo = { thumbnailBlob: thumbnail, thumbnailStatus: "ready" };
+        const blob = photo.thumbnailBlob;
         if (!blob || typeof URL.createObjectURL !== "function") throw Object.assign(new Error("已保存照片沒有可顯示的 Blob。"), { code: "ASSET_MISSING" });
         const stillReferenced = photoShotUsesAsset(projectId, shotId, assetId);
         const cards = nearbyShotPhotoCards(projectId, assetId);
@@ -2881,8 +2883,9 @@
       return;
     }
     disconnectShotPhotoObservation(list);
+    const shotIndexes = new Map(state.shots.map((shot, index) => [shot, index]));
     list.innerHTML = shots.map((shot) => {
-      const index = state.shots.indexOf(shot);
+      const index = shotIndexes.get(shot);
       const titleDraft = fieldDrafts.get(draftKey(shot.id, "title"));
       const visualDraft = fieldDrafts.get(draftKey(shot.id, "visual"));
       const scriptDraft = fieldDrafts.get(draftKey(shot.id, "script"));

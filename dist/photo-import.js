@@ -440,6 +440,7 @@
   }
 
   return Object.freeze({
+    validateHeader: function (bytes) { const mime = detectMime(bytes); if (!mime) fail("UNSUPPORTED_IMAGE_FORMAT", "不支援的圖片格式。"); checkDimensions(headerDimensions(bytes, mime), PHOTO_IMPORT_POLICY); },
     PHOTO_IMPORT_POLICY: PHOTO_IMPORT_POLICY,
     PhotoImportError: PhotoImportError,
     preparePhotoImport: preparePhotoImport

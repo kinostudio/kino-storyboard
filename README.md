@@ -26,6 +26,10 @@ fflate 第三方套件的 MIT 授權見 `dist/vendor/fflate/LICENSE`。本候選
 
 使用 Node.js 22：`npm ci`、`npx playwright install chromium`、`npm test`、`npm run test:browser`。Playwright 與相依套件鎖定於 package-lock.json；瀏覽器由 Playwright 選擇，特殊環境可設定 PLAYWRIGHT_EXECUTABLE_PATH。測試使用隔離 IndexedDB 與合成照片，不存取正式專案或 Google 帳號。
 
-PR 與 main push 會執行 `.github/workflows/ci.yml`。Cloudflare 外部 Workers Builds 仍需設定為在測試成功後部署；GitHub CI 本身不會阻止另一個獨立部署服務發布。此次尚未確認 Cloudflare 外部設定。
+PR 與 main push 會執行 `.github/workflows/ci.yml`。Cloudflare Workers Builds 部署命令為 `node tools/deploy-after-ci.cjs`：核對 checkout 與 WORKERS_CI_COMMIT_SHA，再等待該 commit 的 push CI 成功，才執行鎖版 Wrangler 部署。失敗、取消、查詢錯誤或 15 分鐘逾時均停止發布。
 
 圖片匯入在解碼前檢查 JPEG／PNG／WebP 標頭，預設上限為 20 MiB、單邊 8192 像素、總像素 32 × 1024 × 1024；同時只處理一張。動態 PNG／WebP 不接受，須先轉為靜態圖片。這些限制降低解碼記憶體負擔，不能保證所有裝置均不會耗盡記憶體。
+
+分鏡照片預覽使用最長邊 960px JPEG 縮圖，最多保留 24 張記憶體快取與 64 張可重建的 Cache Storage 快取；缺圖時逐張驗證原圖再產生縮圖。原圖與 ZIP 格式不變。清除網站資料也會移除縮圖。
+
+靜態資產透過 dist/_headers 加入 nosniff、DENY 與 Referrer-Policy。CSP 先使用 Report-Only，不阻擋 Google 授權；違規目前由瀏覽器開發者工具觀察，尚無遠端回報端點。
