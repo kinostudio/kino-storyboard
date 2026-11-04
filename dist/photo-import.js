@@ -11,9 +11,9 @@
   const PHOTO_IMPORT_POLICY = Object.freeze({
     maxBytes: TRIAL_MAX_BYTES,
     maxBytesStatus: "trial",
-    maxWidth: null,
-    maxHeight: null,
-    maxPixels: null,
+    maxWidth: 8192,
+    maxHeight: 8192,
+    maxPixels: 32 * 1024 * 1024,
     acceptedMimeTypes: ACCEPTED_MIME_TYPES
   });
 
@@ -180,6 +180,70 @@
     return null;
   }
 
+  function headerDimensions(bytes, mime) {
+    const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
+    let width, height;
+    if (mime === "image/png" && bytes.length >= 33 && view.getUint32(8) === 13 && view.getUint32(12) === 0x49484452) {
+      width = view.getUint32(16); height = view.getUint32(20);
+    } else if (mime === "image/jpeg") {
+      let offset = 2;
+      while (offset + 4 <= bytes.length) {
+        if (bytes[offset++] !== 255) break;
+        while (offset < bytes.length && bytes[offset] === 255) offset++;
+        const marker = bytes[offset++];
+        if (marker === 0xd9 || marker === 0xda) break;
+        if (marker === 1 || (marker >= 0xd0 && marker <= 0xd7)) continue;
+        if (offset + 2 > bytes.length) break;
+        const length = view.getUint16(offset);
+        if (length < 2 || offset + length > bytes.length) break;
+        if ([0xc0,0xc1,0xc2,0xc3,0xc5,0xc6,0xc7,0xc9,0xca,0xcb,0xcd,0xce,0xcf].includes(marker) && length >= 8) {
+          height = view.getUint16(offset + 3); width = view.getUint16(offset + 5); break;
+        }
+        offset += length;
+      }
+    } else if (mime === "image/webp" && bytes.length >= 20) {
+      let offset = 12;
+      while (offset + 8 <= bytes.length) {
+        const kind = view.getUint32(offset), length = view.getUint32(offset + 4, true), start = offset + 8;
+        if (start + length > bytes.length) break;
+        if (kind === 0x414e494d || kind === 0x414e4d46) fail("ANIMATED_IMAGE_UNSUPPORTED", "請先轉成靜態圖片。");
+        if (kind === 0x56503858 && length >= 10) {
+          if (bytes[start] & 2) fail("ANIMATED_IMAGE_UNSUPPORTED", "請先將動態 WebP 轉成靜態圖片。");
+          width = 1 + bytes[start+4] + bytes[start+5]*256 + bytes[start+6]*65536;
+          height = 1 + bytes[start+7] + bytes[start+8]*256 + bytes[start+9]*65536;
+        }
+        if (kind === 0x56503820 && length >= 10 && bytes[start+3] === 157 && bytes[start+4] === 1 && bytes[start+5] === 42) {
+          width = Math.max(width || 0, view.getUint16(start+6,true) & 16383); height = Math.max(height || 0, view.getUint16(start+8,true) & 16383);
+        }
+        if (kind === 0x5650384c && length >= 5 && bytes[start] === 47) {
+          const bits = view.getUint32(start+1,true);
+          width = Math.max(width || 0, (bits & 16383)+1); height = Math.max(height || 0, ((bits >>> 14) & 16383)+1);
+        }
+        offset = start + length + (length & 1);
+      }
+    }
+    if (!width || !height) fail("INVALID_IMAGE_HEADER", "無法安全讀取圖片尺寸，照片未解碼。");
+    // Animated PNG can allocate many decoded frames despite a small canvas.
+    if (mime === "image/png") {
+      for (let offset = 8; offset + 12 <= bytes.length;) {
+        const length = view.getUint32(offset);
+        if (offset + 12 + length > bytes.length) fail("INVALID_IMAGE_HEADER", "PNG 區塊不完整。");
+        if (view.getUint32(offset+4) === 0x6163544c) fail("ANIMATED_IMAGE_UNSUPPORTED", "請先將動態 PNG 轉成靜態圖片。");
+        offset += 12 + length;
+      }
+    }
+    return { width, height };
+  }
+
+  function checkDimensions(dimensions, policy) {
+    const { width, height } = dimensions;
+    if ((policy.maxWidth !== null && width > policy.maxWidth) ||
+        (policy.maxHeight !== null && height > policy.maxHeight) ||
+        (policy.maxPixels !== null && width > Math.floor(policy.maxPixels / height))) {
+      fail("IMAGE_DIMENSIONS_EXCEEDED", "照片尺寸超過匯入上限（單邊 " + policy.maxWidth + " 像素、總像素 " + policy.maxPixels + "）。", dimensions);
+    }
+  }
+
   async function decodeWithImageElement(file, apis, signal) {
     if (typeof apis.Image !== "function" || !apis.URL || typeof apis.URL.createObjectURL !== "function" ||
         typeof apis.URL.revokeObjectURL !== "function") {
@@ -310,7 +374,7 @@
     }
   }
 
-  async function preparePhotoImport(file, options) {
+  async function preparePhotoImportInternal(file, options) {
     const opts = options || {};
     const signal = opts.signal || null;
     throwIfAborted(signal);
@@ -336,11 +400,13 @@
       fail("MIME_MISMATCH", "檔案宣告的 MIME 與實際內容格式不一致。", { declaredMime: declaredMime, detectedMime: mime });
     }
 
+    checkDimensions(headerDimensions(bytes, mime), policy);
+
     // Decode the original immutable Blob before hashing. The browser decoder
     // applies EXIF display orientation where supported; the source Blob itself
     // is never transformed or replaced.
     throwIfAborted(signal);
-    const dimensions = await readDimensions(file, apis, policy, signal, opts.preferCancellableDecode === true);
+    const dimensions = await readDimensions(file, apis, policy, null, false);
     throwIfAborted(signal);
     const sha256 = await digestSha256(bytes, apis.crypto, signal);
     throwIfAborted(signal);
@@ -363,6 +429,14 @@
       originalBlob: file,
       sha256: sha256
     };
+  }
+
+  let importing = false;
+  async function preparePhotoImport(file, options) {
+    if (importing) fail("PHOTO_IMPORT_BUSY", "正在處理上一張照片，請稍後再試。");
+    importing = true;
+    try { return await preparePhotoImportInternal(file, options); }
+    finally { importing = false; }
   }
 
   return Object.freeze({
