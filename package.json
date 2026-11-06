@@ -3,7 +3,7 @@
   "private": true,
   "scripts": {
     "test": "node --test tests/photo-import-limits.test.cjs tests/deploy-gate.test.cjs tests/shot-index.test.cjs tests/security-headers.test.cjs && node tests/google-drive-resumable-403.cjs",
-    "test:browser": "node tests/chapter-index-browser-qa.cjs && node tests/thumbnails-browser-qa.cjs && node tests/add-shot-initial-patch-browser-qa.cjs && node tests/drawing-placeholder-atomic-creation-browser-qa.cjs && node tests/lifecycle-google-drive-entry-browser-qa.cjs && node tests/shot-placeholder-trailing-browser-qa.cjs && node tests/output-template-layout-browser-qa.cjs"
+    "test:browser": "node tests/drawing-v3-browser-qa.cjs && node tests/chapter-index-browser-qa.cjs && node tests/thumbnails-browser-qa.cjs && node tests/add-shot-initial-patch-browser-qa.cjs && node tests/drawing-placeholder-atomic-creation-browser-qa.cjs && node tests/lifecycle-google-drive-entry-browser-qa.cjs && node tests/shot-placeholder-trailing-browser-qa.cjs && node tests/output-template-layout-browser-qa.cjs"
   },
   "devDependencies": {
     "playwright": "1.62.1",
