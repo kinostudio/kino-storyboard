@@ -67,6 +67,25 @@
     return '<svg viewBox="0 0 640 360" aria-hidden="true" focusable="false" preserveAspectRatio="xMidYMid meet"><defs><linearGradient id="sky' + id + '" x2="0" y2="1"><stop stop-color="#dce0d5"/><stop offset="1" stop-color="#a9bfbb"/></linearGradient><linearGradient id="water' + id + '" x2="0" y2="1"><stop stop-color="#6f9fa3"/><stop offset="1" stop-color="#264f60"/></linearGradient><linearGradient id="sunset' + id + '" x2="0" y2="1"><stop stop-color="#f1cfaa"/><stop offset=".55" stop-color="#d7997a"/><stop offset="1" stop-color="#738b8d"/></linearGradient><linearGradient id="sky" x2="0" y2="1"><stop stop-color="#dce0d5"/><stop offset="1" stop-color="#a9bfbb"/></linearGradient><linearGradient id="water" x2="0" y2="1"><stop stop-color="#6f9fa3"/><stop offset="1" stop-color="#264f60"/></linearGradient><linearGradient id="sunset" x2="0" y2="1"><stop stop-color="#f1cfaa"/><stop offset=".55" stop-color="#d7997a"/><stop offset="1" stop-color="#738b8d"/></linearGradient></defs>' + (variants[type] || variants.pool) + '<path d="M0 0h640v360H0z" fill="none" stroke="#fff" stroke-opacity=".1" stroke-width="2"/></svg>';
   };
   let state = null;
+  const shotIndexApi = window.KinoShotIndex;
+  if (!shotIndexApi || typeof shotIndexApi.create !== "function") throw new Error("分鏡索引未載入。");
+  let indexedShotState = null;
+  let indexedShotRows = null;
+  let indexedChapterRows = null;
+  let indexedShotRevision = null;
+  let indexedShotIndex = null;
+  let emptyShotIndex = null;
+  function currentShotIndex() {
+    if (!state) return emptyShotIndex || (emptyShotIndex = shotIndexApi.create([], []));
+    if (indexedShotState !== state || indexedShotRows !== state.shots || indexedChapterRows !== state.chapters || indexedShotRevision !== state.revision) {
+      indexedShotState = state;
+      indexedShotRows = state.shots;
+      indexedChapterRows = state.chapters;
+      indexedShotRevision = state.revision;
+      indexedShotIndex = shotIndexApi.create(state.chapters, state.shots);
+    }
+    return indexedShotIndex;
+  }
   let lifecycle = { phase: "opening", pendingCount: 0, writable: false, projects: [], error: null, rescueAvailable: false };
   let lifecycleUnsubscribe = null;
   let dataUnsubscribe = null;
@@ -189,12 +208,12 @@
     "add-scene", "edit-scene", "apply-entry-time", "toggle-entry-timing", "add-shot", "duplicate", "delete", "move-up", "move-down",
     "schedule-shot", "entry-up", "entry-down", "remove-entry", "move-entry-day", "toggle-shot-number-lock", "apply-shot-number-renumber"
   ]);
-  const byId = (id, list) => (list || state.shots).find((item) => item.id === id);
-  const inChapter = (chapterId) => state.shots.filter((shot) => shot.chapterId === chapterId);
+  const byId = (id, list) => list ? list.find((item) => item.id === id) : currentShotIndex().shotsById.get(id) || null;
+  const inChapter = (chapterId) => currentShotIndex().shotsByChapter.get(chapterId) || [];
   const entryForShot = (shotId) => state.entries.find((entry) => entry.type === "shot" && entry.shotId === shotId);
   const activeDay = () => state.days.find((day) => day.id === selectedDayId) || state.days[0] || null;
   const activeEntries = () => state.entries.filter((entry) => entry.dayId === selectedDayId);
-  const sortShotIdx = (id) => state.shots.findIndex((shot) => shot.id === id);
+  const sortShotIdx = (id) => currentShotIndex().globalPositionsById.has(id) ? currentShotIndex().globalPositionsById.get(id) : -1;
   function isReadOnly() {
     if (!state || !document.body.classList.contains("project-ready")) return false;
     const phase = lifecycle && lifecycle.phase;
@@ -718,16 +737,16 @@
   const shotSearchMatches = (shot, query) => !query || [shotSequence(shot), shotNumber(shot), shot.no, shot.title, shot.visual, shot.script, shot.super, shot.sound, shot.move, shot.tags].join(" ").toLocaleLowerCase().includes(query.toLocaleLowerCase());
   function matchedSceneIdsForSearch(query) {
     if (!state || !query) return new Set();
-    const normalized = query.toLocaleLowerCase();
-    return new Set(state.chapters.filter((chapter) => chapter.title.toLocaleLowerCase().includes(normalized)).map((chapter) => chapter.id));
+    return currentShotIndex().titleMatches(query);
   }
   function shotMatchesSearch(shot, query, matchedSceneIds) {
     return !query || matchedSceneIds.has(shot.chapterId) || shotSearchMatches(shot, query);
   }
   const activeShots = () => {
     const query = $("#chapter-search").value.trim();
-    const matchedSceneIds = matchedSceneIdsForSearch(query);
-    return state.shots.filter((shot) => (activeChapterId === "all" || shot.chapterId === activeChapterId) && shotMatchesSearch(shot, query, matchedSceneIds));
+    const index = currentShotIndex();
+    const candidates = query ? index.search(query, shotSearchMatches).matchingShots : activeChapterId === "all" ? state.shots : index.shotsByChapter.get(activeChapterId) || [];
+    return activeChapterId === "all" ? candidates : candidates.filter((shot) => shot.chapterId === activeChapterId);
   };
   const formatSeconds = (value) => Number(value) === 0 ? "未估" : Number(value).toFixed(Number(value) % 1 ? 1 : 0) + " 秒";
   const totalShotSeconds = (shots) => shots.reduce((sum, shot) => sum + (Number(shot.duration) || 0), 0);
@@ -764,13 +783,13 @@
     const resolved = currentShotNumberResolution();
     return resolved ? resolved.conflicts.filter((conflict) => conflict.sceneId === sceneId) : [];
   }
-  function sceneNumber(chapterId) { return "場次 " + (state.chapters.findIndex((chapter) => chapter.id === chapterId) + 1); }
+  function sceneNumber(chapterId) { return "場次 " + (currentShotIndex().chapterNumbers.get(chapterId) || 0); }
   function shotSequence(shot) {
     if (!shot) return "";
     const resolved = currentShotNumberResolution();
     if (shotNumberResolutionError) return "—";
     if (resolved) return Object.prototype.hasOwnProperty.call(resolved.shotNumbers, shot.id) ? String(resolved.shotNumbers[shot.id]) : "—";
-    return String(inChapter(shot.chapterId).findIndex((item) => item.id === shot.id) + 1);
+    return String(currentShotIndex().shotPositionsById.get(shot.id) || 0);
   }
   function shotNumber(shot) { return sceneNumber(shot.chapterId) + "／鏡次 " + shotSequence(shot); }
   function shotTitleText(shot) { return shot && typeof shot.title === "string" ? shot.title : ""; }
@@ -785,7 +804,7 @@
     return (resolvedNumber == null ? shotNumber(shot) : resolvedNumber) + (shotHasTitle(shot) ? "「" + shotTitleText(shot) + "」" : "");
   }
   function numberLabel(label, value) { return '<span class="number-part"><span class="number-label">' + escapeHtml(label) + '</span><span class="number-value">' + escapeHtml(value) + '</span></span>'; }
-  function shotLabel(shot, chapterNumberOverride) { return '<span class="shot-identifiers">' + numberLabel('場次', chapterNumberOverride == null ? state.chapters.findIndex(chapter => chapter.id === shot.chapterId) + 1 : chapterNumberOverride) + '<span class="number-divider" aria-hidden="true">／</span>' + numberLabel('鏡次', shotSequence(shot)) + '</span>'; }
+  function shotLabel(shot, chapterNumberOverride) { return '<span class="shot-identifiers">' + numberLabel('場次', chapterNumberOverride == null ? currentShotIndex().chapterNumbers.get(shot.chapterId) || 0 : chapterNumberOverride) + '<span class="number-divider" aria-hidden="true">／</span>' + numberLabel('鏡次', shotSequence(shot)) + '</span>'; }
   function shotCardNumberMarkup(shot) {
     return shotLabel(shot) + (shot.shotNoLocked === true ? '<span class="shot-number-lock-badge" aria-label="鏡次已鎖定" title="鏡次已鎖定">鎖定</span>' : "") +
       (shotNumberConflictIds.has(shot.id) ? '<span class="shot-number-conflict-badge" aria-label="鎖號衝突">衝突</span>' : "");
@@ -2397,17 +2416,20 @@
   function renderChapters() {
     $("#chapter-list").style.setProperty("--scene-number-width", String(Math.max(1, String(state.chapters.length).length)) + "ch");
     const query = $("#chapter-search").value.trim().toLocaleLowerCase();
-    const matchedSceneIds = matchedSceneIdsForSearch(query);
-    const searchableChapters = state.chapters.filter((chapter) => {
-      if (!query) return true;
-      return matchedSceneIds.has(chapter.id) || inChapter(chapter.id).some((shot) => shotSearchMatches(shot, query));
-    });
-    const allCount = query ? state.shots.filter((shot) => shotMatchesSearch(shot, query, matchedSceneIds)).length : state.shots.length;
-    const entries = [{ id: "all", title: "全部場次", count: allCount }, ...searchableChapters.map((chapter) => {
-      const shots = inChapter(chapter.id);
-      return { id: chapter.id, title: chapter.title, count: query ? matchedSceneIds.has(chapter.id) ? shots.length : shots.filter((shot) => shotSearchMatches(shot, query)).length : shots.length };
+    const index = currentShotIndex();
+    const search = index.search(query, shotSearchMatches);
+    const searchableChapters = state.chapters.filter((chapter) => !query || search.matchedChapterIds.has(chapter.id));
+    const entries = [{ id: "all", title: "全部場次", count: search.matchingCount, number: null }, ...searchableChapters.map((chapter) => {
+      const shots = index.shotsByChapter.get(chapter.id) || [];
+      const titleMatched = search.titleMatchedChapterIds.has(chapter.id);
+      return {
+        id: chapter.id,
+        title: chapter.title,
+        number: index.chapterNumbers.get(chapter.id) || 0,
+        count: query ? titleMatched ? shots.length : search.matchingCountsByChapter.get(chapter.id) || 0 : shots.length
+      };
     })];
-    $("#chapter-list").innerHTML = entries.map((chapter) => '<div class="chapter-row ' + (chapter.id === 'all' ? 'is-all' : '') + '"><button class="chapter-item ' + (activeChapterId === chapter.id ? "is-active" : "") + '" data-chapter="' + escapeHtml(chapter.id) + '"><span class="chapter-bullet"></span>' + (chapter.id === "all" ? "" : '<span class="chapter-label">場次</span><span class="chapter-number">' + (state.chapters.findIndex(item => item.id === chapter.id) + 1) + '</span>') + '<span class="chapter-name">' + escapeHtml(chapter.title) + '</span><span class="chapter-quantity">' + chapter.count + '</span></button>' + (chapter.id === 'all' ? '' : '<button class="scene-edit-button" data-action="edit-scene" data-scene-id="' + escapeHtml(chapter.id) + '" aria-label="編輯' + escapeHtml(sceneNumber(chapter.id)) + '" title="編輯場次名稱">編輯</button>') + '</div>').join("");
+    $("#chapter-list").innerHTML = entries.map((chapter) => '<div class="chapter-row ' + (chapter.id === 'all' ? 'is-all' : '') + '"><button class="chapter-item ' + (activeChapterId === chapter.id ? "is-active" : "") + '" data-chapter="' + escapeHtml(chapter.id) + '"><span class="chapter-bullet"></span>' + (chapter.id === "all" ? "" : '<span class="chapter-label">場次</span><span class="chapter-number">' + chapter.number + '</span>') + '<span class="chapter-name">' + escapeHtml(chapter.title) + '</span><span class="chapter-quantity">' + chapter.count + '</span></button>' + (chapter.id === 'all' ? '' : '<button class="scene-edit-button" data-action="edit-scene" data-scene-id="' + escapeHtml(chapter.id) + '" aria-label="編輯' + escapeHtml(sceneNumber(chapter.id)) + '" title="編輯場次名稱">編輯</button>') + '</div>').join("");
     $("#chapter-count").textContent = state.chapters.length;
   }
   const SHOT_PLACEHOLDER_TEXT_FIELDS = ["title", "visual", "script", "super", "sound", "move", "tags"];
@@ -2883,9 +2905,9 @@
       return;
     }
     disconnectShotPhotoObservation(list);
-    const shotIndexes = new Map(state.shots.map((shot, index) => [shot, index]));
+    const shotIndex = currentShotIndex();
     list.innerHTML = shots.map((shot) => {
-      const index = shotIndexes.get(shot);
+      const index = shotIndex.globalPositionsById.get(shot.id);
       const titleDraft = fieldDrafts.get(draftKey(shot.id, "title"));
       const visualDraft = fieldDrafts.get(draftKey(shot.id, "visual"));
       const scriptDraft = fieldDrafts.get(draftKey(shot.id, "script"));
@@ -2953,10 +2975,10 @@
     const shot = byId(selectedShotId);
     const container = $("#inspector");
     if (!shot) { container.dataset.shotId = ""; container.innerHTML = '<div class="empty-state"><div class="empty-icon">' + icon("info", 16) + '</div><strong>尚未選取鏡頭</strong><p>從分鏡清單選擇一個鏡頭，即可在這裡編輯。</p></div>'; applyReadonlyControls(); return; }
-    const shotIndex = state.shots.indexOf(shot); const group = inChapter(shot.chapterId); const groupIndex = group.findIndex((item) => item.id === shot.id); const linked = state.entries.filter((entry) => entry.type === "shot" && entry.shotId === shot.id);
+    const shotIndex = currentShotIndex(); const globalIndex = shotIndex.globalPositionsById.get(shot.id); const group = shotIndex.shotsByChapter.get(shot.chapterId) || []; const groupIndex = shotIndex.shotPositionsById.get(shot.id) - 1; const linked = state.entries.filter((entry) => entry.type === "shot" && entry.shotId === shot.id);
     if (container.dataset.shotId === shot.id && container.querySelector("[data-shot-field]")) {
       const valueOf = (key) => shot[key] == null || (key === "duration" && Number(shot[key]) === 0) ? "" : String(shot[key]);
-      container.querySelector(".inspector-number").innerHTML = shotLabel(shot) + ' <span style="color:#a8adb2;font-weight:400">· ' + (shotIndex + 1) + ' / ' + state.shots.length + '</span>';
+      container.querySelector(".inspector-number").innerHTML = shotLabel(shot) + ' <span style="color:#a8adb2;font-weight:400">· ' + (globalIndex + 1) + ' / ' + state.shots.length + '</span>';
       syncShotNumberManagement(shot, container);
       ["title","visual","script","super","sound","move","duration","tags","art","chapterId"].forEach((key) => {
         const field = container.querySelector('[data-shot-field="' + key + '"]'); if (!field) return;
@@ -2978,7 +3000,7 @@
     }
     const chapterOptions = state.chapters.map((chapter) => '<option value="' + escapeHtml(chapter.id) + '" ' + (chapter.id === shot.chapterId ? "selected" : "") + '>' + escapeHtml(sceneTitle(chapter)) + '</option>').join("");
     const arts = [["pool","泳池遠景"],["water","水下光影"],["swimmer","泳者動作"],["architecture","空間細節"],["sunset","黃昏光線"]].map(([key,label]) => '<option value="' + key + '" ' + (shot.art === key ? "selected" : "") + '>' + label + '</option>').join("");
-    container.innerHTML = '<div class="inspector-top"><p class="inspector-title">鏡頭細節</p><div class="inspector-actions"><button class="micro-icon-button" data-action="duplicate" title="複製鏡頭" aria-label="複製鏡頭">' + icon("copy") + '</button><button class="micro-icon-button danger" data-action="delete" title="刪除鏡頭" aria-label="刪除鏡頭">' + icon("trash") + '</button></div></div><div class="inspector-number">' + shotLabel(shot) + ' <span style="color:#a8adb2;font-weight:400">· ' + (shotIndex + 1) + ' / ' + state.shots.length + '</span></div><input class="inspector-shot-title" data-shot-field="title" aria-label="鏡頭標題" value="' + escapeHtml(shot.title) + '" placeholder="鏡頭標題"><div class="field-group"><label class="field-label" for="shot-visual">畫面描述</label><textarea id="shot-visual" class="textarea-field" data-shot-field="visual" placeholder="描述畫面、人物動作與視覺重點…">' + escapeHtml(shot.visual) + '</textarea></div><div class="field-group"><label class="field-label" for="shot-script">台詞／旁白</label><textarea id="shot-script" class="textarea-field tall" data-shot-field="script" placeholder="需要的台詞或旁白…">' + escapeHtml(shot.script) + '</textarea></div><div class="field-group super-field-group"><label class="field-label" for="shot-super">字卡（SUPER）</label><textarea id="shot-super" class="textarea-field" data-shot-field="super" placeholder="畫面上出現的字卡文字…">' + escapeHtml(shot.super || "") + '</textarea><span class="field-note">原文保存，換行與大小寫會保留。</span></div><div class="inspector-section-title">聲音與拍攝</div><div class="field-group"><label class="field-label" for="shot-sound">聲音設計</label><textarea id="shot-sound" class="textarea-field" data-shot-field="sound" placeholder="環境音、音樂或轉場…">' + escapeHtml(shot.sound) + '</textarea></div><div class="field-row"><div class="field-group"><label class="field-label" for="shot-move">景別／運鏡</label><input id="shot-move" class="text-field" data-shot-field="move" value="' + escapeHtml(shot.move) + '" placeholder="例如：中景・推近"></div><div class="field-group"><label class="field-label" for="shot-duration">影片秒數</label><div class="duration-input-wrap"><input id="shot-duration" class="number-field" type="number" min="0" step="0.1" inputmode="decimal" data-shot-field="duration" value="' + escapeHtml(shot.duration) + '"><span class="input-suffix">秒</span></div></div></div><span class="field-note">0 秒保留為「未估」；不會自動補入預設秒數。</span><div class="field-group" style="margin-top:14px"><label class="field-label" for="shot-tags">標籤</label><input id="shot-tags" class="text-field" data-shot-field="tags" value="' + escapeHtml(shot.tags) + '" placeholder="以頓號分隔，例如：人物、黃昏"></div><div class="field-row"><div class="field-group"><label class="field-label" for="shot-art">分鏡示意</label><select id="shot-art" class="select-control" data-shot-field="art">' + arts + '</select></div><div class="field-group"><label class="field-label" for="shot-chapter">所在場次</label><select id="shot-chapter" class="select-control" data-shot-field="chapterId">' + chapterOptions + '</select></div></div><div class="inspector-foot"><span>' + linked.length + ' 筆拍攝安排引用此鏡頭</span><div class="move-controls"><button class="small-action" data-action="move-up" ' + (groupIndex <= 0 ? "disabled" : "") + '>上移</button><button class="small-action" data-action="move-down" ' + (groupIndex >= group.length - 1 ? "disabled" : "") + '>下移</button></div></div>';
+    container.innerHTML = '<div class="inspector-top"><p class="inspector-title">鏡頭細節</p><div class="inspector-actions"><button class="micro-icon-button" data-action="duplicate" title="複製鏡頭" aria-label="複製鏡頭">' + icon("copy") + '</button><button class="micro-icon-button danger" data-action="delete" title="刪除鏡頭" aria-label="刪除鏡頭">' + icon("trash") + '</button></div></div><div class="inspector-number">' + shotLabel(shot) + ' <span style="color:#a8adb2;font-weight:400">· ' + (globalIndex + 1) + ' / ' + state.shots.length + '</span></div><input class="inspector-shot-title" data-shot-field="title" aria-label="鏡頭標題" value="' + escapeHtml(shot.title) + '" placeholder="鏡頭標題"><div class="field-group"><label class="field-label" for="shot-visual">畫面描述</label><textarea id="shot-visual" class="textarea-field" data-shot-field="visual" placeholder="描述畫面、人物動作與視覺重點…">' + escapeHtml(shot.visual) + '</textarea></div><div class="field-group"><label class="field-label" for="shot-script">台詞／旁白</label><textarea id="shot-script" class="textarea-field tall" data-shot-field="script" placeholder="需要的台詞或旁白…">' + escapeHtml(shot.script) + '</textarea></div><div class="field-group super-field-group"><label class="field-label" for="shot-super">字卡（SUPER）</label><textarea id="shot-super" class="textarea-field" data-shot-field="super" placeholder="畫面上出現的字卡文字…">' + escapeHtml(shot.super || "") + '</textarea><span class="field-note">原文保存，換行與大小寫會保留。</span></div><div class="inspector-section-title">聲音與拍攝</div><div class="field-group"><label class="field-label" for="shot-sound">聲音設計</label><textarea id="shot-sound" class="textarea-field" data-shot-field="sound" placeholder="環境音、音樂或轉場…">' + escapeHtml(shot.sound) + '</textarea></div><div class="field-row"><div class="field-group"><label class="field-label" for="shot-move">景別／運鏡</label><input id="shot-move" class="text-field" data-shot-field="move" value="' + escapeHtml(shot.move) + '" placeholder="例如：中景・推近"></div><div class="field-group"><label class="field-label" for="shot-duration">影片秒數</label><div class="duration-input-wrap"><input id="shot-duration" class="number-field" type="number" min="0" step="0.1" inputmode="decimal" data-shot-field="duration" value="' + escapeHtml(shot.duration) + '"><span class="input-suffix">秒</span></div></div></div><span class="field-note">0 秒保留為「未估」；不會自動補入預設秒數。</span><div class="field-group" style="margin-top:14px"><label class="field-label" for="shot-tags">標籤</label><input id="shot-tags" class="text-field" data-shot-field="tags" value="' + escapeHtml(shot.tags) + '" placeholder="以頓號分隔，例如：人物、黃昏"></div><div class="field-row"><div class="field-group"><label class="field-label" for="shot-art">分鏡示意</label><select id="shot-art" class="select-control" data-shot-field="art">' + arts + '</select></div><div class="field-group"><label class="field-label" for="shot-chapter">所在場次</label><select id="shot-chapter" class="select-control" data-shot-field="chapterId">' + chapterOptions + '</select></div></div><div class="inspector-foot"><span>' + linked.length + ' 筆拍攝安排引用此鏡頭</span><div class="move-controls"><button class="small-action" data-action="move-up" ' + (groupIndex <= 0 ? "disabled" : "") + '>上移</button><button class="small-action" data-action="move-down" ' + (groupIndex >= group.length - 1 ? "disabled" : "") + '>下移</button></div></div>';
     container.dataset.shotId = shot.id;
     syncShotNumberManagement(shot, container);
     container.querySelectorAll("[data-action='move-up'],[data-action='move-down']").forEach((button) => { button.disabled = !canMoveReorderSelection("shots", shot.chapterId, shot.id, button.dataset.action === "move-up" ? -1 : 1); });
@@ -3061,8 +3083,9 @@
       host.innerHTML = '<div class="voiceover-empty"><strong>目前沒有分鏡</strong><p>新增鏡頭後，台詞／旁白會依場次和鏡次出現在這裡。</p></div>';
       return;
     }
+    const shotIndex = currentShotIndex();
     host.innerHTML = state.chapters.map((chapter, chapterIndex) => {
-      const shots = state.shots.filter((shot) => shot.chapterId === chapter.id);
+      const shots = shotIndex.shotsByChapter.get(chapter.id) || [];
       if (!shots.length) return "";
       const chapterHeading = '<header class="voiceover-chapter-heading"><span>' + escapeHtml("場次 " + (chapterIndex + 1)) + '</span><h3>' + escapeHtml(chapter.title || "未命名場次") + '</h3></header>';
       const entries = shots.map((shot) => {
@@ -3080,15 +3103,16 @@
   function renderStoryboardSearchInPlace() {
     const list = $("#shot-list");
     if (!list || !state || !state.shots.length || list.dataset.renderedProjectId !== state.projectId || list.dataset.renderedChapterId !== String(activeChapterId)) return false;
-    const baseShots = activeChapterId === "all" ? state.shots : state.shots.filter((shot) => shot.chapterId === activeChapterId);
+    const shotIndex = currentShotIndex();
+    const baseShots = activeChapterId === "all" ? state.shots : shotIndex.shotsByChapter.get(activeChapterId) || [];
     const cards = $$(".shot-card", list);
     if (cards.length !== baseShots.length) return false;
     const cardsById = new Map(cards.map((card) => [card.dataset.shot, card]));
     if (baseShots.some((shot) => !cardsById.has(shot.id))) return false;
 
     const query = $("#chapter-search").value.trim();
-    const matchedSceneIds = matchedSceneIdsForSearch(query);
-    const visibleShots = baseShots.filter((shot) => shotMatchesSearch(shot, query, matchedSceneIds));
+    const search = shotIndex.search(query, shotSearchMatches);
+    const visibleShots = activeChapterId === "all" ? search.matchingShots : search.matchingShots.filter((shot) => shot.chapterId === activeChapterId);
     const visibleIds = new Set(visibleShots.map((shot) => shot.id));
     const focusedCard = document.activeElement && document.activeElement.closest ? document.activeElement.closest("#shot-list .shot-card") : null;
     cards.forEach((card) => { card.hidden = !visibleIds.has(card.dataset.shot); });
@@ -5633,10 +5657,10 @@
   }
   function syncChapterCounts() {
     const query = $("#chapter-search").value.trim();
-    const all = state.shots.filter((shot) => !query || shotSearchMatches(shot,query)).length;
+    const search = currentShotIndex().search(query, shotSearchMatches);
     $$("#chapter-list [data-chapter]").forEach((button) => {
       const id = button.dataset.chapter;
-      const count = id === "all" ? all : state.shots.filter((shot) => shot.chapterId === id && (!query || shotSearchMatches(shot,query))).length;
+      const count = id === "all" ? search.matchingCount : search.matchingCountsByChapter.get(id) || 0;
       const node = button.querySelector(".chapter-quantity"); if (node) node.textContent = count;
     });
   }
@@ -5661,6 +5685,7 @@
   function syncCommittedShotViews(previousState) {
     const previousShots = previousState && previousState.shots || [];
     const previousById = new Map(previousShots.map((shot) => [shot.id, shot]));
+    const shotIndex = currentShotIndex();
     const changedShots = state.shots.filter((shot) => {
       const prior = previousById.get(shot.id);
       return prior && ["no", "title", "visual", "script", "super", "sound", "duration", "art", "tags", "move", "chapterId"].some((key) => prior[key] !== shot[key]);
@@ -5711,13 +5736,13 @@
         preview.title = raw;
       });
       if (prior.art !== shot.art) {
-        const thumb = card.querySelector(".shot-illustration"); if (thumb) thumb.innerHTML = svgArt(shot.art, state.shots.indexOf(shot));
+        const thumb = card.querySelector(".shot-illustration"); if (thumb) thumb.innerHTML = svgArt(shot.art, shotIndex.globalPositionsById.get(shot.id) || 0);
       }
     });
     if (shotView === "gallery") resizeShotVisualBatch(committedVisualFields);
     const selectedShot = byId(selectedShotId); const inspectorNumber = $("#inspector .inspector-number");
     if (selectedShot && inspectorNumber) {
-      inspectorNumber.innerHTML = shotLabel(selectedShot) + '<span style="color:#a8adb2;font-weight:400"> · ' + (state.shots.indexOf(selectedShot) + 1) + ' / ' + state.shots.length + '</span>';
+      inspectorNumber.innerHTML = shotLabel(selectedShot) + '<span style="color:#a8adb2;font-weight:400"> · ' + ((shotIndex.globalPositionsById.get(selectedShot.id) || 0) + 1) + ' / ' + state.shots.length + '</span>';
     }
     syncChapterCounts();
     if (noLongerVisible) {
