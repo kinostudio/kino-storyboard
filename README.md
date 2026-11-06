@@ -32,4 +32,6 @@ PR 與 main push 會執行 `.github/workflows/ci.yml`。Cloudflare Workers Build
 
 分鏡照片預覽使用最長邊 960px JPEG 縮圖，最多保留 24 張記憶體快取與 64 張可重建的 Cache Storage 快取；缺圖時逐張驗證原圖再產生縮圖。原圖與 ZIP 格式不變。清除網站資料也會移除縮圖。
 
-靜態資產透過 dist/_headers 加入 nosniff、DENY 與 Referrer-Policy。CSP 先使用 Report-Only，不阻擋 Google 授權；違規目前由瀏覽器開發者工具觀察，尚無遠端回報端點。
+靜態資產透過 dist/_headers 加入 nosniff、DENY、Referrer-Policy 與停用未使用的 camera、microphone、geolocation 權限。HSTS 先以單一主機 1 日期限觀察，不含 includeSubDomains 或 preload。CSP 維持 Report-Only，不阻擋 Google 授權；完成違規檢視及整合驗證前不切換為強制政策，目前尚無遠端回報端點。
+
+分鏡畫面每個 Project revision 建立一次場次／鏡頭索引；搜尋計數、場次分組、鏡次與旁白畫面共用索引，避免對每個場次重複掃描整份鏡頭清單。
