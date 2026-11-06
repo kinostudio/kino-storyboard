@@ -128,6 +128,7 @@ async function main() {
     await page.evaluate(() => window.unmountPlaceholderForQa());
 
     await mountReady();
+    await page.evaluate(() => { window.__placeholderEditor.editor.addLayer(); });
     await drawOneStroke();
     assert.equal(await page.evaluate(() => window.StoryModel.getProject().shots.length), 0, "The draft still has no Shot before Save & Close.");
     const saved = await page.evaluate(() => window.__placeholderEditor.saveAndClose());
@@ -157,6 +158,7 @@ async function main() {
     assert.deepEqual(committed.shot.drawingIds, [committed.created.drawingId]);
     assert.equal(committed.shot.title, "新鏡頭");
     assert.ok(committed.drawing.layers.some((layer) => layer.strokes.length > 0), "The atomic Drawing contains the initial stroke.");
+    assert.ok(committed.drawing.layers.some((layer) => layer.kind === "custom" && layer.strokes.length > 0), "Custom placeholder layer and its strokes are committed atomically.");
     assert.equal(committed.editor.shotId, committed.created.shotId, "The editor adopts the real Shot ID.");
     assert.equal(committed.editor.drawingId, committed.created.drawingId, "The editor adopts the real Drawing ID.");
     assert.equal(committed.editor.isDraft, false, "The editor leaves draft mode after commit.");

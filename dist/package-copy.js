@@ -74,7 +74,7 @@
   const THUMBNAIL_KEYS = shape("mime byteLength width height version");
   const DRAWING_KEYS = shape("projectId id schemaVersion shotId canvas backgroundAssetId backgroundCrop revision previewAssetId previewDrawingRevision layers");
   const CANVAS_KEYS = shape("aspectRatio width height");
-  const LAYER_KEYS = shape("projectId drawingId id kind visible locked opacity order strokes");
+  const LAYER_KEYS = shape("projectId drawingId id kind name visible locked opacity order strokes");
   const STROKE_KEYS = shape("id kind color baseWidth points");
   const POINT_KEYS = shape("x y t pressure tiltX tiltY");
   const PREFERENCES_KEYS = shape("schemaVersion revision mode orientation density fields schedule densityByMode template densityByTemplate");
