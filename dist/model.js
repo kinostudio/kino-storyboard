@@ -1768,14 +1768,20 @@
           snapshot.backgroundCrop !== undefined && snapshot.backgroundCrop !== null) {
         throw makeError("SHOT_ASSET_NOT_FOUND", "新鏡頭 Drawing 不能引用尚未保存的照片底圖。");
       }
-      if (!Array.isArray(snapshot.layers) || snapshot.layers.length !== 2) {
-        throw makeError("INVALID_DRAWING_SNAPSHOT", "Drawing snapshot 必須包含 Scene 與 Subject 兩個圖層。");
+      if (!Array.isArray(snapshot.layers) || snapshot.layers.length < 2 || snapshot.layers.length > 12) {
+        throw makeError("INVALID_DRAWING_SNAPSHOT", "Drawing snapshot 必須包含 2–12 個圖層。");
       }
       const seenKinds = new Set();
+      const seenNames = new Set();
       let strokeCount = 0;
       const layers = snapshot.layers.map(function (layer, index) {
-        if (!isRecord(layer) || !["scene", "subject"].includes(layer.kind) || seenKinds.has(layer.kind)) {
+        if (!isRecord(layer) || !["scene", "subject", "custom"].includes(layer.kind) ||
+            layer.kind !== "custom" && seenKinds.has(layer.kind)) {
           throw makeError("INVALID_DRAWING_SNAPSHOT", "Drawing snapshot 圖層種類無效或重複。", { index: index });
+        }
+        const name = layer.kind === "custom" ? layer.name : undefined;
+        if (layer.kind === "custom" && (typeof name !== "string" || !name.trim() || name.trim().length > 24 || seenNames.has(name.trim()))) {
+          throw makeError("INVALID_DRAWING_SNAPSHOT", "自訂圖層名稱必須唯一且為 1–24 個字元。", { index: index });
         }
         if (layer.visible !== undefined && typeof layer.visible !== "boolean" ||
             layer.locked !== undefined && typeof layer.locked !== "boolean") {
@@ -1784,14 +1790,17 @@
         if (!Array.isArray(layer.strokes)) {
           throw makeError("INVALID_DRAWING_SNAPSHOT", "Drawing snapshot 圖層必須包含 strokes 陣列。", { index: index });
         }
-        seenKinds.add(layer.kind);
+        if (layer.kind !== "custom") seenKinds.add(layer.kind);
+        else seenNames.add(name.trim());
         strokeCount += layer.strokes.length;
-        return {
+        const result = {
           kind: layer.kind,
           visible: layer.visible === undefined ? true : layer.visible,
           locked: layer.locked === undefined ? false : layer.locked,
           strokes: captureJson(layer.strokes)
         };
+        if (layer.kind === "custom") result.name = name.trim();
+        return result;
       });
       if (!seenKinds.has("scene") || !seenKinds.has("subject")) {
         throw makeError("INVALID_DRAWING_SNAPSHOT", "Drawing snapshot 必須包含 Scene 與 Subject 兩個圖層。");
@@ -1852,7 +1861,6 @@
           if (!sourceScene) throw makeError("INVALID_DRAWING_LAYERS", "來源 Drawing 缺少 Scene 圖層。");
           isNoop = sourceScene.strokes.length === 0;
         } else if (initialEdit.kind === "snapshot") {
-          if (!item.createShot) throw makeError("INVALID_DRAWING_INITIAL_EDIT", "Drawing snapshot 只適用於建立新鏡頭。");
           item.initialEdit = normalizeInitialDrawingSnapshot(initialEdit);
         }
         if (isNoop) {
@@ -1901,9 +1909,33 @@
           }
         } else if (initialEdit.kind === "snapshot") {
           const snapshot = normalizeInitialDrawingSnapshot(initialEdit);
-          const layerByKind = new Map(drawing.layers.map(function (layer) { return [layer.kind, layer]; }));
+          const layerByKey = new Map(drawing.layers.map(function (layer) { return [layer.kind === "custom" ? "custom:" + layer.name : layer.kind, layer]; }));
           for (const layerSnapshot of snapshot.layers) {
-            const layer = layerByKind.get(layerSnapshot.kind);
+            if (layerSnapshot.kind !== "custom") continue;
+            const addRaw = deps.bridge.applyCommand(combinedProject, "addDrawingLayer", [created.value, layerSnapshot.name], { newId: allocate });
+            const addResult = validateBridgeResult(addRaw, combinedProject);
+            if (!addResult.changed || typeof addResult.value !== "string") throw makeError("DRAWING_LAYER_CREATE_FAILED", "Drawing snapshot 自訂圖層沒有建立。");
+            combinedProject = addResult.project;
+            combinedUndoable = combinedUndoable && addResult.undoable;
+            const added = combinedProject.drawings.find(function (candidate) { return candidate.id === created.value; }).layers.find(function (layer) { return layer.id === addResult.value; });
+            layerByKey.set("custom:" + layerSnapshot.name, added);
+          }
+          const targetOrder = snapshot.layers.map(function (layerSnapshot) {
+            const layer = layerByKey.get(layerSnapshot.kind === "custom" ? "custom:" + layerSnapshot.name : layerSnapshot.kind);
+            if (!layer) throw makeError("DRAWING_LAYER_NOT_FOUND", "Drawing snapshot 找不到目標圖層。");
+            return layer.id;
+          });
+          const currentOrder = combinedProject.drawings.find(function (candidate) { return candidate.id === created.value; }).layers
+            .slice().sort(function (a, b) { return a.order - b.order; }).map(function (layer) { return layer.id; });
+          if (JSON.stringify(currentOrder) !== JSON.stringify(targetOrder)) {
+            const orderRaw = deps.bridge.applyCommand(combinedProject, "reorderDrawingLayers", [created.value, targetOrder], { newId: allocate });
+            const orderResult = validateBridgeResult(orderRaw, combinedProject);
+            if (!orderResult.changed) throw makeError("DRAWING_LAYER_ORDER_FAILED", "Drawing snapshot 圖層順序沒有套用。");
+            combinedProject = orderResult.project;
+            combinedUndoable = combinedUndoable && orderResult.undoable;
+          }
+          for (const layerSnapshot of snapshot.layers) {
+            const layer = layerByKey.get(layerSnapshot.kind === "custom" ? "custom:" + layerSnapshot.name : layerSnapshot.kind);
             if (!layer) throw makeError("DRAWING_LAYER_NOT_FOUND", "Drawing snapshot 找不到目標圖層。");
             for (const strokeDraft of layerSnapshot.strokes) {
               const strokeRaw = deps.bridge.applyCommand(combinedProject, "appendDrawingStroke", [created.value, layer.id, strokeDraft], { newId: allocate });
@@ -1914,7 +1946,9 @@
             }
           }
           for (const layerSnapshot of snapshot.layers) {
-            const layer = combinedProject.drawings.find(function (candidate) { return candidate.id === created.value; }).layers.find(function (candidate) { return candidate.kind === layerSnapshot.kind; });
+            const layerKey = layerSnapshot.kind === "custom" ? "custom:" + layerSnapshot.name : layerSnapshot.kind;
+            const layerId = layerByKey.get(layerKey).id;
+            const layer = combinedProject.drawings.find(function (candidate) { return candidate.id === created.value; }).layers.find(function (candidate) { return candidate.id === layerId; });
             if (!layer) throw makeError("DRAWING_LAYER_NOT_FOUND", "Drawing snapshot 找不到圖層狀態的目標圖層。");
             const patch = { visible: layerSnapshot.visible, locked: layerSnapshot.locked };
             if (layer.visible !== patch.visible || layer.locked !== patch.locked) {
@@ -2481,7 +2515,7 @@
     function queueDrawingCreateWithInitialEdit(shotId, initialEdit, expectedRevision, backgroundCrop) {
       try {
         if (!isRecord(initialEdit)) throw makeError("INVALID_DRAWING_INITIAL_EDIT", "建立 Drawing 需要有效的初始編輯。");
-        if (["stroke", "layerState", "background", "reuseScene"].indexOf(initialEdit.kind) < 0) {
+        if (["stroke", "layerState", "background", "reuseScene", "snapshot"].indexOf(initialEdit.kind) < 0) {
           throw makeError("INVALID_DRAWING_INITIAL_EDIT", "不支援此 Drawing 初始編輯類型。");
         }
         if (initialEdit.kind === "stroke" && (!['scene', 'subject'].includes(initialEdit.layerKind) || !isRecord(initialEdit.strokeDraft))) {
@@ -3636,6 +3670,9 @@
       eraseDrawingStroke: function (drawingId, layerId, strokeId) { return queueCommand("eraseDrawingStroke", [drawingId, layerId, strokeId]); },
       clearDrawingLayer: function (drawingId, layerId) { return queueCommand("clearDrawingLayer", [drawingId, layerId]); },
       setDrawingLayerState: function (drawingId, layerId, patch) { return queueCommand("setDrawingLayerState", [drawingId, layerId, patch]); },
+      addDrawingLayer: function (drawingId, name) { return queueCommand("addDrawingLayer", [drawingId, name]); },
+      deleteDrawingLayer: function (drawingId, layerId) { return queueCommand("deleteDrawingLayer", [drawingId, layerId]); },
+      reorderDrawingLayers: function (drawingId, layerIds) { return queueCommand("reorderDrawingLayers", [drawingId, layerIds]); },
       reuseSceneLayer: function (sourceDrawingId, targetDrawingId) { return queueCommand("reuseSceneLayer", [sourceDrawingId, targetDrawingId]); },
       setDrawingBackground: function (drawingId, assetId) { return queueDrawingBackground(drawingId, assetId); },
       getDrawing: getDrawing,

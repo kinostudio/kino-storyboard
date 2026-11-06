@@ -8,7 +8,7 @@
 
   // Bump this whenever raster output changes. Callers should include this value
   // in preview/export cache keys; previewDrawingRevision is deliberately unused.
-  const VERSION = "1.1.0";
+  const VERSION = "1.2.0";
   const SNAPSHOT_VERSION = 1;
   const ASPECT_RATIOS = new Set(["1:1", "4:3", "16:9", "2.35:1"]);
 
@@ -134,17 +134,24 @@
         !Number.isInteger(canvas.height) || canvas.height <= 0 || !ASPECT_RATIOS.has(canvas.aspectRatio)) {
       fail("INVALID_DRAWING", "Drawing canvas 必須有有效比例與正整數寬高。");
     }
-    if (!Array.isArray(drawing.layers) || drawing.layers.length !== 2) {
-      fail("INVALID_DRAWING", "Drawing 必須包含 scene 與 subject 兩個 Layer。");
+    if (!Array.isArray(drawing.layers) || drawing.layers.length < 2 || drawing.layers.length > 12) {
+      fail("INVALID_DRAWING", "Drawing 必須包含 2–12 個 Layer。");
     }
     const seenKinds = new Set();
     const seenOrders = new Set();
+    const seenNames = new Set();
     const layers = drawing.layers.map(function (layer, index) {
-      if (!layer || typeof layer !== "object" || (layer.kind !== "scene" && layer.kind !== "subject")) {
+      if (!layer || typeof layer !== "object" || !["scene", "subject", "custom"].includes(layer.kind)) {
         fail("INVALID_DRAWING", "Drawing Layer kind 只能是 scene 或 subject。");
       }
-      if (seenKinds.has(layer.kind) || !Number.isInteger(layer.order) || layer.order < 0 || seenOrders.has(layer.order)) {
+      if (layer.kind !== "custom" && seenKinds.has(layer.kind) || !Number.isInteger(layer.order) || layer.order < 0 || seenOrders.has(layer.order)) {
         fail("INVALID_DRAWING", "Drawing Layer kind/order 必須唯一且有效。");
+      }
+      if (layer.kind === "custom") {
+        if (typeof layer.name !== "string" || !layer.name.trim() || layer.name.trim().length > 24 || seenNames.has(layer.name.trim())) {
+          fail("INVALID_DRAWING", "自訂 Drawing Layer 名稱必須唯一且為 1–24 個字元。");
+        }
+        seenNames.add(layer.name.trim());
       }
       if (typeof layer.visible !== "boolean" || typeof layer.locked !== "boolean") {
         fail("INVALID_DRAWING", "Drawing Layer visible/locked 必須是布林值。");
@@ -153,9 +160,9 @@
         fail("INVALID_DRAWING", "Drawing Layer opacity 必須介於 0 與 1。");
       }
       if (!Array.isArray(layer.strokes)) fail("INVALID_DRAWING", "Drawing Layer strokes 必須是陣列。");
-      seenKinds.add(layer.kind);
+      if (layer.kind !== "custom") seenKinds.add(layer.kind);
       seenOrders.add(layer.order);
-      return {
+      const copied = {
         kind: layer.kind,
         order: layer.order,
         visible: layer.visible,
@@ -165,9 +172,12 @@
           return copyStroke(stroke, "layers[" + index + "].strokes[" + strokeIndex + "]");
         })
       };
+      if (layer.kind === "custom") copied.name = layer.name.trim();
+      return copied;
     });
-    if (!seenKinds.has("scene") || !seenKinds.has("subject") || !seenOrders.has(0) || !seenOrders.has(1)) {
-      fail("INVALID_DRAWING", "Drawing 必須有 order 0 的 Layer 與 order 1 的 Layer，並各含 scene/subject。");
+    if (!seenKinds.has("scene") || !seenKinds.has("subject") || seenOrders.size !== layers.length ||
+        layers.some(function (_, order) { return !seenOrders.has(order); })) {
+      fail("INVALID_DRAWING", "Drawing 必須有 scene、subject，且圖層順序需從 0 連續排列。");
     }
     const backgroundAssetId = drawing.backgroundAssetId;
     if (backgroundAssetId !== null && typeof backgroundAssetId !== "string") {
@@ -273,6 +283,28 @@
     context.lineWidth = Number(stroke.baseWidth) || 1;
     context.lineCap = "round";
     context.lineJoin = "round";
+    if (stroke.kind === "pen" && points.some(function (point) { return point.x !== points[0].x || point.y !== points[0].y; }) && stroke.points.some(function (point) { return typeof point.pressure === "number"; })) {
+      // One filled outline prevents translucent strokes darkening at segment joins.
+      const sides = [[], []];
+      points.forEach(function (point, index) {
+        const before = points[Math.max(0, index - 1)];
+        const after = points[Math.min(points.length - 1, index + 1)];
+        const angle = Math.atan2(after.y - before.y, after.x - before.x) + Math.PI / 2;
+        const pressure = stroke.points[index].pressure == null ? 1 : stroke.points[index].pressure;
+        const radius = context.lineWidth * (0.25 + 0.75 * pressure) / 2;
+        [-1, 1].forEach(function (sign, side) {
+          sides[side].push({ x: point.x + sign * Math.cos(angle) * radius, y: point.y + sign * Math.sin(angle) * radius });
+        });
+      });
+      const outline = sides[0].concat(sides[1].reverse());
+      context.beginPath();
+      context.moveTo(outline[0].x, outline[0].y);
+      outline.slice(1).forEach(function (point) { context.lineTo(point.x, point.y); });
+      context.closePath();
+      context.fill();
+      context.restore();
+      return;
+    }
     context.beginPath();
     context.moveTo(points[0].x, points[0].y);
     for (let index = 1; index < points.length; index += 1) context.lineTo(points[index].x, points[index].y);
@@ -385,6 +417,7 @@
   }
 
   return Object.freeze({
+    drawStroke: drawStroke,
     VERSION: VERSION,
     SNAPSHOT_VERSION: SNAPSHOT_VERSION,
     fitContain: fitContain,
