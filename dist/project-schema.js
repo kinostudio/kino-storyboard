@@ -7,8 +7,9 @@
   "use strict";
 
   const SCHEMA_VERSION = 1;
-  const DRAWING_SCHEMA_VERSION = 2;
+  const DRAWING_SCHEMA_VERSION = 3;
   const LEGACY_DRAWING_SCHEMA_VERSION = 1;
+  const PREVIOUS_DRAWING_SCHEMA_VERSION = 2;
   const PREFERENCE_SCHEMA_VERSION = 2;
   const LEGACY_PREFERENCE_SCHEMA_VERSION = 1;
   const ASPECT_RATIOS = Object.freeze(["16:9", "1:1", "4:3", "2.35:1"]);
@@ -510,7 +511,7 @@
       record(drawing, path);
       if (drawing.projectId !== projectId) fail("CROSS_PROJECT_RECORD", path + ".projectId", "Drawing 必須屬於此 Project。");
       addUniqueId(seenIds, drawing.id, path + ".id");
-      if (drawing.schemaVersion !== LEGACY_DRAWING_SCHEMA_VERSION && drawing.schemaVersion !== DRAWING_SCHEMA_VERSION) {
+      if (![LEGACY_DRAWING_SCHEMA_VERSION, PREVIOUS_DRAWING_SCHEMA_VERSION, DRAWING_SCHEMA_VERSION].includes(drawing.schemaVersion)) {
         fail("UNSUPPORTED_DRAWING_SCHEMA", path + ".schemaVersion", "Drawing schemaVersion 不受支援。");
       }
       integer(drawing.revision, path + ".revision", 0);
@@ -550,17 +551,30 @@
         fail("INVALID_PREVIEW_REVISION", path + ".previewDrawingRevision", "預覽不能比 Drawing revision 更新。");
       }
       const layers = array(drawing.layers, path + ".layers");
-      if (layers.length !== 2) fail("INVALID_DRAWING_LAYERS", path + ".layers", "Drawing 必須恰有 scene 與 subject 兩層。");
+      const allowsCustomLayers = drawing.schemaVersion === DRAWING_SCHEMA_VERSION;
+      if (allowsCustomLayers ? layers.length < 2 || layers.length > 12 : layers.length !== 2) {
+        fail("INVALID_DRAWING_LAYERS", path + ".layers", allowsCustomLayers ? "Drawing v3 必須有 2–12 個圖層。" : "Drawing v1/v2 必須恰有 scene 與 subject 兩層。");
+      }
       const layerKinds = new Set();
       const layerOrders = new Set();
+      const customLayerNames = new Set();
       layers.forEach(function (layer, layerIndex) {
         const layerPath = path + ".layers[" + layerIndex + "]";
         record(layer, layerPath);
         if (layer.projectId !== projectId || layer.drawingId !== drawing.id) fail("CROSS_PROJECT_RECORD", layerPath, "Layer 必須屬於同一 Project 與 Drawing。");
         addUniqueId(seenIds, layer.id, layerPath + ".id");
-        if (layer.kind !== "scene" && layer.kind !== "subject") fail("INVALID_LAYER_KIND", layerPath + ".kind", "可編輯 Layer kind 只能是 scene 或 subject。");
-        if (layerKinds.has(layer.kind)) fail("DUPLICATE_LAYER_KIND", layerPath + ".kind", "Drawing 的 scene 與 subject layer 各只能一層。");
-        layerKinds.add(layer.kind);
+        if (!["scene", "subject", "custom"].includes(layer.kind) || layer.kind === "custom" && !allowsCustomLayers) {
+          fail("INVALID_LAYER_KIND", layerPath + ".kind", "Drawing v1/v2 只支援 scene 與 subject；v3 可加 custom 圖層。");
+        }
+        if (layer.kind !== "custom") {
+          if (layerKinds.has(layer.kind)) fail("DUPLICATE_LAYER_KIND", layerPath + ".kind", "scene 與 subject layer 各只能一層。");
+          layerKinds.add(layer.kind);
+        } else {
+          const name = text(layer.name, layerPath + ".name", false).trim();
+          if (!name || name.length > 24) fail("INVALID_LAYER_NAME", layerPath + ".name", "自訂圖層名稱需為 1–24 個字元。");
+          if (customLayerNames.has(name)) fail("DUPLICATE_LAYER_NAME", layerPath + ".name", "自訂圖層名稱不可重複。");
+          customLayerNames.add(name);
+        }
         if (typeof layer.visible !== "boolean" || typeof layer.locked !== "boolean") fail("INVALID_LAYER_FLAGS", layerPath, "Layer visible/locked 必須是布林值。");
         finiteNonnegative(layer.opacity, layerPath + ".opacity");
         if (layer.opacity > 1) fail("INVALID_LAYER_OPACITY", layerPath + ".opacity", "Layer opacity 必須介於 0–1。");
@@ -602,7 +616,13 @@
         });
       });
       if (!layerKinds.has("scene") || !layerKinds.has("subject")) fail("INVALID_DRAWING_LAYERS", path + ".layers", "Drawing 必須同時有 scene 與 subject layer。");
-      if (layerOrders.size !== 2 || !layerOrders.has(0) || !layerOrders.has(1)) fail("INVALID_DRAWING_LAYER_ORDER", path + ".layers", "scene/subject layer order 必須是 0 與 1。");
+      if (allowsCustomLayers) {
+        if (layerOrders.size !== layers.length || layers.some(function (_, order) { return !layerOrders.has(order); })) {
+          fail("INVALID_DRAWING_LAYER_ORDER", path + ".layers", "Drawing v3 圖層順序必須從 0 連續排列。");
+        }
+      } else if (layerOrders.size !== 2 || !layerOrders.has(0) || !layerOrders.has(1)) {
+        fail("INVALID_DRAWING_LAYER_ORDER", path + ".layers", "scene/subject layer order 必須是 0 與 1。");
+      }
       drawingById.set(drawing.id, drawing);
     });
 
@@ -684,6 +704,7 @@
     SCHEMA_VERSION: SCHEMA_VERSION,
     DRAWING_SCHEMA_VERSION: DRAWING_SCHEMA_VERSION,
     LEGACY_DRAWING_SCHEMA_VERSION: LEGACY_DRAWING_SCHEMA_VERSION,
+    PREVIOUS_DRAWING_SCHEMA_VERSION: PREVIOUS_DRAWING_SCHEMA_VERSION,
     PREFERENCE_SCHEMA_VERSION: PREFERENCE_SCHEMA_VERSION,
     LEGACY_PREFERENCE_SCHEMA_VERSION: LEGACY_PREFERENCE_SCHEMA_VERSION,
     ASPECT_RATIOS: ASPECT_RATIOS,

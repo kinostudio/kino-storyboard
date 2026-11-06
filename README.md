@@ -35,3 +35,7 @@ PR 與 main push 會執行 `.github/workflows/ci.yml`。Cloudflare Workers Build
 靜態資產透過 dist/_headers 加入 nosniff、DENY、Referrer-Policy 與停用未使用的 camera、microphone、geolocation 權限。HSTS 先以單一主機 1 日期限觀察，不含 includeSubDomains 或 preload。CSP 維持 Report-Only，不阻擋 Google 授權；完成違規檢視及整合驗證前不切換為強制政策，目前尚無遠端回報端點。
 
 分鏡畫面每個 Project revision 建立一次場次／鏡頭索引；搜尋計數、場次分組、鏡次與旁白畫面共用索引，避免對每個場次重複掃描整份鏡頭清單。
+
+手繪使用 Drawing v3，支援最多 12 層（含必要的場景與人物動作圖層）、自訂圖層新增／刪除／排序、隱藏與鎖定。鉛筆、畫筆、麥克筆、箭頭、圓形、四邊形與橡皮擦共用保存與輸出流程；僅畫筆依速度平滑模擬筆壓，筆刷不透明度固定為所選值。舊 Drawing v1/v2 可讀取與編輯，新增或重排圖層時升級為 v3；舊版網站無法讀取 v3，因此不應以舊頁面開啟新 ZIP。ZIP 副本保留照片、裁切及可編輯筆跡，並重新配置識別碼。
+
+`tests/drawing-v3-browser-qa.cjs` 驗證工具、圖層操作與復原、重新開啟、ZIP 往返、舊版匯入與裁切保留，以及直橫式畫布完整可見；CI 自動執行。本機瀏覽器驗收不等同 iPad／Apple Pencil 實機驗收。

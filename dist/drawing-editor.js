@@ -45,6 +45,46 @@
     return { x: point.x * canvasWidth, y: point.y * canvasHeight };
   }
 
+  function shapeStrokePoints(tool, first, last) {
+    if (tool === "cameraArrow") return [first, last];
+    const left = Math.min(first.x, last.x);
+    const right = Math.max(first.x, last.x);
+    const top = Math.min(first.y, last.y);
+    const bottom = Math.max(first.y, last.y);
+    const span = Math.max(0, last.t - first.t);
+    if (tool === "rectangle") {
+      return [
+        { x: left, y: top, t: first.t, pressure: null },
+        { x: right, y: top, t: first.t + span / 4, pressure: null },
+        { x: right, y: bottom, t: first.t + span / 2, pressure: null },
+        { x: left, y: bottom, t: first.t + span * 3 / 4, pressure: null },
+        { x: left, y: top, t: last.t, pressure: null }
+      ];
+    }
+    if (tool === "circle") {
+      const points = [];
+      const centerX = (left + right) / 2;
+      const centerY = (top + bottom) / 2;
+      for (let index = 0; index <= 48; index += 1) {
+        const angle = -Math.PI / 2 + Math.PI * 2 * index / 48;
+        points.push({
+          x: centerX + (right - left) / 2 * Math.cos(angle),
+          y: centerY + (bottom - top) / 2 * Math.sin(angle),
+          t: first.t + span * index / 48,
+          pressure: null
+        });
+      }
+      return points;
+    }
+    return null;
+  }
+
+  function rgbaWithOpacity(hex, opacity) {
+    const match = /^#([\da-f]{2})([\da-f]{2})([\da-f]{2})$/i.exec(hex || "");
+    if (!match) return hex || "#111827";
+    return "rgba(" + parseInt(match[1], 16) + ", " + parseInt(match[2], 16) + ", " + parseInt(match[3], 16) + ", " + opacity + ")";
+  }
+
   function midpoint(first, second) {
     return { x: (first.x + second.x) / 2, y: (first.y + second.y) / 2 };
   }
@@ -115,6 +155,35 @@
     return node;
   }
 
+  function appendIcon(node, name) {
+    const paths = {
+      pencil: "M4 16.5 16.4 4.1a2.1 2.1 0 0 1 3 3L7 19.5 3.5 20.5 4 17z",
+      brush: "M4 18c3-1 3-5 6-5s3 4 6 3 2-5 5-6M4 21h16",
+      marker: "M5 16 15.5 5.5a2.1 2.1 0 0 1 3 3L8 19H5zM4 21h16",
+      arrow: "M4 18 19 5M11 5h8v8",
+      circle: "M12 3a9 9 0 1 0 0 18 9 9 0 0 0 0-18z",
+      rectangle: "M4 5h16v14H4z",
+      eraser: "m4 15 9-10 7 7-7 8H7l-3-3zM10 20l5-6",
+      eye: "M2.5 12s3.5-6 9.5-6 9.5 6 9.5 6-3.5 6-9.5 6-9.5-6-9.5-6zM12 9a3 3 0 1 0 0 6 3 3 0 0 0 0-6z",
+      eyeOff: "m3 3 18 18M10.6 6.2A10 10 0 0 1 12 6c6 0 9.5 6 9.5 6a16 16 0 0 1-3 3.5M6.2 6.3C3.9 7.7 2.5 12 2.5 12s3.5 6 9.5 6c1.1 0 2.1-.2 3-.5",
+      lock: "M5 10h14v11H5zM8 10V7a4 4 0 0 1 8 0v3",
+      unlock: "M5 10h14v11H5zM8 10V7a4 4 0 0 1 7-2.6",
+      up: "m6 14 6-6 6 6",
+      down: "m6 10 6 6 6-6",
+      trash: "M4 7h16M10 11v6M14 11v6M6 7l1 14h10l1-14M9 7V4h6v3",
+      plus: "M12 5v14M5 12h14"
+    };
+    const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+    svg.setAttribute("viewBox", "0 0 24 24");
+    svg.setAttribute("aria-hidden", "true");
+    svg.setAttribute("focusable", "false");
+    const path = document.createElementNS("http://www.w3.org/2000/svg", "path");
+    path.setAttribute("d", paths[name] || paths.pencil);
+    svg.appendChild(path);
+    node.prepend(svg);
+    return node;
+  }
+
   function clone(value) {
     return value === undefined ? undefined : JSON.parse(JSON.stringify(value));
   }
@@ -125,7 +194,7 @@
     return {
       projectId: projectId,
       id: id,
-      schemaVersion: 2,
+      schemaVersion: 3,
       shotId: shotId,
       canvas: { aspectRatio: aspectRatio, width: size.width, height: size.height },
       backgroundAssetId: backgroundAssetId || null,
@@ -145,8 +214,8 @@
       kind: "snapshot",
       backgroundAssetId: drawing.backgroundAssetId || null,
       backgroundCrop: drawing.backgroundCrop ? clone(drawing.backgroundCrop) : null,
-      layers: drawing.layers.map(function (layer) {
-        return {
+      layers: drawing.layers.slice().sort(function (a, b) { return a.order - b.order; }).map(function (layer) {
+        const snapshot = {
           kind: layer.kind,
           visible: Boolean(layer.visible),
           locked: Boolean(layer.locked),
@@ -163,6 +232,8 @@
             };
           })
         };
+        if (layer.kind === "custom") snapshot.name = layer.name;
+        return snapshot;
       })
     };
   }
@@ -213,7 +284,7 @@
     this.readOnlyReason = opts.readOnlyReason || "尚未確認可編輯狀態。";
     this.writable = false;
     this.layerId = null;
-    this.tool = "pen";
+    this.tool = "brush";
     this.inputMode = "pen";
     this.touchPointers = new Map();
     this.touchGesture = null;
@@ -221,6 +292,8 @@
     this.viewTransform = { scale: 1, x: 0, y: 0 };
     this.color = opts.color || "#e94f3d";
     this.baseWidth = Number.isFinite(opts.baseWidth) && opts.baseWidth > 0 ? opts.baseWidth : 8;
+    this.opacity = Number.isFinite(opts.opacity) ? clamp(opts.opacity, 0.05, 1) : 0.45;
+    this.pencilOnly = Boolean(opts.pencilOnly);
     this.mode = "focus";
     this.activeStroke = null;
     this.eraserPointer = null;
@@ -348,33 +421,17 @@
     shell.appendChild(header);
 
     this.controls = create("div", "ds-de-controls");
-    this.layerGroup = create("div", "ds-de-control-group");
-    this.layerGroup.appendChild(create("span", "ds-de-label", "作用圖層"));
+    this.layerGroup = create("div", "ds-de-control-group ds-de-layers");
+    this.layerGroup.appendChild(create("span", "ds-de-label", "圖層"));
+    this.layerControls = create("div", "ds-de-layer-list");
     this.layerButtons = new Map();
     this.layerStateButtons = new Map();
-    [
-      { kind: "scene", label: "場景" },
-      { kind: "subject", label: "人物動作" }
-    ].forEach(function (layer) {
-      const control = button(layer.label, "ds-de-choice");
-      control.dataset.layerKind = layer.kind;
-      this.layerButtons.set(layer.kind, control);
-      this.layerGroup.appendChild(control);
-    }, this);
+    this.layerGroup.appendChild(this.layerControls);
+    this.addLayerButton = button("新增圖層", "ds-de-choice ds-de-add-layer");
+    this.addLayerButton.dataset.layerAction = "add";
+    this.layerGroup.appendChild(this.addLayerButton);
 
     this.layerStateGroup = create("div", "ds-de-control-group");
-    this.layerStateGroup.appendChild(create("span", "ds-de-label", "圖層設定"));
-    [
-      { kind: "scene", label: "場景" },
-      { kind: "subject", label: "人物動作" }
-    ].forEach(function (layer) {
-      const visibility = button("隱藏 " + layer.label, "ds-de-choice");
-      const lock = button("鎖定 " + layer.label, "ds-de-choice");
-      visibility.dataset.layerVisibilityKind = layer.kind;
-      lock.dataset.layerLockKind = layer.kind;
-      this.layerStateButtons.set(layer.kind, { visibility: visibility, lock: lock });
-      this.layerStateGroup.append(visibility, lock);
-    }, this);
     this.clearLayerButton = button("清空作用圖層", "ds-de-utility");
     this.layerStateGroup.appendChild(this.clearLayerButton);
 
@@ -399,11 +456,16 @@
     this.toolGroup.appendChild(create("span", "ds-de-label", "工具"));
     this.toolButtons = new Map();
     [
-      { id: "pen", label: "自由筆" },
-      { id: "cameraArrow", label: "運鏡箭頭" },
-      { id: "eraser", label: "逐筆橡皮" }
+      { id: "pencil", label: "鉛筆" },
+      { id: "brush", label: "畫筆" },
+      { id: "marker", label: "麥克筆" },
+      { id: "cameraArrow", label: "箭頭" },
+      { id: "circle", label: "圓形" },
+      { id: "rectangle", label: "四邊形" },
+      { id: "eraser", label: "橡皮擦" }
     ].forEach(function (tool) {
-      const control = button(tool.label, "ds-de-choice");
+      const control = button(tool.label, "ds-de-choice ds-de-tool");
+      appendIcon(control, tool.id === "cameraArrow" ? "arrow" : tool.id);
       control.dataset.tool = tool.id;
       this.toolButtons.set(tool.id, control);
       this.toolGroup.appendChild(control);
@@ -416,6 +478,14 @@
     this.colorInput.value = this.color;
     this.colorInput.setAttribute("aria-label", "新筆畫顏色");
     this.colorLabel.appendChild(this.colorInput);
+    this.colorSwatches = create("div", "ds-de-color-swatches");
+    [["#111827", "黑"], ["#e94f3d", "紅"], ["#315b98", "藍"]].forEach(function (entry) {
+      const swatch = button(entry[1], "ds-de-color-swatch");
+      swatch.dataset.color = entry[0];
+      swatch.style.setProperty("--ds-de-swatch", entry[0]);
+      this.colorSwatches.appendChild(swatch);
+    }, this);
+    this.colorLabel.appendChild(this.colorSwatches);
 
     this.widthLabel = create("label", "ds-de-control-group ds-de-width-label");
     this.widthLabel.appendChild(create("span", "ds-de-label", "線寬"));
@@ -427,22 +497,32 @@
     this.widthInput.value = String(Math.round(this.baseWidth));
     this.widthInput.setAttribute("aria-label", "新筆畫線寬，像素");
     this.widthValue = create("output", "ds-de-width-value", this.widthInput.value + " px");
-    this.widthLabel.append(this.widthInput, this.widthValue);
+    this.widthPreview = create("span", "ds-de-brush-preview");
+    this.widthPreviewDot = create("span", "ds-de-brush-preview-dot");
+    this.widthPreview.appendChild(this.widthPreviewDot);
+    this.widthLabel.append(this.widthInput, this.widthValue, this.widthPreview);
+
+    this.opacityLabel = create("label", "ds-de-control-group ds-de-opacity-label");
+    this.opacityLabel.appendChild(create("span", "ds-de-label", "不透明度"));
+    this.opacityInput = document.createElement("input");
+    this.opacityInput.type = "range";
+    this.opacityInput.min = "5";
+    this.opacityInput.max = "100";
+    this.opacityInput.step = "1";
+    this.opacityInput.value = String(Math.round(this.opacity * 100));
+    this.opacityInput.setAttribute("aria-label", "筆刷不透明度");
+    this.opacityValue = create("output", "ds-de-width-value", this.opacityInput.value + "%");
+    this.opacityLabel.append(this.opacityInput, this.opacityValue);
 
     this.inputLabel = create("label", "ds-de-control-group ds-de-input-label");
     this.inputLabel.appendChild(create("span", "ds-de-label", "輸入方式"));
-    this.inputSelect = document.createElement("select");
-    this.inputSelect.setAttribute("aria-label", "畫布輸入方式");
-    [
-      ["pen", "筆優先（手指停用）"],
-      ["touch", "手指／滑鼠繪圖"]
-    ].forEach(function (entry) {
-      const option = document.createElement("option");
-      option.value = entry[0];
-      option.textContent = entry[1];
-      this.inputSelect.appendChild(option);
-    }, this);
-    this.inputLabel.appendChild(this.inputSelect);
+    this.pencilOnlyInput = document.createElement("input");
+    this.pencilOnlyInput.type = "checkbox";
+    this.pencilOnlyInput.checked = this.pencilOnly;
+    this.pencilOnlyInput.setAttribute("role", "switch");
+    this.pencilOnlyInput.setAttribute("aria-label", "只用 Apple Pencil 塗鴉");
+    const pencilOnlyText = create("span", "", "只用 Apple Pencil 塗鴉");
+    this.inputLabel.append(this.pencilOnlyInput, pencilOnlyText);
 
     this.modeGroup = create("div", "ds-de-control-group ds-de-mode-group");
     this.modeGroup.appendChild(create("span", "ds-de-label", "檢視"));
@@ -462,7 +542,7 @@
     this.undoButton = button("復原上一筆", "ds-de-utility");
     this.redoButton = button("重做上一筆", "ds-de-utility");
     this.historyGroup.append(this.undoButton, this.redoButton);
-    this.controls.append(this.layerGroup, this.layerStateGroup, this.sceneReuseGroup, this.toolGroup, this.colorLabel, this.widthLabel, this.inputLabel, this.modeGroup, this.zoomGroup, this.historyGroup);
+    this.controls.append(this.layerGroup, this.layerStateGroup, this.sceneReuseGroup, this.toolGroup, this.colorLabel, this.widthLabel, this.opacityLabel, this.inputLabel, this.modeGroup, this.zoomGroup, this.historyGroup);
     shell.appendChild(this.controls);
 
     this.sceneReuseDialog = create("dialog", "ds-de-reuse-dialog");
@@ -648,32 +728,24 @@
       self.sceneReusePreview = null;
       if (!self.destroyed && self.sceneReuseButton && !self.sceneReuseButton.disabled) self.sceneReuseButton.focus({ preventScroll: true });
     });
-    this.layerButtons.forEach(function (control, kind) {
-      self.listen(control, "click", function () {
+    this.listen(this.addLayerButton, "click", function () { self.addLayer(); });
+    this.listen(this.layerControls, "click", function (event) {
+      const control = event.target && event.target.closest ? event.target.closest("button[data-layer-action]") : null;
+      if (!control || !self.layerControls.contains(control)) return;
+      const layer = self.findLayerById(control.dataset.layerId);
+      if (!layer) return;
+      const action = control.dataset.layerAction;
+      if (action === "select") {
         if (self.activeStroke) self.cancelActiveStroke("作用圖層已切換，未完成筆畫已取消。");
-        if (self.touchEraserCandidate) {
-          self.touchEraserCandidate = null;
-          self.eraserPointer = null;
-        }
-        const layer = self.findLayer(kind);
-        if (!layer) return;
         self.layerId = layer.id;
         self.updateControls();
         self.render();
         self.updateCanvasLabel();
-      });
-    });
-    this.layerStateButtons.forEach(function (controls, kind) {
-      self.listen(controls.visibility, "click", function () {
-        const layer = self.findLayer(kind);
-        if (!layer) return;
-        self.runLayerState(kind, { visible: !layer.visible });
-      });
-      self.listen(controls.lock, "click", function () {
-        const layer = self.findLayer(kind);
-        if (!layer) return;
-        self.runLayerState(kind, { locked: !layer.locked });
-      });
+      } else if (action === "visibility") self.runLayerState(layer.id, { visible: !layer.visible });
+      else if (action === "lock") self.runLayerState(layer.id, { locked: !layer.locked });
+      else if (action === "up") self.moveLayer(layer.id, -1);
+      else if (action === "down") self.moveLayer(layer.id, 1);
+      else if (action === "delete") self.deleteLayer(layer.id);
     });
     this.listen(this.clearLayerButton, "click", function () { self.clearActiveLayer(); });
     this.toolButtons.forEach(function (control, tool) {
@@ -688,17 +760,33 @@
         self.updateCanvasLabel();
       });
     });
-    this.listen(this.colorInput, "input", function () { self.color = self.colorInput.value; });
+    this.listen(this.colorInput, "input", function () { self.color = self.colorInput.value; self.renderBrushPreview(); self.updateControls(); });
+    this.listen(this.colorSwatches, "click", function (event) {
+      const swatch = event.target && event.target.closest ? event.target.closest("button[data-color]") : null;
+      if (!swatch || !self.colorSwatches.contains(swatch)) return;
+      self.color = swatch.dataset.color;
+      self.colorInput.value = self.color;
+      self.renderBrushPreview();
+      self.updateControls();
+    });
     this.listen(this.widthInput, "input", function () {
       self.baseWidth = Number(self.widthInput.value);
       self.widthValue.value = String(self.baseWidth) + " px";
       self.widthValue.textContent = self.widthValue.value;
+      self.renderBrushPreview();
     });
-    this.listen(this.inputSelect, "change", function () {
+    this.listen(this.opacityInput, "input", function () {
+      self.opacity = Number(self.opacityInput.value) / 100;
+      self.opacityValue.value = self.opacityInput.value + "%";
+      self.opacityValue.textContent = self.opacityValue.value;
+      self.renderBrushPreview();
+    });
+    this.listen(this.pencilOnlyInput, "change", function () {
       if (self.activeStroke) self.cancelActiveStroke("輸入方式已切換，未完成筆畫已取消。");
       self.clearTouchInteraction(false);
-      self.inputMode = self.inputSelect.value;
+      self.pencilOnly = self.pencilOnlyInput.checked;
       self.updateCanvasLabel();
+      self.updateControls();
     });
     this.listen(this.focusButton, "click", function () { self.setMode("focus"); });
     this.listen(this.splitButton, "click", function () { self.setMode("split"); });
@@ -968,6 +1056,90 @@
     return this.drawing && this.drawing.layers.find(function (layer) { return layer.kind === kind; }) || null;
   };
 
+  DrawingEditor.prototype.findLayerById = function (id) {
+    return this.drawing && this.drawing.layers.find(function (layer) { return layer.id === id; }) || null;
+  };
+
+  DrawingEditor.prototype.layerKey = function (layer) {
+    return layer && layer.kind === "custom" ? "custom:" + layer.name : layer && layer.kind;
+  };
+
+  DrawingEditor.prototype.findLayerByKey = function (key) {
+    return this.drawing && this.drawing.layers.find(function (layer) { return this.layerKey(layer) === key; }, this) || null;
+  };
+
+  DrawingEditor.prototype.layerName = function (layer) {
+    return layer.kind === "scene" ? "場景" : layer.kind === "subject" ? "人物動作" : layer.name;
+  };
+
+  DrawingEditor.prototype.renderLayerControls = function () {
+    if (!this.layerControls) return;
+    const focus = document.activeElement;
+    const focusKey = focus && this.layerControls.contains(focus)
+      ? { id: focus.dataset.layerId, action: focus.dataset.layerAction }
+      : null;
+    this.layerButtons.clear();
+    this.layerStateButtons.clear();
+    this.layerControls.replaceChildren();
+    const layers = this.drawing ? this.drawing.layers.slice().sort(function (a, b) { return a.order - b.order; }) : [];
+    layers.forEach(function (layer, index) {
+      const row = create("div", "ds-de-layer-row");
+      const select = button(this.layerName(layer), "ds-de-layer-select");
+      select.dataset.layerId = layer.id;
+      select.dataset.layerAction = "select";
+      select.setAttribute("aria-pressed", String(layer.id === this.layerId));
+      select.disabled = !this.drawing || Boolean(this.pendingOperation) || this.drawingBusy;
+      row.appendChild(select);
+      this.layerButtons.set(layer.id, select);
+      const visibility = button(layer.visible ? "隱藏" : "顯示", "ds-de-icon-button");
+      appendIcon(visibility, layer.visible ? "eye" : "eyeOff");
+      visibility.dataset.layerId = layer.id;
+      visibility.dataset.layerAction = "visibility";
+      visibility.setAttribute("aria-pressed", String(layer.visible));
+      visibility.setAttribute("aria-label", (layer.visible ? "隱藏" : "顯示") + this.layerName(layer));
+      visibility.disabled = !this.canWriteLayerState(layer.id);
+      row.appendChild(visibility);
+      const lock = button(layer.locked ? "解鎖" : "鎖定", "ds-de-icon-button");
+      appendIcon(lock, layer.locked ? "unlock" : "lock");
+      lock.dataset.layerId = layer.id;
+      lock.dataset.layerAction = "lock";
+      lock.setAttribute("aria-pressed", String(layer.locked));
+      lock.setAttribute("aria-label", (layer.locked ? "解鎖" : "鎖定") + this.layerName(layer));
+      lock.disabled = !this.canWriteLayerState(layer.id);
+      row.appendChild(lock);
+      const up = button("上移", "ds-de-icon-button");
+      appendIcon(up, "up");
+      up.dataset.layerId = layer.id;
+      up.dataset.layerAction = "up";
+      up.disabled = index === 0 || !this.canReorderLayers();
+      row.appendChild(up);
+      const down = button("下移", "ds-de-icon-button");
+      appendIcon(down, "down");
+      down.dataset.layerId = layer.id;
+      down.dataset.layerAction = "down";
+      down.disabled = index === layers.length - 1 || !this.canReorderLayers();
+      row.appendChild(down);
+      const remove = button("刪除", "ds-de-icon-button ds-de-danger-icon");
+      appendIcon(remove, "trash");
+      remove.dataset.layerId = layer.id;
+      remove.dataset.layerAction = "delete";
+      remove.disabled = layer.kind !== "custom" || !this.canDeleteLayer();
+      remove.title = layer.kind === "custom" ? "刪除自訂圖層（可復原）" : "場景與人物動作為必要圖層";
+      row.appendChild(remove);
+      this.layerControls.appendChild(row);
+      this.layerStateButtons.set(layer.id, { visibility: visibility, lock: lock });
+    }, this);
+    this.addLayerButton.disabled = !this.canAddLayer();
+    this.addLayerButton.setAttribute("aria-label", "新增自訂圖層");
+    this.addLayerButton.title = "最多 12 個圖層；場景與人物動作圖層會保留";
+    if (focusKey) {
+      const restore = Array.from(this.layerControls.querySelectorAll("button[data-layer-action]")).find(function (node) {
+        return node.dataset.layerId === focusKey.id && node.dataset.layerAction === focusKey.action;
+      });
+      if (restore) restore.focus({ preventScroll: true });
+    }
+  };
+
   DrawingEditor.prototype.activeLayer = function () {
     return this.drawing && this.drawing.layers.find(function (layer) { return layer.id === this.layerId; }, this) || null;
   };
@@ -989,6 +1161,7 @@
     if (this.placeholderHistory.length > 100) this.placeholderHistory.shift();
     this.placeholderRedo = [];
     mutate(this.drawing);
+    if (!this.activeLayer()) this.layerId = this.findLayer("scene").id;
     this.placeholderDirty = true;
     this.setStatus("尚未儲存；按「儲存並關閉」才會建立鏡頭。", "info");
     this.updateControls();
@@ -1077,8 +1250,29 @@
     return Boolean(this.writable && this.canQueueCommand() && hasCommand && canVerifyTarget && Number.isInteger(this.currentProjectRevision()) && this.backgroundReady && !this.backgroundFailure && this.drawing && layer && layer.visible && !layer.locked && !this.pendingOperation && !this.drawingBusy);
   };
 
-  DrawingEditor.prototype.canWriteLayerState = function (kind) {
-    const layer = this.findLayer(kind);
+  DrawingEditor.prototype.canAddLayer = function () {
+    const canVerifyTarget = this.model && (typeof this.model.getDrawing === "function" || typeof this.model.getProject === "function");
+    const canSave = this.isPlaceholder || this.isDraft || this.model && typeof this.model.addDrawingLayer === "function";
+    return Boolean(this.drawing && this.drawing.layers.length < 12 && this.writable && this.canQueueCommand() && canSave && canVerifyTarget &&
+      Number.isInteger(this.currentProjectRevision()) && this.backgroundReady && !this.backgroundFailure && !this.pendingOperation && !this.drawingBusy);
+  };
+
+  DrawingEditor.prototype.canDeleteLayer = function () {
+    const canVerifyTarget = this.model && (typeof this.model.getDrawing === "function" || typeof this.model.getProject === "function");
+    const canSave = this.isPlaceholder || this.isDraft || this.model && typeof this.model.deleteDrawingLayer === "function";
+    return Boolean(this.drawing && this.writable && this.canQueueCommand() && canSave && canVerifyTarget && Number.isInteger(this.currentProjectRevision()) &&
+      this.backgroundReady && !this.backgroundFailure && !this.pendingOperation && !this.drawingBusy);
+  };
+
+  DrawingEditor.prototype.canReorderLayers = function () {
+    const canVerifyTarget = this.model && (typeof this.model.getDrawing === "function" || typeof this.model.getProject === "function");
+    const canSave = this.isPlaceholder || this.isDraft || this.model && typeof this.model.reorderDrawingLayers === "function";
+    return Boolean(this.drawing && this.writable && this.canQueueCommand() && canSave && canVerifyTarget && Number.isInteger(this.currentProjectRevision()) &&
+      this.backgroundReady && !this.backgroundFailure && !this.pendingOperation && !this.drawingBusy);
+  };
+
+  DrawingEditor.prototype.canWriteLayerState = function (idOrKind) {
+    const layer = this.findLayerById(idOrKind) || this.findLayer(idOrKind);
     const canVerifyTarget = this.model && (typeof this.model.getDrawing === "function" || typeof this.model.getProject === "function");
     const canSave = this.canCreateFromDraft() || this.model && typeof this.model.setDrawingLayerState === "function";
     return Boolean(layer && this.drawing && this.writable && this.canQueueCommand() && canSave && canVerifyTarget && Number.isInteger(this.currentProjectRevision()) && this.backgroundReady && !this.backgroundFailure && !this.pendingOperation && !this.drawingBusy);
@@ -1662,30 +1856,8 @@
 
   DrawingEditor.prototype.updateControls = function () {
     const activeLayer = this.activeLayer();
-    this.layerButtons.forEach(function (control, kind) {
-      const layer = this.findLayer(kind);
-      control.disabled = !layer || this.pendingOperation !== null || this.drawingBusy;
-      control.setAttribute("aria-pressed", String(Boolean(layer && activeLayer && layer.id === activeLayer.id)));
-      control.textContent = layer ? (kind === "scene" ? "場景" : "人物動作") + (layer.visible ? " · 顯示" : " · 隱藏") + (layer.locked ? " · 鎖定" : " · 可編輯") : "圖層";
-      control.setAttribute("aria-label", control.textContent);
-      control.title = layer ? "已保存狀態：" + (layer.visible ? "顯示" : "隱藏") + "、" + (layer.locked ? "鎖定" : "未鎖定") : "尚未載入圖層";
-    }, this);
-    this.layerStateButtons.forEach(function (controls, kind) {
-      const layer = this.findLayer(kind);
-      const name = kind === "scene" ? "場景" : "人物動作";
-      const canWrite = this.canWriteLayerState(kind);
-      controls.visibility.disabled = !canWrite;
-      controls.visibility.textContent = layer ? (layer.visible ? "隱藏 " : "顯示 ") + name : "顯示／隱藏 " + name;
-      controls.visibility.setAttribute("aria-label", layer ? (layer.visible ? "隱藏" : "顯示") + name + " 圖層；目前" + (layer.visible ? "顯示" : "隱藏") : "顯示／隱藏" + name + "圖層；尚未載入");
-      controls.visibility.setAttribute("aria-pressed", String(Boolean(layer && layer.visible)));
-      controls.visibility.title = layer ? "已保存狀態：" + (layer.visible ? "顯示" : "隱藏") : "尚未載入圖層";
-      controls.lock.disabled = !canWrite;
-      controls.lock.textContent = layer ? (layer.locked ? "解鎖 " : "鎖定 ") + name : "鎖定／解鎖 " + name;
-      controls.lock.setAttribute("aria-label", layer ? (layer.locked ? "解鎖" : "鎖定") + name + " 圖層；目前" + (layer.locked ? "鎖定" : "可編輯") : "鎖定／解鎖" + name + "圖層；尚未載入");
-      controls.lock.setAttribute("aria-pressed", String(Boolean(layer && layer.locked)));
-      controls.lock.title = layer ? "已保存狀態：" + (layer.locked ? "鎖定" : "未鎖定") : "尚未載入圖層";
-    }, this);
-    const activeLayerName = activeLayer ? (activeLayer.kind === "scene" ? "場景" : "人物動作") : "作用圖層";
+    this.renderLayerControls();
+    const activeLayerName = activeLayer ? this.layerName(activeLayer) : "作用圖層";
     this.clearLayerButton.disabled = !this.canClearActiveLayer();
     this.clearLayerButton.textContent = "清空 " + activeLayerName;
     this.clearLayerButton.setAttribute("aria-label", "清空" + activeLayerName + "圖層中的全部筆跡；執行前會要求確認，並可復原");
@@ -1700,7 +1872,9 @@
     }, this);
     this.colorInput.disabled = !this.writable || Boolean(this.pendingOperation) || this.drawingBusy;
     this.widthInput.disabled = !this.writable || Boolean(this.pendingOperation) || this.drawingBusy;
-    this.inputSelect.disabled = !this.writable || Boolean(this.pendingOperation) || this.drawingBusy;
+    this.opacityInput.disabled = !this.writable || Boolean(this.pendingOperation) || this.drawingBusy;
+    this.pencilOnlyInput.disabled = !this.writable || Boolean(this.pendingOperation) || this.drawingBusy;
+    this.renderBrushPreview();
     this.focusButton.disabled = this.mode === "focus";
     this.splitButton.disabled = this.mode === "split";
     this.zoomOutButton.disabled = !this.drawing || this.viewTransform.scale <= 1.001;
@@ -1745,19 +1919,25 @@
     if (!this.model || typeof this.model.getDrawing !== "function" && typeof this.model.getProject !== "function") missingCommands.push("手繪內容讀取功能尚未就緒");
     const unavailableLayerFeatures = [];
     if (!this.model || typeof this.model.clearDrawingLayer !== "function") unavailableLayerFeatures.push("清空圖層功能尚未就緒");
-    if (!this.model || typeof this.model.setDrawingLayerState !== "function") unavailableLayerFeatures.push("圖層顯示與鎖定功能尚未就緒");
+    if (!this.isDraft && !this.isPlaceholder && (!this.model || typeof this.model.setDrawingLayerState !== "function" ||
+        typeof this.model.addDrawingLayer !== "function" || typeof this.model.deleteDrawingLayer !== "function" || typeof this.model.reorderDrawingLayers !== "function")) unavailableLayerFeatures.push("圖層新增、刪除、排序、顯示與鎖定功能尚未就緒");
     this.featureNote.textContent = this.isPlaceholder
       ? "這是尚未建立的鏡頭草稿；「儲存並關閉」會一併建立鏡頭與手繪內容，返回關閉會捨棄草稿。"
       : this.isDraft
       ? "此鏡頭尚未建立手繪內容；返回鏡頭不會保存空白畫布。第一次繪製或調整設定時自動保存。"
       : unavailableLayerFeatures.length
       ? unavailableLayerFeatures.join("；") + "，相關操作已停用。"
-      : "圖層清空、顯示與鎖定都會自動保存，並可復原。";
-    if (!this.writable) this.hint.textContent = "唯讀：" + (this.readOnlyReason || "目前沒有編輯權。") + " 兩指可縮放／平移，也可用畫布檢視按鈕。照片僅供參考；壓力感應尚未啟用。";
+      : "圖層可新增、排序、隱藏、鎖定與刪除；場景和人物動作是必要圖層。畫筆可平滑模擬筆壓，麥克筆遵循所選不透明度。";
+    if (!this.writable) this.hint.textContent = "唯讀：" + (this.readOnlyReason || "目前沒有編輯權。") + " 兩指可縮放／平移，也可用畫布檢視按鈕。照片僅供參考。";
     else if (missingCommands.length) this.hint.textContent = missingCommands.join("；") + "，目前不接受筆畫輸入。";
     else if (activeLayer && (!activeLayer.visible || activeLayer.locked)) this.hint.textContent = "目前作用圖層" + (activeLayer.visible ? "已顯示" : "已隱藏") + (activeLayer.locked ? "且已鎖定" : "") + "；可使用圖層設定控制顯示與鎖定狀態。兩指可縮放／平移。";
-    else this.hint.textContent = "兩指可縮放／平移，也可用畫布檢視按鈕。照片僅供參考；線寬以畫布像素保存。壓力感應尚未啟用。";
+    else this.hint.textContent = "兩指可縮放／平移，也可用畫布檢視按鈕。畫筆會平滑模擬筆壓；鉛筆與麥克筆維持固定筆觸。";
     this.updateCanvasLabel();
+  };
+
+  DrawingEditor.prototype.renderBrushPreview = function () {
+    const size = Math.max(2, Math.min(40, this.baseWidth));
+    this.widthPreviewDot.style.cssText = "display:block;border-radius:50%;width:" + size + "px;height:" + size + "px;background:" + this.color + ";opacity:" + this.opacity;
   };
 
   DrawingEditor.prototype.canDiscardFailedCandidate = function () {
@@ -1814,7 +1994,7 @@
     const layer = this.activeLayer();
     const layerName = layer ? (layer.kind === "scene" ? "場景圖層" : "人物動作圖層") : "未選取圖層";
     const toolName = this.tool === "cameraArrow" ? "運鏡箭頭" : this.tool === "eraser" ? "逐筆橡皮" : "自由筆";
-    const inputName = this.inputMode === "pen" ? "筆優先輸入，手指繪圖停用" : "手指與滑鼠繪圖";
+    const inputName = this.pencilOnly ? "只用 Apple Pencil 塗鴉" : "滑鼠與觸控筆繪圖";
     const label = this.shotLabel + "；" + layerName + "；" + toolName + "；" + inputName + "；兩指可縮放／平移，畫布檢視按鈕可重設；照片為鎖定參考";
     this.canvas.setAttribute("aria-label", label);
     this.canvasInstructions.textContent = label;
@@ -2149,6 +2329,7 @@
   };
 
   DrawingEditor.prototype.acceptsPointer = function (event) {
+    if (this.pencilOnly) return event.pointerType === "pen";
     if (event.pointerType === "mouse" || event.pointerType === "pen") return true;
     return event.pointerType === "touch" && this.inputMode === "touch";
   };
@@ -2215,7 +2396,7 @@
       layerId: layer.id,
       tool: this.tool,
       pointerType: event.pointerType,
-      color: this.color,
+      color: rgbaWithOpacity(this.color, this.opacity),
       baseWidth: this.baseWidth,
       startedAt: Number.isFinite(event.timeStamp) ? event.timeStamp : Date.now(),
       points: [this.makePoint(point, 0)]
@@ -2231,7 +2412,17 @@
   };
 
   DrawingEditor.prototype.makePoint = function (point, time) {
-    return { x: point.x, y: point.y, t: Math.max(0, time), pressure: null };
+    const active = this.activeStroke;
+    const last = active && active.points[active.points.length - 1];
+    let pressure = null;
+    if ((active ? active.tool : this.tool) === "brush") {
+      const speed = last ? Math.hypot((point.x - last.x) * this.drawing.canvas.width,
+        (point.y - last.y) * this.drawing.canvas.height) / Math.max(8, time - last.t) : 0;
+      const target = 0.3 + 0.7 * (1 - clamp(speed / 2, 0, 1));
+      pressure = last ? last.pressure + (target - last.pressure) * 0.12 : 0.65;
+    }
+    return { x: pressure !== null && last ? last.x + (point.x-last.x) * 0.45 : point.x,
+      y: pressure !== null && last ? last.y + (point.y-last.y) * 0.45 : point.y, t: Math.max(0, time), pressure: pressure };
   };
 
   DrawingEditor.prototype.pointerMove = function (event) {
@@ -2318,7 +2509,7 @@
       kind: active.tool === "cameraArrow" ? "cameraArrow" : "pen",
       color: active.color,
       baseWidth: active.baseWidth,
-      points: active.tool === "cameraArrow" ? [active.points[0], active.points[active.points.length - 1]] : active.points
+      points: shapeStrokePoints(active.tool, active.points[0], active.points[active.points.length - 1]) || active.points
     };
     const currentLayer = this.activeLayer();
     if (active.drawingId !== (this.drawing && this.drawing.id) || active.projectId !== this.capturedProjectId || active.layerId !== this.layerId || active.projectRevision !== this.currentProjectRevision() || active.drawingRevision !== (this.drawing && this.drawing.revision) || !currentLayer || !currentLayer.visible || currentLayer.locked || !this.writable) {
@@ -2337,7 +2528,11 @@
         }.bind(this));
         return;
       }
-      this.createFromDraft({ kind: "stroke", layerKind: currentLayer.kind, strokeDraft: clone(draft) });
+      currentLayer.strokes.push(Object.assign({ id: "draft:initial-stroke" }, clone(draft)));
+      const snapshot = drawingSnapshotForShotCreate(this.drawing);
+      snapshot.backgroundAssetId = null;
+      snapshot.backgroundCrop = null;
+      this.createFromDraft(snapshot);
       return;
     }
     this.pendingOperation = { kind: "append", projectId: active.projectId, shotId: this.capturedShotId, baseRevision: active.projectRevision, drawingRevision: active.drawingRevision, drawingId: active.drawingId, layerId: active.layerId, strokeDraft: clone(draft), originalStrokeIds: this.collectStrokeIds() };
@@ -2366,17 +2561,105 @@
     this.render();
   };
 
-  DrawingEditor.prototype.runLayerState = function (kind, patch) {
-    const layer = this.findLayer(kind);
-    if (!layer || !this.canWriteLayerState(kind)) return false;
+  DrawingEditor.prototype.addLayer = function () {
+    if (!this.canAddLayer()) return false;
+    const names = new Set(this.drawing.layers.filter(function (layer) { return layer.kind === "custom"; }).map(function (layer) { return layer.name; }));
+    let suffix = 1;
+    while (names.has("圖層 " + suffix)) suffix += 1;
+    const name = "圖層 " + suffix;
+    const addLocal = function (drawing) {
+      drawing.schemaVersion = 3;
+      const layer = { projectId: this.capturedProjectId, drawingId: drawing.id, id: drawing.id + ":custom:" + suffix,
+        kind: "custom", name: name, visible: true, locked: false, opacity: 1, order: drawing.layers.length, strokes: [] };
+      drawing.layers.push(layer);
+      this.layerId = layer.id;
+    }.bind(this);
+    if (this.isPlaceholder) return this.recordPlaceholderEdit(addLocal);
+    if (this.isDraft) {
+      addLocal(this.drawing);
+      this.layerId = this.drawing.layers[this.drawing.layers.length - 1].id;
+      this.setStatus("草稿未保存；完成第一筆後會一併保存圖層。", "info");
+      this.updateControls();
+      this.render();
+      return true;
+    }
+    this.pendingOperation = { kind: "addLayer", projectId: this.capturedProjectId, shotId: this.capturedShotId,
+      baseRevision: this.currentProjectRevision(), drawingRevision: this.drawing.revision, drawingId: this.drawing.id,
+      layerName: name, originalStrokeIds: this.collectStrokeIds() };
+    this.submitPending();
+    return true;
+  };
+
+  DrawingEditor.prototype.deleteLayer = function (layerId) {
+    const layer = this.findLayerById(layerId);
+    if (!layer || layer.kind !== "custom" || !this.canDeleteLayer()) return false;
+    const count = layer.strokes.length;
+    if (typeof window === "undefined" || typeof window.confirm !== "function" || !window.confirm("確定刪除「" + layer.name + "」圖層？其中 " + count + " 筆筆跡會一併移除；可用復原還原。")) return false;
+    const removeLocal = function (drawing) {
+      drawing.layers = drawing.layers.filter(function (item) { return item.id !== layer.id; });
+      drawing.layers.sort(function (a, b) { return a.order - b.order; });
+      drawing.layers.forEach(function (item, order) { item.order = order; });
+    };
+    if (this.isPlaceholder) return this.recordPlaceholderEdit(removeLocal);
+    if (this.isDraft) {
+      removeLocal(this.drawing);
+      this.layerId = this.findLayer("scene").id;
+      this.setStatus("草稿圖層已移除；下一筆保存時會一併更新。", "info");
+      this.updateControls();
+      this.render();
+      return true;
+    }
+    this.pendingOperation = { kind: "deleteLayer", projectId: this.capturedProjectId, shotId: this.capturedShotId,
+      baseRevision: this.currentProjectRevision(), drawingRevision: this.drawing.revision, drawingId: this.drawing.id,
+      layerId: layer.id, originalLayer: clone(layer), originalStrokeIds: this.collectStrokeIds() };
+    this.submitPending();
+    return true;
+  };
+
+  DrawingEditor.prototype.moveLayer = function (layerId, delta) {
+    if (!this.canReorderLayers()) return false;
+    const layers = this.drawing.layers.slice().sort(function (a, b) { return a.order - b.order; });
+    const index = layers.findIndex(function (layer) { return layer.id === layerId; });
+    const next = index + delta;
+    if (index < 0 || next < 0 || next >= layers.length) return false;
+    const moved = layers.splice(index, 1)[0];
+    layers.splice(next, 0, moved);
+    const ids = layers.map(function (layer) { return layer.id; });
+    if (this.isPlaceholder || this.isDraft) {
+      const reorderLocal = function (drawing) {
+        const byId = new Map(drawing.layers.map(function (layer) { return [layer.id, layer]; }));
+        drawing.layers = ids.map(function (id, order) { const layer = byId.get(id); layer.order = order; return layer; });
+        drawing.schemaVersion = 3;
+      };
+      if (this.isPlaceholder) return this.recordPlaceholderEdit(reorderLocal);
+      reorderLocal(this.drawing);
+      this.updateControls();
+      this.render();
+      return true;
+    }
+    this.pendingOperation = { kind: "reorderLayers", projectId: this.capturedProjectId, shotId: this.capturedShotId,
+      baseRevision: this.currentProjectRevision(), drawingRevision: this.drawing.revision, drawingId: this.drawing.id,
+      layerIds: ids, originalStrokeIds: this.collectStrokeIds() };
+    this.submitPending();
+    return true;
+  };
+
+  DrawingEditor.prototype.runLayerState = function (idOrKind, patch) {
+    const layer = this.findLayerById(idOrKind) || this.findLayer(idOrKind);
+    if (!layer || !this.canWriteLayerState(layer.id)) return false;
     if (this.activeStroke) this.cancelActiveStroke("圖層設定已變更，未完成筆畫已取消。");
-    if (this.isPlaceholder) {
-      return this.recordPlaceholderEdit(function (drawing) {
-        const target = drawing.layers.find(function (item) { return item.kind === kind; });
+    if (this.isPlaceholder || this.isDraft) {
+      if (this.isPlaceholder) return this.recordPlaceholderEdit(function (drawing) {
+        const target = drawing.layers.find(function (item) { return item.id === layer.id; });
         if (target) Object.keys(patch).forEach(function (key) { target[key] = patch[key]; });
       });
+      const target = this.findLayerById(layer.id);
+      if (target) Object.keys(patch).forEach(function (key) { target[key] = patch[key]; });
+      this.setStatus("草稿未保存；完成第一筆後會一併保存圖層設定。", "info");
+      this.updateControls();
+      this.render();
+      return true;
     }
-    if (this.isDraft) return this.createFromDraft({ kind: "layerState", layerKind: kind, patch: clone(patch) });
     const projectRevision = this.currentProjectRevision();
     if (!Number.isInteger(projectRevision)) {
       this.setStatus("目前無法確認編輯狀態；圖層設定未變更。", "error");
@@ -2412,7 +2695,7 @@
     if (this.activeLayer() !== layer || !this.canClearActiveLayer()) return false;
     if (this.isPlaceholder) {
       return this.recordPlaceholderEdit(function (drawing) {
-        const target = drawing.layers.find(function (item) { return item.kind === layer.kind; });
+        const target = drawing.layers.find(function (item) { return item.id === layer.id; });
         if (target) target.strokes = [];
       });
     }
@@ -2451,7 +2734,7 @@
     if (!hit) return;
     if (this.isPlaceholder) {
       this.recordPlaceholderEdit(function (drawing) {
-        const target = drawing.layers.find(function (item) { return item.kind === layer.kind; });
+        const target = drawing.layers.find(function (item) { return item.id === layer.id; });
         if (target) target.strokes = target.strokes.filter(function (stroke) { return stroke.id !== hit.id; });
       });
       return;
@@ -2584,6 +2867,9 @@
       clear: "clearDrawingLayer",
       layerState: "setDrawingLayerState",
       reuseScene: "reuseSceneLayer",
+      addLayer: "addDrawingLayer",
+      deleteLayer: "deleteDrawingLayer",
+      reorderLayers: "reorderDrawingLayers",
       background: "setDrawingBackground"
     };
     const method = methods[pending.kind];
@@ -2617,6 +2903,9 @@
       else if (pending.kind === "erase") await this.model.eraseDrawingStroke(pending.drawingId, pending.layerId, pending.strokeId);
       else if (pending.kind === "clear") await this.model.clearDrawingLayer(pending.drawingId, pending.layerId);
       else if (pending.kind === "layerState") await this.model.setDrawingLayerState(pending.drawingId, pending.layerId, clone(pending.layerPatch));
+      else if (pending.kind === "addLayer") pending.addedLayerId = await this.model.addDrawingLayer(pending.drawingId, pending.layerName);
+      else if (pending.kind === "deleteLayer") await this.model.deleteDrawingLayer(pending.drawingId, pending.layerId);
+      else if (pending.kind === "reorderLayers") await this.model.reorderDrawingLayers(pending.drawingId, pending.layerIds);
       else if (pending.kind === "reuseScene") await this.model.reuseSceneLayer(pending.sourceDrawingId, pending.drawingId);
       else if (pending.kind === "background") await this.model.setDrawingBackground(pending.drawingId, pending.assetId);
       else throw new Error("目前無法執行此操作。");
@@ -2626,6 +2915,8 @@
         fresh = await this.readCurrentDrawing();
         if (!this.didCommitPending(pending, fresh)) throw new Error("操作已送出，但目前無法確認結果；請重新載入內容，避免重複操作。");
         this.drawing = fresh;
+        if (pending.kind === "addLayer") this.layerId = pending.addedLayerId;
+        if (!this.activeLayer()) this.layerId = this.findLayer("scene").id;
       }
       this.pendingOperation = null;
       if (pending.kind === "background" || pending.kind === "createDrawing" && pending.initialEdit.kind === "background") this.closeBackgroundChangeDialog();
@@ -2768,6 +3059,7 @@
       error.code = "DRAWING_TARGET_REVISION_CHANGED";
       throw error;
     }
+    if (["addLayer", "reorderLayers"].includes(pending.kind)) return;
     const layer = latest.layers.find(function (item) { return item.id === pending.layerId; });
     if (!layer) {
       const error = new Error("找不到原作用圖層；此操作尚未送出，請重新載入後再試。");
@@ -2813,6 +3105,7 @@
       const shot = project && project.shots.find(function (item) { return item.id === pending.shotId; });
       if (!shot || !shot.drawingIds.includes(drawing.id)) return false;
       const edit = pending.initialEdit;
+      if (edit.kind === "snapshot") return JSON.stringify(drawingSnapshotForShotCreate(drawing).layers) === JSON.stringify(edit.layers);
       if (edit.kind === "background") return drawing.backgroundAssetId === edit.assetId;
       if (edit.kind === "stroke") {
         const layer = drawing.layers.find(function (item) { return item.kind === edit.layerKind; });
@@ -2847,6 +3140,9 @@
       return false;
     }
     if (!drawing || drawing.id !== pending.drawingId) return false;
+    if (pending.kind === "addLayer") return drawing.layers.some(function (layer) { return layer.id === pending.addedLayerId && layer.name === pending.layerName; });
+    if (pending.kind === "deleteLayer") return !drawing.layers.some(function (layer) { return layer.id === pending.layerId; });
+    if (pending.kind === "reorderLayers") return JSON.stringify(drawing.layers.slice().sort(function (a,b) { return a.order-b.order; }).map(function (layer) { return layer.id; })) === JSON.stringify(pending.layerIds);
     const layer = drawing.layers.find(function (item) { return item.id === pending.layerId; });
     if (!layer) return false;
     if (pending.kind === "background") {
@@ -3127,9 +3423,7 @@
         kind: this.activeStroke.tool === "cameraArrow" ? "cameraArrow" : "pen",
         color: this.activeStroke.color,
         baseWidth: this.activeStroke.baseWidth,
-        points: this.activeStroke.tool === "cameraArrow" && this.activeStroke.points.length > 1
-          ? [this.activeStroke.points[0], this.activeStroke.points[this.activeStroke.points.length - 1]]
-          : this.activeStroke.points
+        points: shapeStrokePoints(this.activeStroke.tool, this.activeStroke.points[0], this.activeStroke.points[this.activeStroke.points.length - 1]) || this.activeStroke.points
       }, canvas, true);
     }
     if (this.pendingOperation && this.pendingOperation.kind === "append" && !this.pendingOperation.committed) this.drawStroke(ctx, this.pendingOperation.strokeDraft, canvas, true);
@@ -3160,39 +3454,8 @@
     }
   };
 
-  DrawingEditor.prototype.drawStroke = function (ctx, stroke, canvas, preview) {
-    if (!stroke || !Array.isArray(stroke.points) || stroke.points.length < 2) return;
-    const points = stroke.points.map(function (point) { return pointToCanvas(point, canvas.width, canvas.height); });
-    ctx.save();
-    ctx.strokeStyle = stroke.color || "#e94f3d";
-    ctx.fillStyle = stroke.color || "#e94f3d";
-    ctx.lineWidth = Number(stroke.baseWidth) || 1;
-    ctx.lineCap = "round";
-    ctx.lineJoin = "round";
-    if (preview) ctx.globalAlpha = 0.75;
-    ctx.beginPath();
-    ctx.moveTo(points[0].x, points[0].y);
-    for (let index = 1; index < points.length; index += 1) ctx.lineTo(points[index].x, points[index].y);
-    ctx.stroke();
-    const samePoint = points.every(function (point) { return point.x === points[0].x && point.y === points[0].y; });
-    if (samePoint) {
-      ctx.beginPath();
-      ctx.arc(points[0].x, points[0].y, Math.max(0.5, ctx.lineWidth / 2), 0, Math.PI * 2);
-      ctx.fill();
-    }
-    if (stroke.kind === "cameraArrow") {
-      const start = points[0];
-      const end = points[points.length - 1];
-      const angle = Math.atan2(end.y - start.y, end.x - start.x);
-      const head = Math.max(ctx.lineWidth * 4, 18);
-      ctx.beginPath();
-      ctx.moveTo(end.x, end.y);
-      ctx.lineTo(end.x - head * Math.cos(angle - Math.PI / 6), end.y - head * Math.sin(angle - Math.PI / 6));
-      ctx.lineTo(end.x - head * Math.cos(angle + Math.PI / 6), end.y - head * Math.sin(angle + Math.PI / 6));
-      ctx.closePath();
-      ctx.fill();
-    }
-    ctx.restore();
+  DrawingEditor.prototype.drawStroke = function (ctx, stroke, canvas) {
+    if (stroke && stroke.points.length >= 2) storyboardRenderer.drawStroke(ctx, stroke, canvas);
   };
 
   DrawingEditor.prototype.destroy = function () {

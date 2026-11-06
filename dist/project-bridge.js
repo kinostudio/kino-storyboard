@@ -812,6 +812,13 @@
     return layer;
   }
 
+  function upgradeDrawingLayersToV3(drawing) {
+    if (drawing.schemaVersion < ProjectSchema.DRAWING_SCHEMA_VERSION) {
+      if (!own(drawing, "backgroundCrop")) drawing.backgroundCrop = null;
+      drawing.schemaVersion = ProjectSchema.DRAWING_SCHEMA_VERSION;
+    }
+  }
+
   function editableDrawingLayer(project, drawingId, layerId) {
     const drawing = findById(project.drawings, drawingId, "DRAWING_NOT_FOUND", "Drawing");
     const layer = drawingLayer(drawing, layerId);
@@ -1214,11 +1221,11 @@
           }
         }
 
-        const currentCrop = target.schemaVersion === ProjectSchema.DRAWING_SCHEMA_VERSION ? target.backgroundCrop : null;
+        const currentCrop = target.schemaVersion >= 2 ? target.backgroundCrop : null;
         let nextCrop = hasCropOverride ? cropOverride : currentCrop;
         if (!hasCropOverride && target.backgroundAssetId !== assetId) nextCrop = null;
         const nextVersion = hasCropOverride ? ProjectSchema.DRAWING_SCHEMA_VERSION : target.schemaVersion;
-        const cropChanged = nextVersion === ProjectSchema.DRAWING_SCHEMA_VERSION &&
+        const cropChanged = nextVersion >= 2 &&
           JSON.stringify(currentCrop) !== JSON.stringify(nextCrop);
         const versionChanged = target.schemaVersion !== nextVersion;
 
@@ -1228,7 +1235,7 @@
         }
 
         target.backgroundAssetId = assetId;
-        if (nextVersion === ProjectSchema.DRAWING_SCHEMA_VERSION) {
+        if (nextVersion >= 2) {
           target.schemaVersion = nextVersion;
           target.backgroundCrop = nextCrop;
         }
@@ -1294,6 +1301,71 @@
         if (own(patch, "visible")) targetLayer.visible = patch.visible;
         if (own(patch, "locked")) targetLayer.locked = patch.locked;
         value = { visible: targetLayer.visible, locked: targetLayer.locked };
+        break;
+      }
+      case "addDrawingLayer": {
+        assertArgs(type, values, 2, 2);
+        const drawingId = text(values[0], "$.args[0]", false);
+        const name = text(values[1], "$.args[1]", false).trim();
+        if (!name || name.length > 24) fail("INVALID_LAYER_NAME", "圖層名稱需為 1–24 個字元。", "$.args[1]");
+        const drawing = findById(draft.drawings, drawingId, "DRAWING_NOT_FOUND", "Drawing");
+        if (drawing.layers.length >= 12) fail("DRAWING_LAYER_LIMIT", "每個 Drawing 最多可有 12 個圖層。", "$.args[0]");
+        if (drawing.layers.some(function (layer) { return layer.name === name; })) fail("DUPLICATE_LAYER_NAME", "圖層名稱不可重複。", "$.args[1]");
+        upgradeDrawingLayersToV3(drawing);
+        allocate = idFactory(draft, opts.newId);
+        const layerId = allocate("layer");
+        drawing.layers.push({
+          projectId: draft.projectId,
+          drawingId: drawing.id,
+          id: layerId,
+          kind: "custom",
+          name: name,
+          visible: true,
+          locked: false,
+          opacity: 1,
+          order: drawing.layers.length,
+          strokes: []
+        });
+        value = layerId;
+        break;
+      }
+      case "deleteDrawingLayer": {
+        assertArgs(type, values, 2, 2);
+        const drawingId = text(values[0], "$.args[0]", false);
+        const layerId = text(values[1], "$.args[1]", false);
+        const drawing = findById(draft.drawings, drawingId, "DRAWING_NOT_FOUND", "Drawing");
+        const target = drawingLayer(drawing, layerId);
+        if (target.kind !== "custom") fail("CANONICAL_LAYER_REQUIRED", "場景與人物動作是必要圖層，不能刪除。", "$.args[1]");
+        upgradeDrawingLayersToV3(drawing);
+        drawing.layers = drawing.layers.filter(function (layer) { return layer.id !== layerId; });
+        drawing.layers.sort(function (a, b) { return a.order - b.order; });
+        drawing.layers.forEach(function (layer, order) { layer.order = order; });
+        value = true;
+        break;
+      }
+      case "reorderDrawingLayers": {
+        assertArgs(type, values, 2, 2);
+        const drawingId = text(values[0], "$.args[0]", false);
+        if (!Array.isArray(values[1])) fail("INVALID_DRAWING_LAYER_ORDER", "新順序必須是圖層 ID 陣列。", "$.args[1]");
+        const nextIds = values[1].map(function (layerId, index) {
+          return text(layerId, "$.args[1][" + index + "]", false);
+        });
+        const drawing = findById(draft.drawings, drawingId, "DRAWING_NOT_FOUND", "Drawing");
+        const current = drawing.layers.slice().sort(function (a, b) { return a.order - b.order; });
+        const currentIds = current.map(function (layer) { return layer.id; });
+        if (nextIds.length !== currentIds.length || new Set(nextIds).size !== nextIds.length ||
+            nextIds.some(function (layerId) { return currentIds.indexOf(layerId) < 0; })) {
+          fail("INVALID_DRAWING_LAYER_ORDER", "新順序必須完整包含目前每個圖層一次。", "$.args[1]");
+        }
+        if (sameJson(currentIds, nextIds)) { value = false; break; }
+        upgradeDrawingLayersToV3(drawing);
+        const byId = new Map(drawing.layers.map(function (layer) { return [layer.id, layer]; }));
+        drawing.layers = nextIds.map(function (layerId, order) {
+          const layer = byId.get(layerId);
+          layer.order = order;
+          return layer;
+        });
+        value = true;
         break;
       }
       case "reuseSceneLayer": {

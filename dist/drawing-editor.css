@@ -85,6 +85,25 @@
 .ds-de-status[data-kind="readonly"] { background: #f2f3f5; border-color: #d3d7dc; color: #555f6d; }
 
 .ds-de-controls { align-items: end; display: flex; flex-wrap: wrap; gap: 8px; }
+.ds-drawing-editor svg { width: 20px; height: 20px; flex: none; fill: none; stroke: currentColor; stroke-width: 1.7; stroke-linecap: round; stroke-linejoin: round; }
+.ds-de-tool { gap: 5px; }
+.ds-de-layer-list { display: flex; flex-wrap: wrap; gap: 6px; }
+.ds-de-layer-row { display: flex; align-items: center; gap: 2px; background: #f5f6f9; border-radius: 9px; }
+.ds-drawing-editor .ds-de-icon-button { border: 0; background: transparent; padding: 8px; font-size: 0; }
+.ds-de-brush-preview { display: inline-flex; align-items: center; justify-content: center; width: 44px; height: 44px; background: #fff; }
+.ds-de-color-swatches { display: flex; gap: 4px; }
+.ds-drawing-editor .ds-de-color-swatch { color: var(--ds-de-swatch); min-width: 44px; padding: 6px; }
+.ds-de-opacity-label input { width: 100px; }
+.ds-de-input-label input[role="switch"] { appearance: none; width: 40px; height: 24px; border-radius: 20px; background: #bdc5d1; position: relative; cursor: pointer; }
+.ds-de-input-label input[role="switch"]:checked { background: #315b98; }
+.ds-de-input-label input[role="switch"]::after { content: ""; position: absolute; width: 18px; height: 18px; border-radius: 50%; background: white; left: 3px; top: 3px; }
+.ds-de-input-label input[role="switch"]:checked::after { left: 19px; }
+.ds-drawing-popup .ds-drawing-editor { height: calc(100dvh - 100px); display: flex; flex-direction: column; overflow: hidden; }
+.ds-drawing-popup .ds-de-controls { max-height: 25dvh; overflow: auto; flex: none; }
+.ds-drawing-popup .ds-de-header { flex: none; }
+.ds-drawing-popup .ds-de-workspace { flex: 1; min-height: 140px; }
+.ds-drawing-popup .ds-de-stage { aspect-ratio: auto !important; height: 100%; width: 100%; min-height: 0; }
+.ds-drawing-popup .ds-de-feature-note { display: none; }
 .ds-de-control-group { align-items: center; display: inline-flex; flex-wrap: wrap; gap: 6px; min-height: 44px; }
 .ds-de-label { color: var(--ds-de-muted); font-size: 12px; font-weight: 650; margin-right: 2px; }
 .ds-de-choice { min-height: 44px; padding-inline: 11px !important; }
