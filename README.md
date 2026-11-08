@@ -1,5 +1,7 @@
 # KINO Storyboard
 
+正式網址：https://storyboard.kinostudio.tw/ 。此網域由 `wrangler.jsonc` 的 Custom Domain 設定管理，main 通過 CI 後由 Cloudflare 自動部署；原 workers.dev 網址保留。
+
 KINO Storyboard 是分鏡創作、拍攝安排與文件交付工具。程式碼保存在 GitHub，網站使用 Cloudflare Workers Static Assets 提供靜態前端。此版本仍未完成產品驗收；不能視為已完成 MVP。
 
 網站：[KINO Storyboard](https://kino-storyboard.film-kinostudio.workers.dev/)

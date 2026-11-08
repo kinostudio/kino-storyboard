@@ -1,5 +1,7 @@
 {
   "name": "kino-storyboard",
   "compatibility_date": "2026-10-31",
+  "workers_dev": true,
+  "routes": [{ "pattern": "storyboard.kinostudio.tw", "custom_domain": true }],
   "assets": { "directory": "./dist" }
 }
