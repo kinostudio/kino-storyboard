@@ -1,9 +1,19 @@
 # Google Drive 完整 ZIP 手動匯入／匯出規劃
 
-狀態：規劃稿（尚未實作或驗收）  
-日期：2026-10-31
+狀態：已實作；桌面真實帳號小型 ZIP 往返驗收通過，其他驗收範圍見下文。
+更新日期：2026-11-11
 
-目前 Cloudflare 網站 origin：`https://kino-storyboard.film-kinostudio.workers.dev`。Google Cloud OAuth、Picker 和 Drive API 尚未設定；資料夾選取及 `drive.file` 權限行為須在真實帳號驗證。
+正式 origin：`https://storyboard.kinostudio.tw`，原 `https://kino-storyboard.film-kinostudio.workers.dev` 保留。Google Cloud OAuth、Picker 與 Drive API 已設定，僅請求 `drive.file`。以下架構與大型／實機驗收計畫保留；已完成項目以本節實際紀錄為準。
+
+## 2026-11-11 正式環境驗收
+
+- Google OAuth 外部應用程式已由測試模式切換「實際運作中」。Data Access 只有非敏感範圍 `drive.file`；正式發布與品牌驗證是分開狀態。
+- 首頁、隱私權政策、服務條款均指向正式網域。品牌帳戶已透過 DNS TXT 完成 `kinostudio.tw` 的 Search Console 所有權驗證，應保留該 TXT。Google 品牌檢查要求所有權驗證後等待 24 小時再重試，目前尚未宣稱品牌審查通過。
+- 正式站 Edge、品牌帳戶、獨立合成測試專案 revision 7：兩鏡，一張合成 PNG 原圖與裁切、一筆可編輯 Drawing、VO 兩行、SUPER、7.5 秒。
+- 從整合儲存位置對話框輸入新資料夾名稱，以單一「儲存」建立子資料夾並上傳 `director-storyboard-r7.storyboard.zip`（約 7 KB）。Drive 回傳檔案大小符合封包。
+- 從 Drive 回讀上述 ZIP，經既有 ZIP 驗證流程另存新 ID 的副本 revision 0；原專案保持 revision 7。副本照片、VO 換行、SUPER、秒數與手繪筆跡可顯示，Drawing 可再次開啟編輯；8 px、45% 筆刷設定保留。
+- 副本手動照片完整性檢查 1/1 完成，未發現原圖 bytes、大小或 metadata 不一致。此結果不代表 Drive 遠端檔案已額外做獨立逐位元比較。
+- `not_checked`：未列為測試者的第二 Google 帳戶、iPad／Apple Pencil、大封包與斷線續傳實機測試、Google 品牌審查完成。桌面小型往返通過不等於全部產品驗收完成。
 
 ## 目標與界線
 
@@ -127,4 +137,4 @@ Google 將 `drive.file` 列為非敏感 scope，可建立檔案，並管理使�
 - [ ] 真實 iPadOS Safari 與 Files 完成上述流程；大封包峰值記憶體和最大可用上限有記錄。未完成項目標 `not_checked`。
 - [ ] 檢查 OAuth/token、照片／Drawing／Project metadata 日誌與持久化位置，不存在意外留存。
 
-本文件只整理架構與驗收計畫；沒有修改 Drive/OAuth 產品程式碼，也沒有宣稱 Google Cloud 設定、iPad、上傳或匯入已通過驗收。
+上列通用驗收清單保留未逐項驗收的範圍；已完成的桌面正式帳戶往返與設定，以文件開頭的日期紀錄為準，不延伸宣稱 iPad、大型封包或第二帳戶已驗收。
