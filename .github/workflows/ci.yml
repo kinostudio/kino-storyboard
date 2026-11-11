@@ -8,6 +8,7 @@ permissions:
 jobs:
   test:
     runs-on: ubuntu-24.04
+    container: mcr.microsoft.com/playwright:v1.62.1-noble
     timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4
@@ -16,7 +17,6 @@ jobs:
           node-version: '22'
           cache: npm
       - run: npm ci
-      - run: npx playwright install --with-deps chromium
       - run: node tools/check-static-dependencies.cjs --tracked
       - run: npm test
       - run: npm run test:browser
