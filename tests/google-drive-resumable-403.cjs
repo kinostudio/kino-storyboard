@@ -17,7 +17,7 @@ function jsonResponse(value, status) {
   });
 }
 
-function createHarness(fetchImpl) {
+function createHarness(fetchImpl, storage = new Map()) {
   const pickerResponses = [{
     action: "PICKED",
     docs: [{ id: "folder-1", name: "Storyboard backups", mimeType: "application/vnd.google-apps.folder" }],
@@ -66,6 +66,7 @@ function createHarness(fetchImpl) {
       apiKey: "mock-api-key",
       appId: "123456789",
     },
+    localStorage: { getItem: key => storage.get(key) || null, setItem: (key, value) => storage.set(key, value), removeItem: key => storage.delete(key) },
     google: {
       accounts: {
         oauth2: {
@@ -236,6 +237,23 @@ async function main() {
   assert.equal(result.folderId, "child-1");
   const cancelled = createHarness(async () => { throw new Error("No network requests expected after cancellation"); });
   await assert.rejects(cancelled.exportZip(Uint8Array.from([1]), "test.zip", { chooseDestination: async () => null }), error => error.code === "DRIVE_CANCELLED");
+  const notices = new Map();
+  const unknown = createHarness(async (url) => {
+    if (url.startsWith("https://www.googleapis.com/upload/")) return new Response(null, {status:200, headers:{Location:sessionUrl}});
+    throw new TypeError("offline");
+  }, notices);
+  await assert.rejects(unknown.exportZip(Uint8Array.from([1]), "test.zip"));
+  assert.equal(notices.size, 1);
+  const reloaded = createHarness(async () => { throw new Error("Unexpected upload"); }, notices);
+  assert.equal(reloaded.getStatus().pendingUpload.possibleDuplicate, true);
+  assert.equal(reloaded.getStatus().pendingUpload.canResume, false);
+  assert.equal(reloaded.getStatus().pendingUpload.name, "test.zip");
+  assert.ok(!JSON.stringify([...notices]).includes("mock-token"));
+  assert.ok(!JSON.stringify([...notices]).includes("upload_id"));
+  await assert.rejects(reloaded.exportZip(Uint8Array.from([1]), "test.zip"), e => e.code === "DRIVE_UPLOAD_PENDING");
+  assert.throws(() => reloaded.discardPendingUpload(), e => e.code === "DRIVE_DUPLICATE_CONFIRMATION_REQUIRED");
+  reloaded.discardPendingUpload({confirmPossibleDuplicate:true});
+  assert.equal(notices.size, 0);
   await testQuota403ExpiresSession();
   await testRateLimit403CanResume();
   console.log(JSON.stringify({
