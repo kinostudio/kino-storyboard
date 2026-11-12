@@ -12,7 +12,15 @@
   let libraryPromise = null;
   let libraryError = null;
   let currentOperation = null;
-  let pendingUpload = null;
+  const NOTICE_KEY = "kino-drive-unconfirmed-upload";
+  function readNotice() {
+    try {
+      const n = JSON.parse(window.localStorage.getItem(NOTICE_KEY));
+      return n && typeof n.name === "string" && typeof n.folderName === "string" && Number.isFinite(n.startedAt) ? Object.assign(n, { state: "needs-check", possibleDuplicate: true }) : null;
+    } catch (_) { return null; }
+  }
+  function clearNotice() { try { window.localStorage.removeItem(NOTICE_KEY); } catch (_) {} }
+  let pendingUpload = readNotice();
   let nextOperationId = 1;
 
   function makeError(code, message, extra) {
@@ -743,6 +751,7 @@
         { uploaded: true, fileId: metadata.id }
       );
     }
+    clearNotice();
     pendingUpload = null;
     return {
       id: metadata.id,
@@ -863,6 +872,7 @@
     const operation = beginOperation("export", options || {});
     try {
       getConfig();
+      pendingUpload = pendingUpload || readNotice();
       if (pendingUpload) {
         throw makeError("DRIVE_UPLOAD_PENDING", "前一次上傳尚未確認；請先按「續傳／查詢」，不要建立第二份 ZIP。", { retryable: true, pending: true });
       }
@@ -916,6 +926,8 @@
         state: "initializing",
         expired: false,
       };
+      try { window.localStorage.setItem(NOTICE_KEY, JSON.stringify({ name, folderName: pending.folderName || "我的雲端硬碟", startedAt: Date.now() })); }
+      catch (_) { throw makeError("DRIVE_NOTICE_STORAGE_FAILED", "無法保存待核對上傳記錄，請允許網站本機儲存後重試。"); }
       pendingUpload = pending;
       try {
         await startResumableUpload(operation, token, pending);
@@ -953,6 +965,7 @@
   }
 
   function getStatus() {
+    pendingUpload = pendingUpload || readNotice();
     let configured = false;
     let configError = null;
     try { getConfig(); configured = true; } catch (error) { configError = error; }
@@ -969,18 +982,19 @@
         folderName: pendingUpload.folderName,
         state: pendingUpload.state,
         canResume: !!pendingUpload.sessionUrl && !pendingUpload.expired,
-        possibleDuplicate: !!pendingUpload.sessionUrl,
+        possibleDuplicate: !!pendingUpload.sessionUrl || !!pendingUpload.possibleDuplicate,
       } : null,
     };
   }
 
   function discardPendingUpload(options) {
     if (!pendingUpload) return false;
-    if (pendingUpload.sessionUrl) {
+    if (pendingUpload.sessionUrl || pendingUpload.possibleDuplicate) {
       if (!options || options.confirmPossibleDuplicate !== true) {
         throw makeError("DRIVE_DUPLICATE_CONFIRMATION_REQUIRED", "結果尚未確認；若清除暫存後重新上傳，Drive 可能出現重複檔。請明確確認後再清除。", { possibleDuplicate: true });
       }
     }
+    clearNotice();
     pendingUpload = null;
     return true;
   }

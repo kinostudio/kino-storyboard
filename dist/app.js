@@ -6357,7 +6357,8 @@
   }
   function googleDriveUploadCanResume(api, error) {
     if (!api || typeof api.resumeUpload !== "function" || (error && error.code === "DRIVE_UPLOAD_SESSION_EXPIRED")) return false;
-    return hasPendingGoogleDriveUpload(api);
+    const pending = pendingGoogleDriveUpload(api);
+    return !!(pending && pending.canResume);
   }
   function safeDriveWebViewLink(value) {
     try {
@@ -6496,8 +6497,16 @@
       const status = googleDriveStatus && googleDriveStatus.text ? googleDriveStatus : null;
       statusNode.replaceChildren();
       statusNode.dataset.kind = status && status.kind || (unavailableMessage ? "error" : "info");
-      const text = status ? status.text : unavailableMessage || "只在你點選 Drive 動作並選擇匯入檔案或匯出儲存位置後才傳輸 ZIP；不會自動同步。首次授權只要求 drive.file。";
+      const noticeText = pendingUpload && pendingUpload.possibleDuplicate && !pendingUpload.canResume ? "前次上傳結果尚未確認：" + pendingUpload.name + " · " + pendingUpload.folderName + "。請先到 Google Drive 核對，再清除待確認上傳。" : "";
+      const text = status ? status.text : noticeText || unavailableMessage || "只在你點選 Drive 動作並選擇匯入檔案或匯出儲存位置後才傳輸 ZIP；不會自動同步。首次授權只要求 drive.file。";
       statusNode.appendChild(document.createTextNode(text));
+      if (status && status.retryKind && !googleDriveOperation) {
+        const retry = document.createElement("button");
+        retry.type = "button";
+        retry.dataset.driveAction = "retry-auth";
+        retry.textContent = "重新授權";
+        statusNode.appendChild(retry);
+      }
       const link = status && status.link;
       if (link) {
         const anchor = document.createElement("a");
@@ -6513,6 +6522,8 @@
   }
   function formatDriveProgress(detail) {
     const progress = detail || {};
+    const messages = { authorize: "請在 Google 視窗選擇帳戶並完成授權。", reauthorize: "請在 Google 視窗重新授權。", "build-package": "正在驗證已保存資料並建立完整 ZIP…", "pick-folder": "請選擇 Google Drive 儲存位置。", "upload-init": "正在建立上傳工作階段。" };
+    if (messages[progress.phase]) return messages[progress.phase];
     const phase = progress.phase === "upload" ? "上傳" : "下載";
     const loaded = Math.max(0, Number(progress.loaded) || 0);
     const total = Math.max(0, Number(progress.total) || 0);
@@ -6531,9 +6542,8 @@
   }
   function handleGoogleDriveProgress(event) {
     const detail = event && event.detail || {};
-    if (!googleDriveOperation || !["download", "upload"].includes(detail.phase)) return;
-    if (googleDriveOperation.kind === "import" && detail.phase !== "download") return;
-    if (googleDriveOperation.kind === "export" && detail.phase !== "upload") return;
+    if (!googleDriveOperation || !["authorize", "reauthorize", "build-package", "pick-folder", "upload-init", "download", "upload"].includes(detail.phase)) return;
+
     setGoogleDriveStatus(formatDriveProgress(detail));
   }
   function beginGoogleDriveOperation(kind, cancelable) {
@@ -6544,6 +6554,7 @@
   }
   function endGoogleDriveOperation() {
     window.removeEventListener("kinodrive:progress", handleGoogleDriveProgress);
+    if (googleDriveStatus && googleDriveStatus.text && googleDriveStatus.text.includes("DRIVE_AUTH_TIMEOUT")) googleDriveStatus.retryKind = googleDriveOperation && googleDriveOperation.kind;
     googleDriveOperation = null;
     renderGoogleDriveControls();
     renderLifecycleGate();
@@ -6610,7 +6621,7 @@
     googleDriveResumeAvailable = false;
     completePackageExportBusy = true;
     beginGoogleDriveOperation("export");
-    setGoogleDriveStatus("正在確認保存狀態、固定 revision 並建立 ZIP。");
+    setGoogleDriveStatus("請在 Google 視窗選擇帳戶並完成授權。");
     try {
       let archive = null;
       const resultPromise = capability.api.exportZip(async function () {
@@ -6675,7 +6686,7 @@
     if (!pending) { googleDriveResumeAvailable = false; renderGoogleDriveControls(); return; }
     showConfirm(
       "清除待確認的 Drive 上傳",
-      "清除只會移除本頁記憶體中的續傳資料，不會刪除 Drive 檔案。遠端 ZIP 可能已建立；請先在 Drive 檢查。若再次上傳，可能產生重複檔案。",
+      "清除會移除本機待核對記錄及本頁續傳資料，不會刪除 Drive 檔案。遠端 ZIP 可能已建立；請先在 Drive 檢查。若再次上傳，可能產生重複檔案。",
       "清除記憶體暫存",
       async function () {
         try {
@@ -6691,6 +6702,13 @@
     );
   }
   async function handleGoogleDriveAction(action) {
+    if (action === "retry-auth") {
+      const kind = googleDriveStatus && googleDriveStatus.retryKind;
+      if (kind === "import") await importCompletePackageFromGoogleDrive();
+      else if (kind === "resume") await resumeGoogleDriveUpload();
+      else await exportCompletePackageToGoogleDrive();
+      return;
+    }
     if (action === "import") { await importCompletePackageFromGoogleDrive(); return; }
     if (action === "export") { await exportCompletePackageToGoogleDrive(); return; }
     if (action === "cancel") { await cancelGoogleDriveOperation(); return; }
