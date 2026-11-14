@@ -171,6 +171,13 @@
       up: "m6 14 6-6 6 6",
       down: "m6 10 6 6 6-6",
       trash: "M4 7h16M10 11v6M14 11v6M6 7l1 14h10l1-14M9 7V4h6v3",
+      undo: "M9 5 4 10l5 5M4 10h10a6 6 0 0 1 6 6",
+      redo: "m15 5 5 5-5 5M20 10H10a6 6 0 0 0-6 6",
+      minus: "M5 12h14",
+      fit: "M4 9V4h5M15 4h5v5M20 15v5h-5M9 20H4v-5",
+      back: "m14 5-7 7 7 7",
+      layers: "m3 8 9-5 9 5-9 5-9-5M3 12l9 5 9-5M3 16l9 5 9-5",
+      settings: "M4 6h16M4 12h16M4 18h16M8 3v6M16 9v6M10 15v6",
       plus: "M12 5v14M5 12h14"
     };
     const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
@@ -181,6 +188,14 @@
     path.setAttribute("d", paths[name] || paths.pencil);
     svg.appendChild(path);
     node.prepend(svg);
+    return node;
+  }
+
+  function iconOnly(node, name) {
+    node.title = node.getAttribute("aria-label") || node.textContent;
+    node.textContent = "";
+    node.classList.add("ds-de-icon-button");
+    appendIcon(node, name);
     return node;
   }
 
@@ -465,7 +480,7 @@
       { id: "eraser", label: "橡皮擦" }
     ].forEach(function (tool) {
       const control = button(tool.label, "ds-de-choice ds-de-tool");
-      appendIcon(control, tool.id === "cameraArrow" ? "arrow" : tool.id);
+      iconOnly(control, tool.id === "cameraArrow" ? "arrow" : tool.id);
       control.dataset.tool = tool.id;
       this.toolButtons.set(tool.id, control);
       this.toolGroup.appendChild(control);
@@ -482,6 +497,8 @@
     [["#111827", "黑"], ["#e94f3d", "紅"], ["#315b98", "藍"]].forEach(function (entry) {
       const swatch = button(entry[1], "ds-de-color-swatch");
       swatch.dataset.color = entry[0];
+      swatch.title = entry[1];
+      swatch.textContent = "";
       swatch.style.setProperty("--ds-de-swatch", entry[0]);
       this.colorSwatches.appendChild(swatch);
     }, this);
@@ -542,7 +559,45 @@
     this.undoButton = button("復原上一筆", "ds-de-utility");
     this.redoButton = button("重做上一筆", "ds-de-utility");
     this.historyGroup.append(this.undoButton, this.redoButton);
-    this.controls.append(this.layerGroup, this.layerStateGroup, this.sceneReuseGroup, this.toolGroup, this.colorLabel, this.widthLabel, this.opacityLabel, this.inputLabel, this.modeGroup, this.zoomGroup, this.historyGroup);
+    iconOnly(this.backButton, "back");
+    iconOnly(this.undoButton, "undo");
+    iconOnly(this.redoButton, "redo");
+    iconOnly(this.zoomOutButton, "minus");
+    iconOnly(this.zoomInButton, "plus");
+    iconOnly(this.fitCanvasButton, "fit");
+    const drawers = [];
+    const makeDrawer = (label, icon, groups) => {
+      const details = create("details", "ds-de-drawer");
+      const summary = create("summary", "ds-de-drawer-toggle");
+      summary.setAttribute("aria-label", label);
+      summary.title = label;
+      appendIcon(summary, icon);
+      const panel = create("div", "ds-de-drawer-panel");
+      panel.append(...groups);
+      details.append(summary, panel);
+      this.listen(details, "toggle", () => {
+        if (details.open) drawers.forEach(other => { if (other !== details) other.open = false; });
+      });
+      drawers.push(details);
+      return details;
+    };
+    this.controls.append(
+      this.toolGroup, this.colorLabel, this.widthLabel, this.opacityLabel,
+      this.historyGroup, this.zoomGroup,
+      makeDrawer("圖層", "layers", [this.layerGroup, this.layerStateGroup]),
+      makeDrawer("繪圖設定", "settings", [this.inputLabel, this.modeGroup, this.sceneReuseGroup])
+    );
+    this.listen(document, "pointerdown", (event) => {
+      if (!drawers.some(drawer => drawer.contains(event.target))) drawers.forEach(drawer => { drawer.open = false; });
+    });
+    this.listen(shell, "keydown", (event) => {
+      if (event.key !== "Escape" || !drawers.some(drawer => drawer.open)) return;
+      event.preventDefault();
+      event.stopPropagation();
+      const open = drawers.find(drawer => drawer.open);
+      open.open = false;
+      open.querySelector("summary").focus();
+    });
     shell.appendChild(this.controls);
 
     this.sceneReuseDialog = create("dialog", "ds-de-reuse-dialog");
@@ -1932,6 +1987,7 @@
     else if (missingCommands.length) this.hint.textContent = missingCommands.join("；") + "，目前不接受筆畫輸入。";
     else if (activeLayer && (!activeLayer.visible || activeLayer.locked)) this.hint.textContent = "目前作用圖層" + (activeLayer.visible ? "已顯示" : "已隱藏") + (activeLayer.locked ? "且已鎖定" : "") + "；可使用圖層設定控制顯示與鎖定狀態。兩指可縮放／平移。";
     else this.hint.textContent = "兩指可縮放／平移，也可用畫布檢視按鈕。畫筆會平滑模擬筆壓；鉛筆與麥克筆維持固定筆觸。";
+    this.hint.classList.toggle("ds-de-sr-only", this.writable && !missingCommands.length && !(activeLayer && (!activeLayer.visible || activeLayer.locked)));
     this.updateCanvasLabel();
   };
 

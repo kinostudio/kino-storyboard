@@ -210,3 +210,46 @@
   .ds-de-close-actions button { flex: 1 1 100%; }
   .ds-de-zoom-group .ds-de-choice { min-width: 0; }
 }
+
+/* Keep drawing tools compact and secondary controls above the canvas in popovers. */
+.ds-drawing-popup .drawing-workspace { padding: 10px; }
+.ds-drawing-popup .ds-drawing-editor { height: calc(100dvh - 52px); gap: 8px; }
+.ds-de-header { grid-template-columns: 40px minmax(0,1fr) minmax(0,auto) auto; gap: 8px; }
+.ds-de-title h2 { font-size: 14px; }
+.ds-de-title p { font-size: 11px; margin-top: 2px; }
+.ds-de-header .ds-de-status { border: 0; background: transparent; padding: 4px 8px; min-height: 0; font-size: 12px; }
+.ds-de-header-actions { grid-column: auto; }
+.ds-de-header .ds-de-back { min-width: 40px; }
+.ds-de-header .ds-de-status { grid-column: auto; }
+.ds-de-controls { position: relative; align-items: center; gap: 6px; }
+.ds-drawing-popup .ds-de-controls { max-height: none; overflow: visible; }
+.ds-de-controls > .ds-de-control-group { flex: 0 0 auto; min-height: 40px; gap: 3px; }
+.ds-de-controls > .ds-de-control-group > .ds-de-label { display: none; }
+.ds-drawing-editor .ds-de-icon-button { width: 40px; min-width: 40px; min-height: 40px; height: 40px; padding: 8px !important; border-radius: 7px; }
+.ds-de-controls .ds-de-color-label input[type="color"] { width: 36px; height: 36px; }
+.ds-de-controls .ds-de-color-swatch { width: 32px; min-width: 32px; min-height: 36px; padding: 8px; border: 0; background: transparent; }
+.ds-de-color-swatch::after { content: ""; width: 18px; height: 18px; border-radius: 50%; background: var(--ds-de-swatch); border: 1px solid #0002; }
+.ds-de-controls .ds-de-width-label input { width: 76px; }
+.ds-de-controls .ds-de-opacity-label input { width: 76px; }
+.ds-de-width-value { font-size: 11px; min-width: 32px; }
+.ds-de-brush-preview { width: 30px; height: 30px; background: transparent; }
+.ds-de-brush-preview-dot { max-width: 30px; max-height: 30px; }
+.ds-de-history { margin-left: 0; }
+.ds-de-drawer > summary { display: flex; align-items: center; justify-content: center; width: 40px; height: 40px; border-radius: 7px; cursor: pointer; list-style: none; }
+.ds-de-drawer > summary::-webkit-details-marker { display: none; }
+.ds-de-drawer[open] > summary { background: #eaf0fa; color: #315b98; }
+.ds-de-drawer:not([open]) > .ds-de-drawer-panel { display: none; }
+.ds-de-drawer-panel { position: absolute; top: calc(100% + 6px); right: 0; width: min(560px,100%); max-height: 50dvh; overflow: auto; padding: 12px; background: #fff; border: 1px solid #d8dee8; border-radius: 10px; box-shadow: 0 8px 24px #1f2c4126; z-index: 20; display: grid; gap: 12px; }
+.ds-de-drawer-panel .ds-de-control-group { flex: 0 1 auto; }
+.ds-de-drawer-panel .ds-de-reuse-status { flex-basis: 100%; font-size: 12px; }
+@media (pointer: coarse) {
+ .ds-drawing-editor .ds-de-icon-button, .ds-de-drawer > summary { width: 44px; min-width: 44px; height: 44px; min-height: 44px; }
+ .ds-de-controls .ds-de-color-swatch { width: 44px; min-width: 44px; min-height: 44px; }
+}
+@media (max-width: 600px) {
+ .ds-de-header { grid-template-columns: 40px minmax(0,1fr) auto; }
+ .ds-de-header .ds-de-status { grid-column: 2; grid-row: 2; padding: 0; }
+ .ds-de-header-actions { grid-column: 3; grid-row: 1 / 3; }
+ .ds-de-title p { margin: 0; }
+ .ds-de-controls > .ds-de-control-group { flex: 0 0 auto; }
+}
