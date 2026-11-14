@@ -972,6 +972,7 @@
       else if (action === "delete") self.deleteLayer(layer.id);
     });
     this.listen(this.cameraPresetDrawer, "toggle", function () {
+      self.requestRender();
       if (!self.cameraPresetDrawer.open) return;
       self.controls.querySelectorAll(".ds-de-drawer[open]").forEach(function (drawer) { drawer.open = false; });
       self.positionCameraPresetPanel();
@@ -1624,8 +1625,27 @@
     context.save();
     context.translate(fitted.x, fitted.y);
     context.scale(fitted.scale, fitted.scale);
-    (strokes || []).forEach(function (stroke) { this.drawStroke(context, stroke, this.drawing.canvas); }, this);
+    const board = this.drawing.canvas;
+    if (this.backgroundImage && this.backgroundImage.naturalWidth) {
+      if (this.drawing.backgroundCrop) {
+        const geometry = storyboardRenderer.backgroundDrawGeometry(board.width,board.height,this.backgroundImage.naturalWidth,this.backgroundImage.naturalHeight,this.drawing.backgroundCrop);
+        context.drawImage(this.backgroundImage,geometry.source.x,geometry.source.y,geometry.source.width,geometry.source.height,geometry.destination.x,geometry.destination.y,geometry.destination.width,geometry.destination.height);
+      } else {
+        const photo = fitContain(board.width,board.height,this.backgroundImage.naturalWidth,this.backgroundImage.naturalHeight);
+        context.drawImage(this.backgroundImage,photo.x,photo.y,photo.width,photo.height);
+      }
+    }
+    this.drawing.layers.slice().sort((a,b)=>a.order-b.order).forEach(layer => {
+      if (!layer.visible) return;
+      context.save();
+      context.globalAlpha = layer.opacity;
+      const previewStrokes = this.cameraPresetEdit?.layerId === layer.id ? strokes : layer.strokes;
+      (previewStrokes || []).forEach(stroke => this.drawStroke(context,stroke,board));
+      context.restore();
+    });
+    if (!this.cameraPresetEdit) (strokes || []).forEach(stroke => this.drawStroke(context,stroke,board));
     context.restore();
+    this.requestRender();
     const layer = this.cameraPresetEdit && this.findLayerById(this.cameraPresetEdit.layerId);
     const preset = CAMERA_PRESETS.find(function (item) { return item.label === this.cameraPresetSelection; }, this);
     this.cameraPresetPreview.setAttribute("aria-label", this.cameraPresetEdit
@@ -4156,7 +4176,9 @@
       if (!layer.visible) return;
       ctx.save();
       ctx.globalAlpha = layer.opacity;
-      layer.strokes.forEach(function (stroke) { this.drawStroke(ctx, stroke, canvas); }, this);
+      const visibleStrokes = this.cameraPresetDrawer.open && this.cameraPresetEdit?.layerId === layer.id
+        ? this.transformDrawingStrokes(this.cameraPresetEdit.strokes,this.cameraPresetTransform) : layer.strokes;
+      visibleStrokes.forEach(function (stroke) { this.drawStroke(ctx, stroke, canvas); }, this);
       ctx.restore();
     }, this);
     if (this.activeStroke) {

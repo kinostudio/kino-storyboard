@@ -224,6 +224,18 @@ async function main() {
     await persistedRow.locator('button[data-layer-action="adjustPreset"]').click();
     await page.locator(".ds-de-camera-preset-preview").waitFor({ state: "visible" });
     assert(await page.locator(".ds-de-camera-preset-grid").isHidden(), "reopened layer adjustment starts from the saved layer strokes");
+    const previewCheck=await page.evaluate(()=>{
+      const editor=presetQa.editor, seen=[];
+      const original=editor.drawStroke;
+      editor.drawStroke=function(context,stroke,canvas){seen.push(stroke.id);return original.call(this,context,stroke,canvas);};
+      try {editor.renderCameraPresetPreview();}
+      finally {editor.drawStroke=original;}
+      const referenceIds=editor.drawing.layers.filter(layer=>layer.visible && layer.id!==editor.cameraPresetEdit.layerId).flatMap(layer=>layer.strokes.map(stroke=>stroke.id));
+      return {referenceIds,seen};
+    });
+    assert.ok(previewCheck.referenceIds.length);
+    assert.ok(previewCheck.referenceIds.every(id=>previewCheck.seen.includes(id)),"transform preview renders other visible layers");
+    await page.screenshot({path:path.join(screenshotDir,"composite-transform-preview.png")});
     const beforeTransform = await page.evaluate(drawingId => {
       const drawing = StoryModel.getDrawing(drawingId);
       const layer = drawing.layers.find(item => item.name === "運鏡 PAN R");
