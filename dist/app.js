@@ -4275,7 +4275,7 @@
         const labels = {heading:"場景標題",sceneLink:"分鏡場次",people:"人物"};
         return '<div class="output-record-wrap output-screenplay-record" data-output-record="' + escapeHtml(record.key || "") + '"><div class="output-screenplay-continuation"><small>' + (labels[record.continuationField] || "場次資訊") + '（續）</small><span>' + outputTextHtml(record[record.continuationField] || "") + '</span></div></div>';
       }
-      return '<div class="output-record-wrap output-screenplay-record" data-output-record="' + escapeHtml(record.key || "") + '"><header class="output-screenplay-scene-heading"><strong>' + outputTextHtml(record.heading || "") + '</strong><span>' + outputTextHtml(record.sceneLink || "") + '</span>' + (record.people ? '<small>人物｜' + outputTextHtml(record.people) + '</small>' : '') + '</header></div>';
+      return '<div class="output-record-wrap output-screenplay-record" data-output-record="' + escapeHtml(record.key || "") + '"><header class="output-screenplay-scene-heading"><strong>' + outputTextHtml(record.heading || "") + '</strong>' + (record.sceneLink ? '<span>' + outputTextHtml(record.sceneLink) + '</span>' : '') + (record.people ? '<small>人物｜' + outputTextHtml(record.people) + '</small>' : '') + '</header></div>';
     }
     if (record.kind === "screenplay-block") {
       const type = ["action","dialogue","text"].includes(record.type) ? record.type : "text";
@@ -5261,7 +5261,7 @@
       if (!heading) heading = linked ? String(linked.scene.title || "") : (us ? "UNTITLED SCENE" : "未命名場次");
       const order = index + 1;
       records.push({kind:"screenplay-scene-heading",key:"screenplay/scene/" + String(scene.id || order),section:"screenplay",draftSceneId:scene.id || "",sceneId:scene.sceneId || null,heading:(us ? "Scene " + order + " · " : "第 " + order + " 場｜") + heading,
-        sceneLink:linked ? "分鏡場次 " + (linked.index + 1) + (linked.scene.title ? " · " + linked.scene.title : "") : "未連結分鏡場次",
+        sceneLink:linked ? "分鏡場次 " + (linked.index + 1) + (linked.scene.title ? " · " + linked.scene.title : "") : "",
         people:String(scene.people || ""),densityItem:false});
       (Array.isArray(scene.blocks) ? scene.blocks : []).forEach((block,blockIndex) => {
         if (!block || typeof block !== "object" || typeof block.text !== "string" || !block.text.length) return;

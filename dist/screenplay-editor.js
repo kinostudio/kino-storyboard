@@ -690,7 +690,7 @@
     else if (field === "format" && entry.value.format !== (element.value === "us" ? "us" : "tw")) { entry.value.format = element.value === "us" ? "us" : "tw"; changed = true; }
     else if (field === "sceneId" && scene && scene.sceneId !== (element.value || null)) { scene.sceneId = element.value || null; changed = true; }
     else if (field === "location" && scene) {
-      const match = /^(INT\.\/EXT\.|INT\.|EXT\.|內|外|IN|OUT)\s*\/\s*(.*)$/i.exec(element.value);
+      const match = /^(INT\.\/EXT\.|INT\.?|EXT\.?|內|外|IN|OUT)\s*\/\s*(.*)$/i.exec(element.value);
       const interiorExterior = match ? match[1] : "";
       const location = match ? match[2] : element.value;
       if (scene.location === location && scene.interiorExterior === interiorExterior) return;
@@ -940,7 +940,7 @@
       }
     });
     function completeLocation(element) {
-      if (element.dataset.screenplayField === "location" && /^(內|外|in|out)$/i.test(element.value)) {
+      if (element.dataset.screenplayField === "location" && /^(內|外|in|out|int\.?|ext\.?)$/i.test(element.value)) {
         element.value += " / ";
         element.setSelectionRange(element.value.length, element.value.length);
       }

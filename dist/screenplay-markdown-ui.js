@@ -10,6 +10,7 @@
   const boundHosts = new WeakSet();
   let activeHost = null;
   let editor = null;
+  let toolsOpen = false;
   let state = { busy: false, status: "", error: "", preview: null };
 
   function escapeHtml(value) {
@@ -64,14 +65,15 @@
 
   function ensureHost(host) {
     if (boundHosts.has(host)) return;
-    host.innerHTML = '<div class="se-markdown-tools" data-screenplay-markdown-tools>' +
+    host.innerHTML = '<details class="se-markdown-tools" data-screenplay-markdown-tools><summary class="se-secondary-button">腳本工具</summary>' +
       '<div class="se-markdown-actions">' +
       '<button type="button" class="se-secondary-button" data-screenplay-action="export-markdown">下載 Markdown</button>' +
       '<button type="button" class="se-secondary-button" data-screenplay-action="import-markdown">匯入 Markdown</button>' +
-      '<button type="button" class="se-secondary-button" data-screenplay-action="copy-ai-prompt">複製 AI 轉換指令</button>' +
+      '<button type="button" class="se-secondary-button" data-screenplay-action="preview-ai-prompt">預覽 AI 轉換指令</button>' +
       '<input type="file" accept=".md,text/markdown,text/plain" data-screenplay-file="markdown" hidden>' +
       '</div>' +
-      '<p class="se-markdown-status" data-screenplay-markdown-status aria-live="polite"></p>' +
+      '<section class="se-markdown-preview" data-screenplay-prompt-preview hidden><h3>AI 轉換指令</h3><pre data-screenplay-prompt-content></pre><button type="button" class="se-secondary-button" data-screenplay-action="copy-ai-prompt">複製指令</button></section>' +
+      '<p class="se-markdown-status"  data-screenplay-markdown-status aria-live="polite"></p>' +
       '<section class="se-markdown-preview" data-screenplay-markdown-preview hidden aria-label="Markdown 匯入預覽">' +
       '<h3>Markdown 匯入預覽</h3>' +
       '<p data-screenplay-markdown-summary></p>' +
@@ -81,7 +83,10 @@
       '<div class="se-markdown-actions"><button type="button" class="se-primary-button" data-screenplay-action="confirm-import-markdown">確認匯入</button>' +
       '<button type="button" class="se-secondary-button" data-screenplay-action="cancel-import-markdown">取消</button></div>' +
       '</section>' +
-      '</div>';
+      '</details>';
+    const tools = host.querySelector("details");
+    tools.open = toolsOpen;
+    tools.addEventListener("toggle", () => { if (tools.isConnected) toolsOpen = tools.open; });
     host.addEventListener("click", handleClick);
     host.addEventListener("change", handleChange);
     boundHosts.add(host);
@@ -265,6 +270,11 @@
     const actions = {
       "export-markdown": exportMarkdown,
       "copy-ai-prompt": copyPrompt,
+      "preview-ai-prompt": () => {
+        const preview = activeHost.querySelector("[data-screenplay-prompt-preview]");
+        preview.querySelector("[data-screenplay-prompt-content]").textContent = markdown.conversionPrompt(projectForDraft());
+        preview.hidden = !preview.hidden;
+      },
       "confirm-import-markdown": confirmImport,
       "cancel-import-markdown": cancelImport
     };

@@ -42,7 +42,7 @@ async function main() {
     const body = page.locator("[data-screenplay-writing-surface]").first();
     const meta = page.locator("[data-screenplay-meta]");
     assert.equal(await page.locator("[data-screenplay-scene-title]").first().innerText(), "場次一");
-    for (const prefix of ["IN", "OUT", "內", "外"]) {
+    for (const prefix of ["INT", "EXT", "IN", "OUT", "內", "外"]) {
       await meta.first().fill(prefix);
       assert.equal(await meta.first().inputValue(), prefix + " / ");
     }
