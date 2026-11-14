@@ -59,6 +59,13 @@ async function main() {
    await page.mouse.move(box.x+box.width*.4,y);
    await page.mouse.down();
    await page.mouse.move(box.x+box.width*.6,y,{steps:3});
+   const tracking=await page.evaluate(({x,y})=>{
+     const editor=penQa.editor;
+     const expected=editor.pointerPoint({clientX:x,clientY:y});
+     const point=editor.activeStroke.points.at(-1);
+     return {expected,point};
+   },{x:box.x+box.width*.6,y});
+   assert.ok(Math.abs(tracking.point.x-tracking.expected.x)<.0001 && Math.abs(tracking.point.y-tracking.expected.y)<.0001,"stroke endpoint follows pointer without positional lag");
    await page.mouse.up();
  }
  for(let i=0;i<3;i++) await draw(i);
