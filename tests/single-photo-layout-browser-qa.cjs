@@ -30,7 +30,7 @@ async function main() {
  await new Promise(r=>server.listen(0,"127.0.0.1",r));
  const browser=await chromium.launch({headless:true,executablePath:browserPath});
  try {
- const page=await browser.newPage({viewport:{width:1180,height:820}});
+ const page=await browser.newPage({viewport:{width:1180,height:1400}});
  await page.goto("http://127.0.0.1:"+server.address().port);
  await page.getByRole("button",{name:"建立示範專案",exact:true}).click();
  await page.locator("body.project-ready").waitFor();
@@ -73,3 +73,4 @@ async function main() {
  } finally {await browser.close();server.close();}
 }
 main().catch(e=>{console.error(e);server.close();process.exitCode=1});
+
