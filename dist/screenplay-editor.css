@@ -156,3 +156,16 @@
 .se-manuscript-meta input { flex: 1; min-width: 0; padding: .3rem 0; border: 0; background: transparent; color: inherit; font: inherit; }
 .se-manuscript-meta input:focus { outline: none; }
 .se-manuscript-meta input:focus-visible { box-shadow: 0 1px #a8afba; }
+.se-scene-section { background: #fffefa; padding: 0 clamp(16px,3vw,38px) 24px; }
+.se-scene-section > .se-section-heading { padding-top: 16px; }
+.se-scene-card { border: 0; box-shadow: none; border-radius: 0; margin: 0; padding: 24px 0; border-bottom: 1px solid #e5e6e3; }
+.se-scene-section > .se-writing-tools { position: sticky; top: 0; z-index: 5; background: #fffefa; }
+.se-writing-surface { min-height: 5em; }
+.se-script-run { display: inline; }
+.se-script-run.is-action { color: #675b45; background: #b89a5710; }
+.se-script-run.is-dialogue { color: #3b5877; background: #6384a512; font-weight: 550; }
+.se-editor-shell[data-screenplay-format="us"] .se-script-run.is-dialogue { display: block; width: 64%; margin-inline: auto; background: transparent; }
+.se-editor-shell[data-screenplay-format="us"] .se-writing-surface { font-family: "Courier New",monospace; }
+.se-role-name { font-weight: 650; }
+.se-editor-shell[data-screenplay-format="us"] .se-role-name { display: block; text-align: center; }
+.se-editor-shell[data-screenplay-format="us"] .se-manuscript-meta label span { flex-basis: 3em; }

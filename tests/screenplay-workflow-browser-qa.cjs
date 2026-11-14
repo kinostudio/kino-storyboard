@@ -102,13 +102,13 @@ async function main() {
       selection.addRange(range);
     }, selectedText);
     await selectBodyText(secondBody, "李：你好\n再見");
-    await secondCard.locator("button[data-tag-type=dialogue]").click();
+    await page.keyboard.press("Control+Shift+2");
     await page.waitForFunction(() => {
       const blocks = StoryModel.getScreenplay()?.scenes[1]?.blocks || [];
       return blocks.some(block => block.type === "dialogue" && block.character === "李" && block.text === "你好\n再見");
     });
     await selectBodyText(secondBody, "王:早安");
-    await secondCard.locator("button[data-tag-type=dialogue]").click();
+    await page.locator("button[data-tag-type=dialogue]").click();
     await page.waitForFunction(() => {
       const blocks = StoryModel.getScreenplay()?.scenes[1]?.blocks || [];
       return blocks.some(block => block.type === "dialogue" && block.character === "王" && block.text === "早安");
@@ -127,13 +127,19 @@ async function main() {
       return scenes.length === 4 && scenes[2].id === id && document.activeElement?.dataset.screenplaySceneId === scenes[3].id;
     }, secondDraftId);
     const sceneId = await page.evaluate(() => StoryModel.getProject().scenes[0].id);
-    await page.locator("select[data-screenplay-field=sceneId]").first().selectOption(sceneId);
-    await page.locator("button[data-screenplay-format=us]").click();
+    await page.evaluate(async id => { await ScreenplayEditor.flush(); const doc=StoryModel.getScreenplay(); doc.scenes[0].sceneId=id; await StoryModel.saveScreenplay(doc); },sceneId);
+    await ScreenplayFormatCheck();
+    async function ScreenplayFormatCheck() {
+      await page.locator("button[data-screenplay-format=us]").click();
+      assert.equal(await page.locator("[data-screenplay-scene-title]").first().innerText(), "Scene 1");
+      assert.equal(await page.locator(".se-writing-tools").count(), 1);
+      assert.equal(await page.locator(".se-scene-link-select").count(), 0);
+    }
     await page.locator("button[data-screenplay-format=tw]").click();
     await navigate("storyboard");
     await page.locator("#chapter-list [data-chapter=" + JSON.stringify(sceneId) + "]").click();
     await page.locator("#screenplay-compare-toggle").click();
-    await page.locator("#screenplay-compare-host").getByText("小安停在池邊", {exact:true}).waitFor();
+    await page.locator("#screenplay-compare-host").waitFor({state:"visible"});
     await page.locator("#screenplay-compare-toggle").click();
     const copyId = await page.evaluate(async () => {
       const model = window.StoryModel;

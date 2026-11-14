@@ -4393,6 +4393,10 @@
   function paginateOutputRecords(records, pageSize) {
     const pages = [];
     for (let i = 0; i < records.length; i += pageSize) pages.push(records.slice(i,i + pageSize));
+    for (let index = 0; index < pages.length - 1; index++) {
+      const last = pages[index][pages[index].length - 1];
+      if (last?.kind === "screenplay-scene-heading" && pages[index].length > 1) pages[index + 1].unshift(pages[index].pop());
+    }
     return pages.length ? pages : [[]];
   }
   function paginateOutputRecordsBySection(records, pageSize) {
@@ -5247,14 +5251,16 @@
     (Array.isArray(screenplay.scenes) ? screenplay.scenes : []).forEach((scene,index) => {
       if (!scene || typeof scene !== "object") return;
       const linked = scene.sceneId && chapters.get(scene.sceneId);
-      const locationParts = [scene.interiorExterior,scene.location].map((value) => String(value || "").trim()).filter(Boolean);
+      const interior = String(scene.interiorExterior || "");
+      const displayInterior = us ? (/^(內|內景|IN|INT\.)$/i.test(interior) ? "INT." : /^(外|外景|OUT|EXT\.)$/i.test(interior) ? "EXT." : interior) : interior;
+      const locationParts = [displayInterior,scene.location].map((value) => String(value || "").trim()).filter(Boolean);
       const time = String(scene.time || "").trim();
       let heading = locationParts.join(us ? " " : "｜");
       if (time) heading += (heading ? (us ? " - " : "｜") : "") + time;
       if (us) heading = heading.toLocaleUpperCase();
       if (!heading) heading = linked ? String(linked.scene.title || "") : (us ? "UNTITLED SCENE" : "未命名場次");
       const order = index + 1;
-      records.push({kind:"screenplay-scene-heading",key:"screenplay/scene/" + String(scene.id || order),section:"screenplay",draftSceneId:scene.id || "",sceneId:scene.sceneId || null,heading:(us ? String(order).padStart(2,"0") + ". " : "第 " + order + " 場｜") + heading,
+      records.push({kind:"screenplay-scene-heading",key:"screenplay/scene/" + String(scene.id || order),section:"screenplay",draftSceneId:scene.id || "",sceneId:scene.sceneId || null,heading:(us ? "Scene " + order + " · " : "第 " + order + " 場｜") + heading,
         sceneLink:linked ? "分鏡場次 " + (linked.index + 1) + (linked.scene.title ? " · " + linked.scene.title : "") : "未連結分鏡場次",
         people:String(scene.people || ""),densityItem:false});
       (Array.isArray(scene.blocks) ? scene.blocks : []).forEach((block,blockIndex) => {
@@ -5268,7 +5274,7 @@
   async function buildScreenplayOutputContext(context) {
     const records = screenplayOutputRecords(context);
     context.records = records;
-    context.pages = paginateOutputRecordsBySection(records,context.density);
+    context.pages = [records.slice()];
     context.itemCount = records.filter((record) => record.densityItem !== false).length;
     context.itemLabel = "項";
     context.scope = "全片劇本";
