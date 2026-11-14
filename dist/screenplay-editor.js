@@ -250,7 +250,6 @@
     const id = escapeHtml(block.id);
     const sceneId = escapeHtml(scene.id);
     const index = String(blockIndex + 1);
-    const suggestions = roleSuggestions(screenplay, scene);
     const marker = type === "action" && screenplay.format === "tw" ? '<span class="se-action-marker" aria-hidden="true">△</span>' : "";
     return '<article class="se-block" data-block-id="' + id + '" data-block-type="' + escapeHtml(type) + '">' +
       '<div class="se-block-toolbar"><label class="se-block-kind"><span class="se-sr-only">區塊類型</span><select data-screenplay-edit-control="true" data-screenplay-field="blockType" data-screenplay-scene-id="' + sceneId + '" data-screenplay-block-id="' + id + '" data-focus-key="' + escapeHtml(focusKey(["blockType", scene.id, block.id])) + '" aria-label="第 ' + index + ' 區塊類型"' + disabled + '>' +
@@ -283,7 +282,7 @@
       labelField("地點", "location", scene.location, scene.id, { placeholder: "例如：咖啡店" }) +
       labelField("時間", "time", scene.time, scene.id, { placeholder: "例如：日／夜" }) +
       labelField("人物", "people", scene.people, scene.id, { placeholder: "人物名稱，以逗號分隔" }) + '</div>' +
-      '<div class="se-blocks-heading"><div><h4>劇本內容</h4><p>直接貼上並保留換行；/a 加空格或開頭的 △ 會標記為動作。</p></div></div>' +
+      '<div class="se-blocks-heading"><div><h4>劇本內容</h4></div></div>' +
       '<div class="se-block-list">' + (blocks || '<p class="se-empty-blocks">新增動作或對白區塊開始寫作。</p>') + '</div>' + roleList +
       '<div class="se-add-blocks"><button type="button" class="se-secondary-button" data-screenplay-edit-control="true" data-screenplay-action="add-block" data-block-type="action" data-screenplay-scene-id="' + escapeHtml(scene.id) + '"' + (!editable ? " disabled" : "") + '>＋ 動作</button><button type="button" class="se-secondary-button" data-screenplay-edit-control="true" data-screenplay-action="add-block" data-block-type="dialogue" data-screenplay-scene-id="' + escapeHtml(scene.id) + '"' + (!editable ? " disabled" : "") + '>＋ 對白</button><button type="button" class="se-secondary-button" data-screenplay-edit-control="true" data-screenplay-action="add-block" data-block-type="text" data-screenplay-scene-id="' + escapeHtml(scene.id) + '"' + (!editable ? " disabled" : "") + '>＋ 文字</button></div>' +
       '</section>';
@@ -374,7 +373,7 @@
       '<details class="se-overview"' + (state.overviewOpen ? " open" : "") + '><summary class="se-overview-summary"><div><span class="se-eyebrow">PROJECT NOTES</span><h3>主旨與大綱</h3></div><span class="se-overview-chevron" aria-hidden="true">⌄</span></summary><div class="se-overview-grid">' +
       labelField("主旨", "subject", screenplay.subject, "", { multiline: true, rows: 2, placeholder: "一句話描述故事核心" }) +
       labelField("故事大綱", "outline", screenplay.outline, "", { multiline: true, rows: 5, placeholder: "整理故事起承轉合…" }) + '</div></details>' +
-      '<section class="se-scene-section"><div class="se-section-heading"><div><span class="se-eyebrow">SCENE OUTLINE</span><h3>場次與內容</h3><p>可建立劇本場次，再選擇連結既有分鏡場次。</p></div><button type="button" class="se-primary-button" data-screenplay-edit-control="true" data-screenplay-action="add-scene" aria-label="新增劇本場次"' + (!editable ? " disabled" : "") + '>＋ 新增劇本場次</button></div>' +
+      '<section class="se-scene-section"><div class="se-section-heading"><div><span class="se-eyebrow">SCENE OUTLINE</span><h3>場次與內容</h3><p>可建立場次並選擇連結分鏡。可直接貼上並保留換行；開頭輸入 /a 加空格或 △ 會標記為動作。</p></div><button type="button" class="se-primary-button" data-screenplay-edit-control="true" data-screenplay-action="add-scene" aria-label="新增劇本場次"' + (!editable ? " disabled" : "") + '>＋ 新增劇本場次</button></div>' +
       (sceneCards || '<div class="se-empty-scenes"><span>△</span><strong>還沒有劇本場次</strong><p>新增一場，從場景設定或劇本內容開始。</p></div>') + '</section></div>';
     if (compareHost) compareMarkup(project, screenplay);
     bindHost(host);
