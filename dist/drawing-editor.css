@@ -253,3 +253,35 @@
  .ds-de-title p { margin: 0; }
  .ds-de-controls > .ds-de-control-group { flex: 0 0 auto; }
 }
+
+.ds-de-layers, .ds-de-layer-list { display: flex; flex-direction: column; align-items: stretch; width: 100%; }
+.ds-de-layer-header { display: flex; align-items: center; justify-content: space-between; }
+.ds-de-layer-row { display: grid; grid-template-columns: minmax(0,1fr) 44px 44px; padding: 4px; border: 1px solid transparent; }
+.ds-de-layer-row.is-selected { background: #e8effa; border-color: #7896c3; }
+.ds-drawing-editor .ds-de-layer-select { display: flex; gap: 10px; justify-content: flex-start; min-width: 0; padding: 5px; border: 0; background: transparent; text-align: left; }
+.ds-de-layer-thumbnail { width: 72px; height: 42px; flex: none; border: 1px solid #d5dbe2; border-radius: 4px; background: repeating-conic-gradient(#eef0f3 0% 25%, white 0% 50%) 0 / 10px 10px; }
+.ds-de-layer-copy { display: grid; min-width: 0; gap: 3px; }
+.ds-de-layer-copy strong { font-size: 13px; overflow-wrap: anywhere; }
+.ds-de-layer-copy small { font-size: 11px; color: #657184; }
+.ds-de-layer-actions { grid-column: 1 / -1; display: flex; justify-content: flex-end; border-top: 1px solid #dce3ef; }
+
+.ds-de-camera-presets { position: relative; }
+.ds-de-camera-preset-toggle { align-items: center; background: #fff; border: 1px solid var(--ds-de-line); border-radius: 10px; cursor: pointer; display: inline-flex; height: 44px; justify-content: center; list-style: none; width: 44px; }
+.ds-de-camera-preset-toggle::-webkit-details-marker { display: none; }
+.ds-de-camera-preset-panel { background: #fff; border: 1px solid #cbd3df; border-radius: 12px; box-shadow: 0 12px 42px rgba(20,30,48,.25); color: var(--ds-de-ink); max-height: min(calc(100vh - 24px), 760px); max-height: min(calc(100dvh - 24px), 760px); overflow: hidden; padding: 10px; position: fixed; width: min(360px, calc(100vw - 24px)); z-index: 5000; }
+.ds-de-camera-preset-grid { display: grid; gap: 6px; grid-template-columns: repeat(3, minmax(0, 1fr)); max-height: 240px; overflow-y: auto; overscroll-behavior: contain; padding: 2px; }
+.ds-drawing-editor .ds-de-camera-preset-choice { align-items: stretch; background: #f8f9fb; display: flex; flex-direction: column; gap: 4px; min-height: 0; overflow: hidden; padding: 5px; }
+.ds-de-camera-preset-choice.is-selected { background: #eaf0fa; border-color: var(--ds-de-accent); }
+.ds-de-camera-preset-thumbnail { aspect-ratio: 16 / 9; background: repeating-conic-gradient(#eef0f3 0% 25%, #fff 0% 50%) 0 / 8px 8px; border: 1px solid #d5dbe2; border-radius: 5px; display: block; height: auto; width: 100%; }
+.ds-de-camera-preset-choice span { font-size: 11px; line-height: 1.2; text-align: center; }
+.ds-de-camera-preset-edit-label { display: block; margin: 10px 0 6px; }
+.ds-de-camera-preset-preview { aspect-ratio: 16 / 9; background: repeating-conic-gradient(#eef0f3 0% 25%, #fff 0% 50%) 0 / 10px 10px; border: 1px solid #d5dbe2; border-radius: 7px; display: block; height: auto; width: 100%; }
+.ds-de-camera-preset-adjustments { align-items: center; display: grid; gap: 7px; grid-template-columns: repeat(2, minmax(0, 1fr)); margin: 8px 0; }
+.ds-de-camera-preset-range { align-items: center; display: grid; font-size: 12px; gap: 4px; grid-template-columns: 38px minmax(0, 1fr) 38px; }
+.ds-de-camera-preset-range input { accent-color: var(--ds-de-accent); min-width: 0; width: 100%; }
+.ds-de-camera-preset-range output { color: var(--ds-de-muted); text-align: right; }
+.ds-de-camera-preset-flip { align-items: center; display: inline-flex; font-size: 12px; gap: 5px; min-height: 28px; }
+.ds-de-camera-preset-flip input { accent-color: var(--ds-de-accent); }
+.ds-drawing-editor .ds-de-camera-preset-apply { background: #315b98; border-color: #315b98; color: #fff; font-weight: 650; min-height: 40px; width: 100%; }
+.ds-drawing-editor .ds-de-camera-preset-apply:hover:not(:disabled) { background: #254b83; }
+.ds-de-layer-adjust { font-size: 12px !important; }

@@ -1499,3 +1499,50 @@ body.is-read-only #shot-list .shot-card.is-gallery .shot-card-text-preview:focus
 .shot-move-tag:focus-visible { outline: 2px solid #647ca5; outline-offset: 2px; }
 .shot-move-tag:disabled { opacity: .5; cursor: default; }
 @media (pointer: coarse) { .shot-move-tag { min-height: 44px; } }
+
+.voiceover-actions { display: flex; flex-wrap: wrap; gap: 8px; }
+
+@media screen and (min-width:781px) {
+ .app-main:has(#view-storyboard.is-active) { height:100dvh; overflow:hidden; }
+ .app-main:has(#view-storyboard.is-active) > :not(#view-storyboard) { flex-shrink:0; }
+ #view-storyboard.is-active { flex:1; min-height:0; overflow:hidden; }
+ #view-storyboard > .storyboard-panel, #view-storyboard > .inspector, #view-storyboard > .chapter-sidebar { min-height:0; height:100%; overflow-y:auto; overscroll-behavior-y:contain; scrollbar-gutter:stable; }
+ #view-storyboard .shot-list { flex:none; overflow:visible; }
+}
+.duration-wheel-open { border:0; background:transparent; color:#687b9a; width:30px; height:30px; display:inline-grid; place-items:center; cursor:pointer; }
+.duration-input-wrap, .shot-duration-control { position:relative; }
+.duration-input-wrap .duration-wheel-open, .shot-duration-control .duration-wheel-open { position:absolute; left:1px; top:50%; transform:translateY(-50%); }
+.duration-input-wrap input, .shot-duration-control input { padding-left:32px!important; }
+.duration-wheel-dialog { border:1px solid #dce2ea; border-radius:18px; padding:20px; width:min(340px,calc(100vw - 24px)); color:#253650; box-shadow:0 20px 70px #15203133; background:#fffefa; }
+.duration-wheel-dialog::backdrop { background:#18243b55; }
+.duration-wheel-dialog h3 { margin:0 0 12px; font-size:16px; }
+.duration-wheels { display:flex; justify-content:center; gap:12px; position:relative; }
+.duration-wheel { width:104px; height:220px; overflow-y:auto; overscroll-behavior:contain; scroll-snap-type:y mandatory; scrollbar-width:none; padding:88px 0; background:linear-gradient(#eff2f700 88px,#edf1f8 88px,#edf1f8 132px,#eff2f700 132px); background-attachment:local; border-radius:10px; }
+.duration-wheel::-webkit-scrollbar { display:none; }
+.duration-wheel [role="option"] { height:44px; display:grid; place-items:center; scroll-snap-align:center; color:#9aa4b1; font-size:22px; font-variant-numeric:tabular-nums; }
+.duration-wheel [aria-selected="true"] { color:#233957; font-size:28px; font-weight:650; }
+.duration-wheel-dialog p { text-align:center; margin:8px 0 16px; color:#69768a; font-size:12px; }
+.duration-wheel-actions { display:flex; justify-content:flex-end; gap:12px; }
+.duration-wheel-actions button { min-height:44px; padding:0 18px; }
+
+.shot-select-toggle { position:absolute; top:14px; left:14px; width:30px; height:30px; display:grid; place-items:center; border:2px solid #8997ac; border-radius:7px; background:#fff; color:#fff; font-size:20px; z-index:3; cursor:pointer; box-shadow:0 1px 5px #18243b22; }
+.shot-select-toggle[aria-checked="true"] { border-color:#526b99; background:#526b99; }
+.shot-select-toggle[hidden] { display:none; }
+@media(pointer:coarse) { .shot-select-toggle { width:44px; height:44px; } }
+.duration-wheel { background:none; }
+.duration-wheel [aria-selected="true"] { background:#edf1f8; border-radius:8px; }
+
+/* Continuous frames belong to the parent shot; only the parent is scheduled. */
+.shot-card .sequence-host { grid-column:1 / -1; min-width:0; }
+.shot-card .sequence-menu { position:absolute; right:8px; bottom:5px; z-index:4; }
+.sequence-menu summary { display:flex; padding:5px; cursor:pointer; list-style:none; color:var(--muted,#78818e); }
+.sequence-menu summary::-webkit-details-marker { display:none; }
+.sequence-menu summary svg { fill:currentColor; }
+.sequence-menu[open] { background:var(--surface,#fff); border-radius:8px; box-shadow:0 4px 18px #182a4420; }
+.sequence-menu button { display:block; border:0; background:transparent; padding:12px; white-space:nowrap; cursor:pointer; }
+.sequence-first-letter { font-size:12px; font-weight:700; color:#617397; margin-left:4px; }
+
+.sequence-host:empty { display:none; }
+@media (pointer:coarse) {
+  .sequence-menu summary { min-width:44px; min-height:44px; align-items:center; justify-content:center; }
+}

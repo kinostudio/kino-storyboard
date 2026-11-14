@@ -295,6 +295,7 @@
       button.title = reason; button.setAttribute("aria-description", reason);
     });
     refreshShotPlaceholderControls($("#shot-list [data-shot-placeholder]"));
+    window.KinoSequenceEditor?.refreshControls?.();
     lastReadonlyControlsKey = nextKey;
     return true;
   }
@@ -734,7 +735,7 @@
     setTimeout(() => URL.revokeObjectURL(url), 1000);
     message(successText);
   }
-  const shotSearchMatches = (shot, query) => !query || [shotSequence(shot), shotNumber(shot), shot.no, shot.title, shot.visual, shot.script, shot.super, shot.sound, shot.move, shot.tags].join(" ").toLocaleLowerCase().includes(query.toLocaleLowerCase());
+  const shotSearchMatches = (shot, query) => !query || [shotSequence(shot), shotNumber(shot), shot.no, shot.title, shot.visual, shot.script, shot.super, shot.sound, shot.move, shot.tags, ...(shot.sequenceFrames || []).flatMap(frame => [frame.visual,frame.script,frame.super])].join(" ").toLocaleLowerCase().includes(query.toLocaleLowerCase());
   function matchedSceneIdsForSearch(query) {
     if (!state || !query) return new Set();
     return currentShotIndex().titleMatches(query);
@@ -806,7 +807,7 @@
   function numberLabel(label, value) { return '<span class="number-part"><span class="number-label">' + escapeHtml(label) + '</span><span class="number-value">' + escapeHtml(value) + '</span></span>'; }
   function shotLabel(shot, chapterNumberOverride) { return '<span class="shot-identifiers">' + numberLabel('場次', chapterNumberOverride == null ? currentShotIndex().chapterNumbers.get(shot.chapterId) || 0 : chapterNumberOverride) + '<span class="number-divider" aria-hidden="true">／</span>' + numberLabel('鏡次', shotSequence(shot)) + '</span>'; }
   function shotCardNumberMarkup(shot) {
-    return shotLabel(shot) + (shot.shotNoLocked === true ? '<span class="shot-number-lock-badge" aria-label="鏡次已鎖定" title="鏡次已鎖定">鎖定</span>' : "") +
+    return shotLabel(shot) + ((shot.sequenceFrames || []).length ? '<span class="sequence-first-letter">A</span>' : "") + (shot.shotNoLocked === true ? '<span class="shot-number-lock-badge" aria-label="鏡次已鎖定" title="鏡次已鎖定">鎖定</span>' : "") +
       (shotNumberConflictIds.has(shot.id) ? '<span class="shot-number-conflict-badge" aria-label="鎖號衝突">衝突</span>' : "");
   }
   function shotNumberConflictCopy(conflicts, shots) {
@@ -2868,7 +2869,11 @@
     cancelReorderGesture("shots");
     const focused = document.activeElement;
     const focusedCard = focused && focused.closest ? focused.closest("#shot-list .shot-card") : null;
-    const focusSnapshot = focusedCard ? {
+    const sequenceFocus = focused && focused.matches("[data-sequence-field]") ? {
+      shotId:focusedCard && focusedCard.dataset.shot, frameId:focused.dataset.sequenceFrameId,
+      field:focused.dataset.sequenceField,start:focused.selectionStart,end:focused.selectionEnd
+    } : null;
+    const focusSnapshot = focusedCard && !focused.closest("[data-sequence-host]") ? {
       shotId: focusedCard.dataset.shot,
       placeholder: focusedCard.matches("[data-shot-placeholder]"),
       placeholderField: focused.dataset && focused.dataset.shotPlaceholderField || "",
@@ -2880,7 +2885,7 @@
       end: typeof focused.selectionEnd === "number" ? focused.selectionEnd : null
     } : null;
     const composingInList = Array.from(composingFields).some((field) => field && field.isConnected && field.closest("#shot-list"));
-    if (searchComposing || composingInList) { pendingShotListRender = true; return; }
+    if (searchComposing || composingInList || list.querySelector('[data-sequence-composing="true"]')) { pendingShotListRender = true; return; }
     pendingShotListRender = false;
     list.dataset.shotView = shotView;
     list.classList.toggle("is-list", shotView === "list");
@@ -2900,7 +2905,7 @@
     $("#chapter-eyebrow").textContent = chapter ? "SCENE " + String(state.chapters.indexOf(chapter) + 1) : query ? "SCENE SEARCH" : "ALL SCENES";
     $("#storyboard-heading").textContent = chapter ? sceneTitle(chapter) : "全部分鏡";
     $("#storyboard-subtitle").textContent = chapter ? "保留場次節奏，鏡頭內容與拍攝安排共用。" : "以鏡頭為單位，整理畫面、節奏與聲音。";
-    $("#visible-count").textContent = shots.length + " 個鏡頭";
+    $("#visible-count").textContent = shots.length + " 個鏡頭" + (shots.some(shot => (shot.sequenceFrames || []).length) ? " · " + shots.reduce((sum,shot) => sum + 1 + (shot.sequenceFrames || []).length,0) + " 張分鏡" : "");
     $("#shot-count").textContent = state.shots.length;
     const seconds = totalShotSeconds(shots); const unknown = shots.filter((shot) => Number(shot.duration) === 0).length;
     $("#runtime-label").textContent = "預估片長 " + formatDuration(seconds) + (unknown ? " · " + unknown + " 鏡未估" : "");
@@ -2943,8 +2948,14 @@
         '<div class="shot-card-text-preview shot-card-script-preview" data-shot-preview="script" title="' + escapeHtml(scriptValue) + '"><label class="shot-preview-label" for="shot-script-' + escapeHtml(shot.id) + '"><strong>VO</strong><span>台詞／旁白</span></label><textarea id="shot-script-' + escapeHtml(shot.id) + '" class="shot-preview-text shot-inline-script" data-shot-field="script" data-entity-id="' + escapeHtml(shot.id) + '" aria-label="' + escapeHtml(shotNumber(shot) + "台詞／旁白") + '" rows="2" placeholder="輸入台詞或旁白…">' + escapeHtml(scriptValue) + '</textarea></div>' +
         '<div class="shot-card-text-preview shot-card-super-preview" data-shot-preview="super" title="' + escapeHtml(superValue) + '"><label class="shot-preview-label" for="shot-super-' + escapeHtml(shot.id) + '"><strong>SUPER</strong><span>字卡</span></label><textarea id="shot-super-' + escapeHtml(shot.id) + '" class="shot-preview-text shot-inline-super" data-shot-field="super" data-entity-id="' + escapeHtml(shot.id) + '" aria-label="' + escapeHtml(shotNumber(shot) + "字卡 SUPER") + '" rows="2" placeholder="輸入畫面字卡…">' + escapeHtml(superValue) + '</textarea></div>' +
         '<div class="field-group shot-inline-field shot-duration-field"><label class="field-label" for="shot-duration-' + escapeHtml(shot.id) + '">影片秒數</label><div class="shot-duration-control"><input id="shot-duration-' + escapeHtml(shot.id) + '" class="shot-inline-duration" type="text" inputmode="decimal" data-shot-field="duration" data-entity-id="' + escapeHtml(shot.id) + '" aria-label="' + escapeHtml(shotNumber(shot) + "影片秒數") + '" value="' + escapeHtml(durationValue) + '" placeholder="0" autocomplete="off"><span class="shot-duration-unit">秒</span></div><span class="shot-duration-estimate"' + (durationIsUnknown ? "" : " hidden") + '>未估</span></div>' +
-        '</article>';
+        '<details class="sequence-menu" data-sequence-menu><summary aria-label="連續分鏡選單">' + icon("dots",16) + '</summary><button type="button" data-action="sequence-add" data-shot-id="' + escapeHtml(shot.id) + '">新增連續分鏡</button></details><div class="sequence-host" data-sequence-host="' + escapeHtml(shot.id) + '"></div></article>';
     }).join("") + placeholderMarkup;
+    renderSequenceEditors();
+    if (sequenceFocus) {
+      const host = $$('[data-sequence-host]',list).find(node => node.dataset.sequenceHost === sequenceFocus.shotId);
+      const target = host && $$('[data-sequence-field]',host).find(node => node.dataset.sequenceFrameId === sequenceFocus.frameId && node.dataset.sequenceField === sequenceFocus.field);
+      if (target) { target.focus({preventScroll:true}); try { target.setSelectionRange(sequenceFocus.start,sequenceFocus.end); } catch (_) {} }
+    }
     list.scrollTop = scrollTop;
     syncVisibleShotDrawings(); syncVisibleShotPhotos(); renderPhotoImportBanner();
     const visualFields = [];
@@ -2955,6 +2966,7 @@
     });
     if (shotView === "gallery") resizeShotVisualBatch(visualFields);
     resizeShotTextFields();
+    decorateDurationFields();
     applyReadonlyControls(); updateReorderSelectionUi();
     if (focusSnapshot || shotPlaceholderFocusTransfer) {
       const focusTransfer = shotPlaceholderFocusTransfer && (!focusSnapshot || focusSnapshot.placeholder) ? shotPlaceholderFocusTransfer : null;
@@ -2983,12 +2995,27 @@
     }
   }
 
+  function sequenceEditorOptions(host) {
+    const shot = byId(host.dataset.sequenceHost);
+    return {host, model, shot, projectId:state.projectId, shotNumber:(currentShotIndex().chapterNumbers.get(shot.chapterId) || 0) + "-" + shotSequence(shot),
+      onError:error => message(error && error.message || String(error),true), onChange:() => renderShotList()};
+  }
+  function renderSequenceEditors() {
+    if (!window.KinoSequenceEditor) return;
+    $$("[data-sequence-host]",$("#shot-list")).forEach(host => {
+      const shot = byId(host.dataset.sequenceHost);
+      if (shot && ((shot.sequenceFrames || []).length || window.KinoSequenceEditor.isEnabled?.(shot.id,state.projectId) || window.KinoSequenceEditor.isExpanded(shot.id,state.projectId))) {
+        window.KinoSequenceEditor.render(sequenceEditorOptions(host));
+      }
+    });
+  }
   function renderInspector() {
     const shot = byId(selectedShotId);
     const container = $("#inspector");
     if (!shot) { container.dataset.shotId = ""; container.innerHTML = '<div class="empty-state"><div class="empty-icon">' + icon("info", 16) + '</div><strong>尚未選取鏡頭</strong><p>從分鏡清單選擇一個鏡頭，即可在這裡編輯。</p></div>'; applyReadonlyControls(); return; }
     const shotIndex = currentShotIndex(); const globalIndex = shotIndex.globalPositionsById.get(shot.id); const group = shotIndex.shotsByChapter.get(shot.chapterId) || []; const groupIndex = shotIndex.shotPositionsById.get(shot.id) - 1; const linked = state.entries.filter((entry) => entry.type === "shot" && entry.shotId === shot.id);
     if (container.dataset.shotId === shot.id && container.querySelector("[data-shot-field]")) {
+      decorateDurationFields();
       const valueOf = (key) => shot[key] == null || (key === "duration" && Number(shot[key]) === 0) ? "" : String(shot[key]);
       container.querySelector(".inspector-number").innerHTML = shotLabel(shot) + ' <span style="color:#a8adb2;font-weight:400">· ' + (globalIndex + 1) + ' / ' + state.shots.length + '</span>';
       syncShotNumberManagement(shot, container);
@@ -3022,6 +3049,7 @@
       if (draft) { field.value = draft.value; renderDraftError(field, draft); }
     });
     renderShotMoveOptions(container);
+    decorateDurationFields();
     applyReadonlyControls();
   }
 
@@ -3104,9 +3132,101 @@
 
   function flushPendingShotListWork() {
     if (pendingShotView) setShotView(pendingShotView);
-    if (!pendingShotListRender || searchComposing || Array.from(composingFields).some((field) => field && field.isConnected && field.closest("#shot-list"))) return;
+    if (!pendingShotListRender || searchComposing || $('#shot-list [data-sequence-composing="true"]') || Array.from(composingFields).some((field) => field && field.isConnected && field.closest("#shot-list"))) return;
     renderChapters();
     renderShotList();
+  }
+
+  function voiceoverManuscript() {
+    if (!state) return "";
+    const index = currentShotIndex();
+    return state.chapters.flatMap(chapter => (index.shotsByChapter.get(chapter.id) || []).flatMap(shot => storyboardFrames(shot).map(frame => {
+      const draft = frame._frameFirst === false ? null : fieldDrafts.get(draftKey(shot.id, "script"));
+      return String((draft ? draft.value : frame.script) || "");
+    }))).filter(value => value.trim()).join(String.fromCharCode(10, 10));
+  }
+  async function deliverVoiceover(action) {
+    const text = voiceoverManuscript();
+    if (!text.trim()) { message("目前沒有可複製或匯出的台詞／旁白。", true); return; }
+    if (action === "copy") {
+      try { await navigator.clipboard.writeText(text); message("已複製全片台詞／旁白稿。"); }
+      catch (_) { message("無法取得剪貼簿權限，請使用「匯出文稿」。", true); }
+      return;
+    }
+    const blob = new Blob([String.fromCharCode(0xfeff), text], {type:"text/plain;charset=utf-8"});
+    const url = URL.createObjectURL(blob);
+    const anchor = document.createElement("a");
+    anchor.href = url;
+    anchor.download = String(state.title || "待命名專案").replace(/[<>:"/\\|?*]/g, "_") + "-VO.txt";
+    document.body.appendChild(anchor); anchor.click(); anchor.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 60000);
+    message("已匯出台詞／旁白文稿。");
+  }
+  function decorateDurationFields() {
+    $$("#shot-list [data-shot-field='duration'], #shot-list [data-shot-placeholder-field='duration'], #inspector [data-shot-field='duration']").forEach(field => {
+      field.type = "text"; field.inputMode = "decimal"; field.placeholder = "0";
+      if (field.value === "0" && document.activeElement !== field && !fieldDraftFor(field)) field.value = "";
+      if (field.parentElement.querySelector("[data-duration-wheel]")) return;
+      const open = document.createElement("button");
+      open.type = "button"; open.dataset.durationWheel = "";
+      open.className = "duration-wheel-open"; open.setAttribute("aria-label", "滑動選擇秒數");
+      open.innerHTML = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M8 7l4-4 4 4M8 17l4 4 4-4M5 12h14"/></svg>';
+      field.parentElement.appendChild(open);
+    });
+  }
+  function openDurationWheel(field) {
+    if (!field || isReadOnly()) return;
+    const projectId = state.projectId;
+    const initial = Math.max(0, Number(field.value) || 0);
+    const dialog = document.createElement("dialog");
+    dialog.className = "duration-wheel-dialog";
+    dialog.setAttribute("aria-label", "設定影片秒數");
+    const heading = document.createElement("h3"); heading.textContent = "影片秒數";
+    const wheels = document.createElement("div"); wheels.className = "duration-wheels";
+    const makeWheel = (label, values, selected) => {
+      const wheel = document.createElement("div");
+      wheel.className = "duration-wheel"; wheel.setAttribute("role", "listbox");
+      wheel.setAttribute("aria-label", label); wheel.tabIndex = 0;
+      const rows = values.map(value => {
+        const row = document.createElement("div"); row.setAttribute("role", "option");
+        row.textContent = value; row.dataset.value = value; wheel.appendChild(row); return row;
+      });
+      const index = () => Math.min(rows.length-1,Math.max(0,Math.round(wheel.scrollTop / 44)));
+      const update = () => rows.forEach((row,i) => row.setAttribute("aria-selected", String(i === index())));
+      wheel.addEventListener("scroll", update, {passive:true});
+      wheel.addEventListener("keydown", event => {
+        if (!["ArrowUp","ArrowDown","Home","End"].includes(event.key)) return;
+        event.preventDefault();
+        const next = event.key === "Home" ? 0 : event.key === "End" ? rows.length-1 : index() + (event.key === "ArrowDown" ? 1 : -1);
+        wheel.scrollTo({top:Math.min(rows.length-1,Math.max(0,next))*44,behavior:"smooth"});
+      });
+      wheel.addEventListener("click", event => {
+        const row = event.target.closest("[data-value]");
+        if (row) wheel.scrollTo({top:rows.indexOf(row)*44,behavior:"smooth"});
+      });
+      wheels.appendChild(wheel);
+      return {wheel, init:()=>{wheel.scrollTop = Math.max(0,values.indexOf(selected))*44;update();}, value:()=>values[index()]};
+    };
+    const values = Array.from({length:121},(_,i)=>i);
+    if (Math.floor(initial)>120) values.push(Math.floor(initial));
+    const seconds = makeWheel("整數秒",values,Math.floor(initial));
+    const tenths = makeWheel("十分之一秒",Array.from({length:10},(_,i)=>i),Math.round(initial*10)%10);
+    const hint = document.createElement("p"); hint.textContent = "秒　／　0.1 秒";
+    const actions = document.createElement("div"); actions.className = "duration-wheel-actions";
+    const cancel = document.createElement("button");cancel.type = "button";cancel.textContent = "取消";cancel.className="outline-button";
+    const done = document.createElement("button");done.type="button";done.textContent="完成";done.className="outline-button";
+    cancel.onclick=()=>dialog.close();
+    done.onclick=async()=>{
+      if (!field.isConnected || state.projectId !== projectId || isReadOnly()) {dialog.close();return;}
+      field.value=String(seconds.value()+tenths.value()/10);
+      if (field.dataset.shotPlaceholderField) {handleShotPlaceholderInput(field);scheduleShotPlaceholderAutoPromotion();}
+      else {captureFieldDraft(field);await commitDraftField(field).catch(error=>message(error.message || "秒數尚未保存",true));}
+      dialog.close();
+    };
+    dialog.addEventListener("close",()=>{dialog.remove();if(field.isConnected)field.focus({preventScroll:true});},{once:true});
+    dialog.addEventListener("click",event=>{if(event.target===dialog){const r=dialog.getBoundingClientRect();if(event.clientX<r.left||event.clientX>r.right||event.clientY<r.top||event.clientY>r.bottom)dialog.close();}});
+    actions.append(cancel,done);dialog.append(heading,wheels,hint,actions);document.body.appendChild(dialog);
+    dialog.showModal();seconds.init();tenths.init();seconds.wheel.focus({preventScroll:true});
   }
 
   function renderVoiceover() {
@@ -3124,13 +3244,13 @@
       const shots = shotIndex.shotsByChapter.get(chapter.id) || [];
       if (!shots.length) return "";
       const chapterHeading = '<header class="voiceover-chapter-heading"><span>' + escapeHtml("場次 " + (chapterIndex + 1)) + '</span><h3>' + escapeHtml(chapter.title || "未命名場次") + '</h3></header>';
-      const entries = shots.map((shot) => {
-        const draft = fieldDrafts.get(draftKey(shot.id, "script"));
+      const entries = shots.flatMap(storyboardFrames).map((shot) => {
+        const draft = shot._frameFirst === false ? null : fieldDrafts.get(draftKey(shot.id, "script"));
         const raw = draft ? draft.value : shot.script;
         const value = String(raw == null ? "" : raw);
         const draftMark = draft ? '<span class="voiceover-draft-mark">未保存草稿</span>' : "";
         const title = shotHasTitle(shot) ? '<strong>' + escapeHtml(shotTitleText(shot)) + '</strong>' : '';
-        return '<article class="voiceover-entry"><header><span class="voiceover-shot-number">鏡次 ' + escapeHtml(shotSequence(shot)) + '</span>' + title + draftMark + '</header><p class="voiceover-entry-text">' + escapeHtml(value || "尚未填寫") + '</p></article>';
+        return '<article class="voiceover-entry"><header><span class="voiceover-shot-number">鏡次 ' + escapeHtml(shotSequence(shot) + (shot._frameSuffix || "")) + '</span>' + title + draftMark + '</header><p class="voiceover-entry-text">' + escapeHtml(value || "尚未填寫") + '</p></article>';
       }).join("");
       return '<section class="voiceover-chapter">' + chapterHeading + '<div class="voiceover-chapter-entries">' + entries + '</div></section>';
     }).join("");
@@ -3968,13 +4088,15 @@
     outputItemsPerPage = requestedDensity;
     outputDensityByMode[currentMode] = outputItemsPerPage;
     outputDensityByTemplate[outputTemplate] = outputItemsPerPage;
-    const densityUnit = scheduleMode ? "項目／頁" : "鏡／頁";
+    const densityUnit = scheduleMode ? "項目／頁" : outputTemplate === "vo" ? "段／頁" : "張／頁";
     const note = $("#output-density-limit-note");
     if (note) note.textContent = "可選 1–12 " + densityUnit + "；若長文超出單頁，會依原序續頁，不裁切內容。";
     slider.value = String(outputItemsPerPage);
-    const densityText = outputItemsPerPage + (scheduleMode ? " 項目／頁" : " 鏡／頁");
+    const densityText = outputItemsPerPage + " " + densityUnit;
     $("#output-density-value").textContent = densityText;
     slider.setAttribute("aria-valuetext",densityText);
+    $("#output-density-less").setAttribute("aria-label","每頁減少一" + (scheduleMode ? "項" : outputTemplate === "vo" ? "段" : "張"));
+    $("#output-density-more").setAttribute("aria-label","每頁增加一" + (scheduleMode ? "項" : outputTemplate === "vo" ? "段" : "張"));
     $("#output-density-less").disabled = outputItemsPerPage === 1;
     $("#output-density-more").disabled = outputItemsPerPage === limit;
     $("#output-density-limit-value").textContent = String(limit);
@@ -3989,11 +4111,11 @@
     $("#output-selected-day-group").hidden = outputDayScope === "all";
     $("#output-selected-field-count").textContent = outputFieldCount("details") + " 項";
     $("#output-image-field-count").textContent = outputFieldCount("images") + " 項";
-    slider.setAttribute("aria-label",scheduleMode ? "每頁拍攝項目" : "每頁鏡數");
+    slider.setAttribute("aria-label",scheduleMode ? "每頁拍攝項目" : outputTemplate === "vo" ? "每頁旁白段數" : "每頁分鏡張數");
     $("#output-density-hint").textContent = "可設定每頁 1–12 項；若完整內容超出單頁，會依原序接續下一頁，最後頁仍依所選容量配置。";
     $("#output-layout-hint").textContent = scheduleMode ? "拍攝安排按拍攝日分組，保留現場順序與時段資訊。" : (({worksheet:"圖片與細項左右排列。",proposal:"雙欄卡片呈現分鏡圖與提案文字。",production:"縮圖、鏡次、畫面與聲音資料緊湊對齊。",av:"畫面、視覺描述與聲音分欄比較。",contact:"圖像索引；可附鏡次、標題、VO、SUPER、秒數。",vo:"只輸出台詞／旁白；空白台詞的鏡頭會略過。"})[outputTemplate] || "");
     const label = $("#output-page-density-label");
-    if (label) label.textContent = scheduleMode ? "每頁拍攝項目" : "每頁鏡數";
+    if (label) label.textContent = scheduleMode ? "每頁拍攝項目" : outputTemplate === "vo" ? "每頁旁白段數" : "每頁分鏡張數";
   }
   function outputShotLabel(shot) {
     return typeof shotLabel === "function" ? shotLabel(shot) : escapeHtml(shotNumber(shot));
@@ -4410,8 +4532,12 @@
           mediaPages.push({page:page,body:body,rows:Math.max(1,Math.ceil(capacity / columns)),rowGap:rowGap});
         }
         if (context.template === "worksheet" && body.clientWidth > 0 && body.clientHeight > 0) {
-          const rowHeight = body.clientHeight / Math.max(1,capacity);
-          const artWidth = Math.min(body.clientWidth * .34,rowHeight * ratio);
+          const gap = parseFloat(getComputedStyle(body).rowGap) || 0;
+          const row = body.querySelector(".output-worksheet-row");
+          const rowStyle = row && getComputedStyle(row);
+          const padding = rowStyle ? (parseFloat(rowStyle.paddingTop) || 0) + (parseFloat(rowStyle.paddingBottom) || 0) : 0;
+          const rowHeight = (body.clientHeight - gap * (capacity - 1)) / Math.max(1,capacity);
+          const artWidth = Math.min(body.clientWidth * .34,Math.max(1,rowHeight - padding) * ratio);
           page.style.setProperty("--worksheet-art-width",String(artWidth) + "px");
         }
       });
@@ -4815,11 +4941,28 @@
   }
   function snapshotShotNumber(snapshot, shot) {
     const sceneIndex = snapshot.ui.chapters.findIndex((scene) => scene.id === shot.chapterId);
-    return (sceneIndex + 1) + "-" + snapshotShotSequence(snapshot,shot);
+    return (sceneIndex + 1) + "-" + snapshotShotSequence(snapshot,shot) + (shot._frameSuffix || "");
   }
   function snapshotShotLabel(snapshot, shot) {
     return '<span class="shot-identifiers output-compact-id">' + escapeHtml(snapshotShotNumber(snapshot,shot)) + '</span>';
   }
+  function sequenceLetter(index) {
+    let result = "";
+    for (let value = index + 1; value > 0; value = Math.floor((value - 1) / 26)) result = String.fromCharCode(65 + (value - 1) % 26) + result;
+    return result;
+  }
+  function storyboardFrames(shot) {
+    const extras = Array.isArray(shot.sequenceFrames) ? shot.sequenceFrames : [];
+    if (!extras.length) return [shot];
+    const first = Object.assign({}, shot, {_frameId:shot.sequenceFrameId || shot.id, _frameSuffix:"A", _frameFirst:true});
+    return [first].concat(extras.map((frame,index) => Object.assign({}, shot, {
+      visual:frame.visual, script:frame.script, super:frame.super,
+      assetIds:frame.assetIds, drawingIds:frame.drawingIds,
+      id:shot.id, _frameId:frame.id, _frameSuffix:sequenceLetter(index + 1), _frameFirst:false,
+      photoCropsByAssetId:frame.photoCropsByAssetId || {}, duration:0, durationSeconds:0
+    })));
+  }
+  function storyboardFrameKey(shot) { return shot._frameId ? shot.id + "/" + shot._frameId : shot.id; }
   function snapshotOutputShots(snapshot) {
     if (outputScope === "selected") return snapshot.ui.shots.filter((shot) => shot.id === selectedShotId);
     if (outputScope === "chapter") {
@@ -4830,7 +4973,8 @@
     return snapshot.ui.shots.slice();
   }
   function snapshotImageSources(snapshot, shot) {
-    const canonical = snapshot.project.shots.find((item) => item.id === shot.id);
+    const owner = snapshot.project.shots.find((item) => item.id === shot.id);
+    const canonical = owner && shot._frameId && shot._frameId !== (owner.sequenceFrameId || owner.id) ? (owner.sequenceFrames || []).find((frame) => frame.id === shot._frameId) : owner;
     if (!canonical) throw Object.assign(new Error("捕獲快照找不到來源鏡頭。"),{code:"OUTPUT_SHOT_MISSING"});
     const sources = [];
     (canonical.assetIds || []).forEach((id,index) => {
@@ -4846,7 +4990,7 @@
   function renderOutputSourceChoices(snapshot, shots) {
     const host = $("#output-image-source-list"); const rows = [];
     (shots || []).forEach((shot) => {
-      const sources = snapshotImageSources(snapshot,shot); const key = outputImageSourceKey(snapshot.project.projectId,shot.id);
+      const sources = snapshotImageSources(snapshot,shot); const key = outputImageSourceKey(snapshot.project.projectId,storyboardFrameKey(shot));
       if (sources.length === 1 && !outputImageSourceChoices.has(key)) outputImageSourceChoices.set(key,{type:sources[0].type,id:sources[0].id});
       if (sources.length < 2) return;
       const current = outputImageSourceChoices.get(key);
@@ -4857,7 +5001,7 @@
         const value = JSON.stringify({type:source.type,id:source.id});
         return '<option value="' + escapeHtml(value) + '" ' + (value === selected ? "selected" : "") + '>' + escapeHtml(source.label) + '</option>';
       })).join("");
-      rows.push('<label class="output-image-source-row"><span>' + escapeHtml(shotNumberWithTitle(shot, " · ", snapshotShotNumber(snapshot, shot))) + '</span><select class="select-control" data-output-source-shot="' + escapeHtml(shot.id) + '">' + options + '</select></label>');
+      rows.push('<label class="output-image-source-row"><span>' + escapeHtml(shotNumberWithTitle(shot, " · ", snapshotShotNumber(snapshot, shot))) + '</span><select class="select-control" data-output-source-shot="' + escapeHtml(storyboardFrameKey(shot)) + '">' + options + '</select></label>');
     });
     host.innerHTML = rows.join("");
     $("#output-image-source-panel").hidden = rows.length === 0;
@@ -4866,7 +5010,7 @@
   function outputSourceForShot(snapshot, shot) {
     const sources = snapshotImageSources(snapshot,shot);
     if (!sources.length) return {source:null,sources:sources};
-    const key = outputImageSourceKey(snapshot.project.projectId,shot.id); const choice = outputImageSourceChoices.get(key);
+    const key = outputImageSourceKey(snapshot.project.projectId,storyboardFrameKey(shot)); const choice = outputImageSourceChoices.get(key);
     const selected = choice && sources.find((source) => source.type === choice.type && source.id === choice.id);
     if (selected) return {source:selected,sources:sources};
     if (sources.length === 1) return {source:sources[0],sources:sources};
@@ -4902,7 +5046,7 @@
     if (source.type === "photo") {
       const expected = source.metadata;
       if (!expected || expected.role !== "photoOriginal" || expected.state !== "available" || !/^[0-9a-f]{64}$/i.test(String(expected.sha256 || ""))) throw Object.assign(new Error("照片 Asset metadata 缺失、狀態無效或沒有 SHA-256：" + source.id),{code:"OUTPUT_ASSET_METADATA_INVALID"});
-      const loaded = await model.getShotPhoto(shot.id,source.id);
+      const loaded = await model.getShotPhoto(shot.id,source.id,shot._frameId);
       if (!loaded || loaded.projectId !== context.projectId || loaded.shotId !== shot.id || loaded.id !== source.id || !loaded.metadata || loaded.metadata.role !== "photoOriginal" || loaded.metadata.sha256 !== expected.sha256) throw Object.assign(new Error("照片 Asset 與捕獲快照不一致：" + source.id),{code:"OUTPUT_ASSET_SNAPSHOT_MISMATCH"});
       const decoded = await decodeOutputBlob(loaded.originalBlob,context);
       context.imageSources.push({shotId:shot.id,type:"photo",id:source.id,sha256:loaded.metadata.sha256});
@@ -4985,7 +5129,7 @@
     if (fields.title && String(shot.title || "").trim()) rows.push({label:"標題",value:String(shot.title)});
     if (fields.voiceover && String(shot.script || "").trim()) rows.push({label:"VO／台詞旁白",value:String(shot.script)});
     if (fields.super && String(shot.super || "").trim()) rows.push({label:"SUPER",value:String(shot.super)});
-    if (fields.duration) rows.push({label:"秒數",value:Number(shot.duration) === 0 ? "秒數未估" : formatSeconds(shot.duration)});
+    if (fields.duration && shot._frameFirst !== false) rows.push({label:"秒數",value:Number(shot.duration) === 0 ? "秒數未估" : formatSeconds(shot.duration)});
     return rows;
   }
   function detailRows(shot, context) {
@@ -4995,7 +5139,7 @@
     if (fields.super && String(shot.super || "").trim()) rows.push("SUPER｜" + shot.super);
     if (fields.sound && String(shot.sound || "").trim()) rows.push("聲音設計｜" + shot.sound);
     if (fields.move && String(shot.move || "").trim()) rows.push("景別／運鏡｜" + shot.move);
-    if (fields.duration) rows.push("秒數｜" + (Number(shot.duration) === 0 ? "秒數未估" : formatSeconds(shot.duration)));
+    if (fields.duration && shot._frameFirst !== false) rows.push("秒數｜" + (Number(shot.duration) === 0 ? "秒數未估" : formatSeconds(shot.duration)));
     return rows;
   }
   function formatStoryboardOutputSummary(shots) {
@@ -5008,7 +5152,8 @@
   async function buildStoryboardOutputContext(context) {
     const template = OUTPUT_TEMPLATES.includes(context.template) ? context.template : "worksheet";
     const scopedShots = snapshotOutputShots(context);
-    const shots = template === "vo" ? scopedShots.filter((shot) => String(shot.script || "").trim() !== "") : scopedShots;
+    const frames = scopedShots.flatMap(storyboardFrames);
+    const shots = template === "vo" ? frames.filter((shot) => String(shot.script || "").trim() !== "") : frames;
     renderOutputSourceChoices(context,template === "vo" ? [] : shots);
     const selected = shots.map((shot) => ({shot:shot,source:outputSourceForShot(context,shot)}));
     for (const item of (template === "vo" ? [] : selected)) {
@@ -5024,14 +5169,14 @@
     for (const item of selected) {
       const shot = item.shot; const art = template === "vo" ? "" : await prepareShotArt(context,shot,item.source);
       const text = template === "vo" ? String(shot.script || "") : detailRows(shot,context).join("\n");
-      records.push({kind:"shot",mode:context.mode,template:template,key:shot.id,shotId:shot.id,numberHtml:snapshotShotLabel(context,shot),title:String(shot.title || "").trim() ? String(shot.title) : "",durationLabel:template !== "contact" && template !== "vo" && context.preferences.fields.details.duration ? (Number(shot.duration) === 0 ? "秒數未估" : formatSeconds(shot.duration)) : "",text:text,imageFields:template === "contact" ? imageFieldRows(shot,context) : [],art:art,showArt:template !== "vo",imageMessage:item.source.source && !art ? "圖像讀取失敗，列印已暫停" : "",densityItem:true});
+      records.push({kind:"shot",mode:context.mode,template:template,key:storyboardFrameKey(shot),shotId:shot.id,numberHtml:snapshotShotLabel(context,shot),title:String(shot.title || "").trim() ? String(shot.title) : "",durationLabel:shot._frameFirst !== false && template !== "contact" && template !== "vo" && context.preferences.fields.details.duration ? (Number(shot.duration) === 0 ? "秒數未估" : formatSeconds(shot.duration)) : "",text:text,imageFields:template === "contact" ? imageFieldRows(shot,context) : [],art:art,showArt:template !== "vo",imageMessage:item.source.source && !art ? "圖像讀取失敗，列印已暫停" : "",densityItem:true});
     }
-    context.records = records; context.itemCount = template === "vo" ? records.length : scopedShots.length; context.itemLabel = template === "vo" ? "段" : "鏡"; context.scope = scopeText;
+    context.records = records; context.itemCount = template === "vo" ? records.length : frames.length; context.itemLabel = template === "vo" ? "段" : frames.length === scopedShots.length ? "鏡" : "張"; context.scope = scopeText;
     context.noteBase = template === "vo"
       ? (records.length ? "預覽範圍：" + scopeText + "。共 " + records.length + " 段台詞／旁白；空白台詞已略過。" : "此輸出範圍沒有台詞或旁白；空白台詞的鏡頭已略過。")
-      : scopedShots.length ? "預覽範圍：" + scopeText + "。共 " + scopedShots.length + " 鏡；搜尋條件不影響輸出集合。" : "此輸出範圍目前沒有鏡頭。";
+      : scopedShots.length ? "預覽範圍：" + scopeText + "。共 " + scopedShots.length + " 鏡、" + frames.length + " 張分鏡；搜尋條件不影響輸出集合。" : "此輸出範圍目前沒有鏡頭。";
     context.subtitle = (context.project.projectType || "分鏡文件") + "　·　" + scopeText;
-    context.summary = template === "vo" ? records.length + " 段台詞／旁白" : formatStoryboardOutputSummary(scopedShots);
+    context.summary = template === "vo" ? records.length + " 段台詞／旁白" : formatStoryboardOutputSummary(scopedShots) + (frames.length !== scopedShots.length ? " · " + frames.length + " 張分鏡" : "");
     context.footer = context.projectTitle + " · " + scopeText;
   }
   function scheduleOutputDays(context) {
@@ -5072,14 +5217,14 @@
     const days = scheduleOutputDays(context); const shotsById = new Map(context.ui.shots.map((shot) => [shot.id,shot]));
     const entriesByDay = new Map(days.map((day) => [day.id,context.ui.entries.filter((entry) => entry.dayId === day.id)]));
     const linkedShots = []; entriesByDay.forEach((entries) => entries.forEach((entry) => { const shot = entry.shotId && shotsById.get(entry.shotId); if (shot && !linkedShots.some((item) => item.id === shot.id)) linkedShots.push(shot); }));
-    renderOutputSourceChoices(context,linkedShots); const artByShot = new Map();
-    for (const shot of linkedShots) {
+    renderOutputSourceChoices(context,linkedShots.flatMap(storyboardFrames)); const artByShot = new Map();
+    for (const shot of linkedShots.flatMap(storyboardFrames)) {
       const source = outputSourceForShot(context,shot);
       if (!source.source && source.sources.length > 1) {
         context.captureBlockers.push({code:"OUTPUT_SOURCE_REQUIRED",message:snapshotShotNumber(context,shot) + " 有多個照片／Drawing，請在左側明確選擇本次輸出來源。"});
         context.imageSources.push({shotId:shot.id,type:null,id:null,requiresSelection:true});
       } else if (!source.source) context.imageSources.push({shotId:shot.id,type:null,id:null});
-      artByShot.set(shot.id,await prepareShotArt(context,shot,source));
+      artByShot.set(storyboardFrameKey(shot),await prepareShotArt(context,shot,source));
     }
     const daySections = []; let itemCount = 0; const sectionCounts = {timeline:0,rundown:0,storyboard:0};
     for (const day of days) {
@@ -5098,11 +5243,21 @@
         const overlapNotice = slot && Number(slot.overlapMinutes) > 0 ? "與先前已排時段實際重疊 " + Number(slot.overlapMinutes) + " 分鐘" : "";
         const orderNotice = scheduleOrderWarning(slot);
         const title = linked ? String(entry.title || linked.title || "") : String(entry.title || (entry.type === "break" ? "休息／換景" : "未命名活動"));
-        const shotArt = linked ? artByShot.get(linked.id) || "" : "";
+        const shotArt = linked ? artByShot.get(storyboardFrameKey(storyboardFrames(linked)[0])) || "" : "";
         const shotNumber = linked ? snapshotShotNumber(context,linked) : "";
         return {kind:"schedule",key:entry.id,entryId:entry.id,entryType:entry.type,dayId:day.id,shotId:linked && linked.id || null,title:title,shotTitle:linked ? String(linked.title || "") : "",shotNumber:shotNumber,text:"",notes:String(entry.notes || ""),art:shotArt,imageMessage:linked && !shotArt && (linked.assetIds && linked.assetIds.length || linked.drawingIds && linked.drawingIds.length) ? "圖像讀取失敗，列印已暫停" : "",numberHtml:linked ? snapshotShotLabel(context,linked) : "",order:String(index + 1).padStart(2,"0"),timeLabel:timeLabel,durationLabel:(entry.type === "shot" && !minutes ? "分鐘未估" : minutes + " 分鐘"),status:entry.status || "",gapNotice:gapNotice,overlapNotice:overlapNotice,orderNotice:orderNotice,isBreak:entry.type === "break",densityItem:true};
       });
       const views = buildScheduleEntryViews(dayRows,context.preferences.schedule);
+      views.storyboard = views.storyboard.flatMap(row => {
+        const owner = shotsById.get(row.shotId);
+        return storyboardFrames(owner).map(frame => {
+          const imageFields = [];
+          if (context.preferences.schedule.storyboardShotNumber) imageFields.push({label:"鏡次",value:snapshotShotNumber(context,frame)});
+          if (context.preferences.schedule.storyboardTitle && String(frame.title || "").trim()) imageFields.push({label:"標題",value:frame.title});
+          return Object.assign({},row,{key:row.key + "/" + storyboardFrameKey(frame),imageFields,
+            art:artByShot.get(storyboardFrameKey(frame)) || "",durationLabel:frame._frameFirst === false ? "" : row.durationLabel});
+        });
+      });
       const header = Object.assign({kind:"day-heading",densityItem:false,dayId:day.id}, callsheetMeta);
       daySections.push({dayId:day.id,header:header,callsheetRows:callsheetRows,timelineRows:views.timeline,rundownRows:views.rundown,storyboardRows:views.storyboard});
       sectionCounts.timeline += views.timeline.length;
@@ -5983,6 +6138,7 @@
       reconcileSavedDrafts(); refreshLifecycle(modelLifecycle()); return;
     }
     if (type === "reorderShots" && syncReorderedShotList(previousState)) {
+      renderSequenceEditors();
       renderInspector();
       if (currentView === "schedule") { syncCommittedScheduleViews(); renderScheduleInspector(activeDay(), activeEntries()); }
       else if (currentView === "output") renderOutput();
@@ -6060,7 +6216,7 @@
     }
     if (draft.entityType === "project" && key === "projectType") value = String(value == null ? "" : value).trim();
     if (draft.entityType === "shot" && key === "duration") {
-      if (String(value).trim() === "") throw fieldFailure("INVALID_DURATION", "空白秒數尚未提交；請輸入 0 或有效秒數。");
+      if (String(value).trim() === "") value = 0;
       value = Number(value);
       if (!Number.isFinite(value) || value < 0 || field && field.validity && field.validity.stepMismatch || Math.abs(value * 10 - Math.round(value * 10)) > 1e-8) throw fieldFailure("INVALID_DURATION", "影片秒數請使用 0.1 秒刻度，且不可小於 0。");
     }
@@ -7240,7 +7396,7 @@
       else if (gesture && gesture.activated) status.textContent = gesture.targetId ? "拖曳中 · 放到同場項目上以設定位置" : "拖曳中 · 放到同場項目後放開";
       else if (gesture) status.textContent = "移動即可開始拖曳；放開來源位置可取消";
       else if (mode) status.textContent = type === "shots"
-        ? "多選模式 · 點選加入或移除；卡片空白可拖曳整組 · " + scrollHint
+        ? "多選模式 · 點圖片或勾選鏡頭，再拖曳整組；僅同一場次可一起排序 · " + scrollHint
         : "多選模式 · 點選加入或移除；項目空白可拖曳整組 · " + scrollHint;
       else status.textContent = defaultText;
     }
@@ -7272,7 +7428,20 @@
       scheduleModeButton.setAttribute("aria-pressed", scheduleMultiSelectMode ? "true" : "false");
       scheduleModeButton.textContent = scheduleMultiSelectMode ? "完成多選" : "多選項目";
     }
-    $$("#shot-list .shot-card").forEach((card) => card.classList.toggle("is-reorder-selected", shotReorderSelection.has(card.dataset.shot) && (shotMultiSelectMode || shotReorderSelection.size > 1)));
+    $$("#shot-list .shot-card[data-shot]").forEach(card => {
+      const selected = shotReorderSelection.has(card.dataset.shot);
+      card.classList.toggle("is-reorder-selected", selected && (shotMultiSelectMode || shotReorderSelection.size > 1));
+      let toggle = card.querySelector("[data-shot-select]");
+      if (!toggle) {
+        toggle = document.createElement("button"); toggle.type = "button"; toggle.dataset.shotSelect = card.dataset.shot;
+        toggle.className = "shot-select-toggle"; toggle.setAttribute("role","checkbox");
+        card.appendChild(toggle);
+      }
+      toggle.hidden = !shotMultiSelectMode;
+      toggle.setAttribute("aria-label", "選取" + shotNumberWithTitle(byId(card.dataset.shot)));
+      toggle.setAttribute("aria-checked", String(selected));
+      toggle.textContent = selected ? "✓" : "";
+    });
     $$("#schedule-list .schedule-entry").forEach((row) => row.classList.toggle("is-reorder-selected", entryReorderSelection.has(row.dataset.entry) && (scheduleMultiSelectMode || entryReorderSelection.size > 1)));
     syncReorderStatus("shots"); syncReorderStatus("entries");
   }
@@ -7322,7 +7491,7 @@
     if (type === "shots") {
       shotMultiSelectMode = !shotMultiSelectMode;
       const visibleSelectedId = selectedShotId && activeShots().some((item) => item.id === selectedShotId) ? selectedShotId : null;
-      shotReorderSelection = visibleSelectedId ? new Set([visibleSelectedId]) : new Set();
+      shotReorderSelection = shotMultiSelectMode ? new Set() : visibleSelectedId ? new Set([visibleSelectedId]) : new Set();
       shotSelectionAnchorId = visibleSelectedId;
     } else {
       scheduleMultiSelectMode = !scheduleMultiSelectMode;
@@ -7480,6 +7649,7 @@
     syncReorderStatus(gesture.type);
   }
   function beginReorderGesture(list, type, event) {
+    if (event.target.closest("[data-sequence-host],[data-sequence-menu]")) return;
     if (event.button != null && event.button !== 0 || event.isPrimary === false || reorderGesture || reorderCommandInFlight) return;
     const selector = type === "shots" ? "[data-shot]" : "[data-entry]";
     const item = event.target && event.target.closest ? event.target.closest(selector) : null;
@@ -7643,6 +7813,14 @@
     if (action === "toggle-entry-timing") {
       try { await toggleEntryTiming(target.dataset.entryTarget); }
       catch (error) { message((error.code ? error.code + " · " : "") + (error.message || "時間安排切換失敗。"), true); }
+      return;
+    }
+    if (action === "sequence-add") {
+      const host = $$("[data-sequence-host]",$("#shot-list")).find(item => item.dataset.sequenceHost === target.dataset.shotId);
+      if (host && window.KinoSequenceEditor && !isReadOnly()) {
+        window.KinoSequenceEditor.begin(sequenceEditorOptions(host));
+        target.closest("details").open = false;
+      }
       return;
     }
     if (action === "add-shot") { await addShot(); return; }
@@ -8074,6 +8252,9 @@
       if (card && handleShotPlaceholderInput(field)) setTimeout(() => { if (card.isConnected && !shotPlaceholderComposingFields.size) scheduleShotPlaceholderAutoPromotion(); }, 0);
     });
     $("#shot-list").addEventListener("click", (event) => {
+      const pick = event.target.closest("[data-shot-select]") || (shotMultiSelectMode && event.target.closest(".shot-thumb"));
+      const pickCard = pick && pick.closest("[data-shot]");
+      if (pickCard) { event.preventDefault();event.stopPropagation();selectShotForReorder(pickCard.dataset.shot,event);return; }
       const placeholderAction = event.target.closest && event.target.closest("[data-placeholder-action]");
       const placeholderCard = placeholderAction && placeholderAction.closest("[data-shot-placeholder]");
       if (placeholderAction && placeholderCard) {
@@ -8083,7 +8264,7 @@
         return;
       }
       if (event.target.closest("[data-shot-placeholder]")) return;
-      if (event.target.closest("[data-shot-field],[data-shot-photo-action],[data-drawing-action],.shot-photo-manager summary")) return;
+      if (event.target.closest("[data-shot-field],[data-shot-photo-action],[data-drawing-action],[data-sequence-menu],[data-sequence-host],.shot-photo-manager summary")) return;
       const card = event.target.closest("[data-shot]"); if (!card) return;
       if (consumeSuppressedReorderClick("shots", card.dataset.shot)) { event.preventDefault(); event.stopPropagation(); return; }
       selectShotForReorder(card.dataset.shot, event);
@@ -8123,6 +8304,8 @@
     $("#shot-reorder-mode").addEventListener("click", () => toggleReorderMode("shots"));
     $("#schedule-reorder-mode").addEventListener("click", () => toggleReorderMode("entries"));
     document.addEventListener("click", async (event) => {
+      const wheel = event.target.closest("[data-duration-wheel]");
+      if (wheel) {event.preventDefault();openDurationWheel(wheel.parentElement.querySelector("input"));return;}
       const moveTag = event.target.closest("[data-shot-move-tag]");
       if (moveTag) {
         event.preventDefault();
@@ -8177,6 +8360,7 @@
         event.preventDefault();
         if (voiceoverAction.dataset.voiceoverAction === "open") setView("voiceover");
         else if (voiceoverAction.dataset.voiceoverAction === "return") setView("storyboard");
+        else await deliverVoiceover(voiceoverAction.dataset.voiceoverAction);
         return;
       }
       const photoAction = event.target.closest("[data-shot-photo-action]");
@@ -8295,6 +8479,7 @@
     });
     document.addEventListener("compositionend", (event) => {
       const field = event.target;
+      if (field.matches && field.matches("[data-sequence-field]")) { setTimeout(flushPendingShotListWork,0); return; }
       if (field === $("#chapter-search")) { searchComposing = false; if (!deferShotSearchUntilDraftsSettle()) renderStoryboard(); flushPendingShotListWork(); return; }
       if (!field.matches || !field.matches("[data-shot-field],[data-entry-field],[data-day-field],[data-project-field]")) return;
       const hadBlur = !!(fieldDraftFor(field) && fieldDraftFor(field).blurPending);

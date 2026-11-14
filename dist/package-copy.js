@@ -53,7 +53,7 @@
 
   const PROJECT_KEYS = shape("projectId schemaVersion revision title createdAt updatedAt aspectRatio projectType scenes sceneOrder shots shotOrderByScene shootingDays shootingDayOrder scheduleEntries scheduleOrderByDay productionTasks productionTaskOrder productionTimelineOrder assets drawings outputPreferences");
   const SCENE_KEYS = shape("projectId id title displayNo");
-  const SHOT_KEYS = shape("projectId id sceneId shotNo shotNoLocked displayNo title visual script sound move tags super durationSeconds legacyArt assetIds photoCropsByAssetId drawingIds");
+  const SHOT_KEYS = shape("projectId id sceneId shotNo shotNoLocked displayNo title visual script sound move tags super durationSeconds legacyArt assetIds photoCropsByAssetId drawingIds sequenceFrameId sequenceFrames");
   const DAY_KEYS = shape("projectId id date title start location contactName contactPhone productionCompany businessNumber expectedWrap notices contacts groupCalls vehicles");
   const CALLSHEET_ROW_FIELDS = Object.freeze(["notices", "contacts", "groupCalls", "vehicles"]);
   const CALLSHEET_ROW_KEYS = Object.freeze({
@@ -72,7 +72,8 @@
   const PRODUCTION_TASK_KEYS = shape("projectId id title startDate endDate notes color");
   const ASSET_KEYS = shape("projectId id role sha256 mime originalName byteLength width height state thumbnail");
   const THUMBNAIL_KEYS = shape("mime byteLength width height version");
-  const DRAWING_KEYS = shape("projectId id schemaVersion shotId canvas backgroundAssetId backgroundCrop revision previewAssetId previewDrawingRevision layers");
+  const DRAWING_KEYS = shape("projectId id schemaVersion shotId frameId canvas backgroundAssetId backgroundCrop revision previewAssetId previewDrawingRevision layers");
+  const SEQUENCE_FRAME_KEYS = shape("id visual script super assetIds photoCropsByAssetId drawingIds");
   const CANVAS_KEYS = shape("aspectRatio width height");
   const LAYER_KEYS = shape("projectId drawingId id kind name visible locked opacity order strokes");
   const STROKE_KEYS = shape("id kind color baseWidth points");
@@ -85,7 +86,12 @@
   function checkProjectShape(project) {
     exactShape(project, PROJECT_KEYS, "project");
     project.scenes.forEach(function (scene, index) { exactShape(scene, SCENE_KEYS, "project.scenes[" + index + "]"); });
-    project.shots.forEach(function (shot, index) { exactShape(shot, SHOT_KEYS, "project.shots[" + index + "]"); });
+    project.shots.forEach(function (shot, index) {
+      exactShape(shot, SHOT_KEYS, "project.shots[" + index + "]");
+      (shot.sequenceFrames || []).forEach(function (frame, frameIndex) {
+        exactShape(frame, SEQUENCE_FRAME_KEYS, "project.shots[" + index + "].sequenceFrames[" + frameIndex + "]");
+      });
+    });
     project.shootingDays.forEach(function (day, index) {
       const dayPath = "project.shootingDays[" + index + "]";
       exactShape(day, DAY_KEYS, dayPath);
@@ -151,22 +157,27 @@
 
     const assetsById = new Map(project.assets.map(function (asset) { return [asset.id, asset]; }));
     project.shots.forEach(function (shot) {
-      const seenAssetIds = new Set();
-      shot.assetIds.forEach(function (assetId) {
-        if (seenAssetIds.has(assetId)) {
-          fail("DUPLICATE_SHOT_ASSET_REFERENCE", "同一 Shot 不可重複引用相同照片 Asset。", {
-            shotId: shot.id,
-            assetId: assetId
-          });
-        }
-        seenAssetIds.add(assetId);
-        const asset = assetsById.get(assetId);
-        if (!asset || asset.role !== "photoOriginal") {
-          fail("INVALID_SHOT_PHOTO_ASSET", "Shot 的照片清單只能引用 photoOriginal Asset。", {
-            shotId: shot.id,
-            assetId: assetId,
-            role: asset && asset.role || null
-          });
+      [{ assetIds: shot.assetIds, master: true }].concat(shot.sequenceFrames || []).forEach(function (frame) {
+        const seenAssetIds = new Set();
+        frame.assetIds.forEach(function (assetId) {
+          if (seenAssetIds.has(assetId)) {
+            fail("DUPLICATE_SHOT_ASSET_REFERENCE", "同一分鏡畫格不可重複引用相同照片 Asset。", {
+              shotId: shot.id,
+              assetId: assetId
+            });
+          }
+          seenAssetIds.add(assetId);
+          const asset = assetsById.get(assetId);
+          if (!asset || asset.role !== "photoOriginal") {
+            fail("INVALID_SHOT_PHOTO_ASSET", "分鏡畫格的照片只能引用 photoOriginal Asset。", {
+              shotId: shot.id,
+              assetId: assetId,
+              role: asset && asset.role || null
+            });
+          }
+        });
+        if (!frame.master && frame.assetIds.length > 1) {
+          fail("SHOT_PHOTO_LIMIT", "每個分鏡畫格只能有一張照片。", { shotId: shot.id });
         }
       });
     });
@@ -209,6 +220,10 @@
     }
     collect("scene", project.scenes);
     collect("shot", project.shots);
+    project.shots.forEach(function (shot) {
+      if (shot.sequenceFrameId) entries.push({ kind: "sequenceFrame", id: shot.sequenceFrameId });
+      collect("sequenceFrame", shot.sequenceFrames || []);
+    });
     collect("day", project.shootingDays);
     collect("entry", project.scheduleEntries);
     collect("productionTask", project.productionTasks || []);
@@ -372,6 +387,19 @@
       shot.projectId = project.projectId;
       shot.id = mapped(shot.id, "shot.id");
       shot.sceneId = mapped(shot.sceneId, "shot.sceneId");
+      if (shot.sequenceFrameId) shot.sequenceFrameId = mapped(shot.sequenceFrameId, "shot.sequenceFrameId");
+      (shot.sequenceFrames || []).forEach(function (frame) {
+        frame.id = mapped(frame.id, "shot.sequenceFrames.id");
+        frame.assetIds = frame.assetIds.map(function (id) { return mapped(id, "shot.sequenceFrames.assetIds"); });
+        if (Object.prototype.hasOwnProperty.call(frame, "photoCropsByAssetId")) {
+          const photoCropsByAssetId = Object.create(null);
+          Object.keys(frame.photoCropsByAssetId).forEach(function (assetId) {
+            photoCropsByAssetId[mapped(assetId, "shot.sequenceFrames.photoCropsByAssetId key")] = frame.photoCropsByAssetId[assetId];
+          });
+          frame.photoCropsByAssetId = photoCropsByAssetId;
+        }
+        frame.drawingIds = frame.drawingIds.map(function (id) { return mapped(id, "shot.sequenceFrames.drawingIds"); });
+      });
       shot.assetIds = shot.assetIds.map(function (id) { return mapped(id, "shot.assetIds"); });
       if (Object.prototype.hasOwnProperty.call(shot, "photoCropsByAssetId")) {
         const photoCropsByAssetId = Object.create(null);
@@ -432,6 +460,7 @@
       drawing.projectId = project.projectId;
       drawing.id = mapped(drawing.id, "drawing.id");
       drawing.shotId = mapped(drawing.shotId, "drawing.shotId");
+      if (drawing.frameId) drawing.frameId = mapped(drawing.frameId, "drawing.frameId");
       drawing.backgroundAssetId = mapped(drawing.backgroundAssetId, "drawing.backgroundAssetId");
       drawing.previewAssetId = mapped(drawing.previewAssetId, "drawing.previewAssetId");
       drawing.layers.forEach(function (layer) {

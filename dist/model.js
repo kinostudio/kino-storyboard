@@ -1467,6 +1467,10 @@
       ["scenes", "shots", "shootingDays", "scheduleEntries", "productionTasks", "assets", "drawings"].forEach(function (key) {
         (project[key] || []).forEach(function (item) { if (item && typeof item.id === "string") reserved.add(item.id); });
       });
+      (project.shots || []).forEach(function (shot) {
+        if (shot.sequenceFrameId) reserved.add(shot.sequenceFrameId);
+        (shot.sequenceFrames || []).forEach(function (frame) { if (frame && frame.id) reserved.add(frame.id); });
+      });
       (project.drawings || []).forEach(function (drawing) {
         (drawing.layers || []).forEach(function (layer) {
           if (layer && layer.id) reserved.add(layer.id);
@@ -1479,6 +1483,32 @@
         reserved.add(value);
         return value;
       };
+    }
+
+    function findSequenceFrameRecord(shot, frameId) {
+      if (frameId === undefined || frameId === null || frameId === shot.id || frameId === shot.sequenceFrameId) return shot;
+      const frame = (shot.sequenceFrames || []).find(function (item) { return item.id === frameId; });
+      if (!frame) throw makeError("SEQUENCE_FRAME_NOT_FOUND", "分鏡畫格不存在或不屬於此 Shot。");
+      return frame;
+    }
+
+    function projectSequenceFrames(shot) {
+      const master = {
+        id: shot.sequenceFrameId || shot.id,
+        visual: shot.visual,
+        script: shot.script,
+        super: typeof shot.super === "string" ? shot.super : "",
+        assetIds: cloneJson(shot.assetIds || []),
+        drawingIds: cloneJson(shot.drawingIds || []),
+        isMaster: true
+      };
+      if (Object.prototype.hasOwnProperty.call(shot, "photoCropsByAssetId")) {
+        master.photoCropsByAssetId = cloneJson(shot.photoCropsByAssetId);
+      }
+      const frames = (shot.sequenceFrames || []).map(function (frame) {
+        return Object.assign(cloneJson(frame), { isMaster: false });
+      });
+      return [master].concat(frames);
     }
 
     function validateBridgeResult(result, before) {
@@ -1607,8 +1637,8 @@
       if (before.projectId !== item.projectId) throw makeError("PROJECT_CHANGED", "照片命令所屬專案已切換；原 Shot 與檔案仍保留在待處理項目。");
       if (!currentLeaseValid && !paused) throw tagStorageError(makeError("LEASE_LOST", "專案目前沒有有效編輯權。"));
       if (!historyReady || !historyState) throw historyUnavailable(historyFailure || makeError("HISTORY_STATE_MISSING", "尚未載入可驗證的 history state。"));
-      if (item.type === "addShotWithPhoto" && before.revision !== item.expectedRevision) {
-        throw makeError("PHOTO_TARGET_REVISION_CHANGED", "專案已更新；沒有建立鏡頭或保存照片，請重新選取。" );
+      if ((item.type === "addShotWithPhoto" || item.type === "addSequenceFrameWithPhoto") && before.revision !== item.expectedRevision) {
+        throw makeError("PHOTO_TARGET_REVISION_CHANGED", "專案已更新；沒有建立分鏡或保存照片，請重新選取。" );
       }
       const importer = photoImportService();
       if (!importer || typeof importer.preparePhotoImport !== "function") {
@@ -1658,6 +1688,7 @@
       }
 
       let targetShotId = item.shotId;
+      let targetFrameId = item.frameId;
       let bridged;
       if (item.type === "addShotWithPhoto") {
         const allocate = newIdFactory(before);
@@ -1678,24 +1709,52 @@
           value: Object.assign({ shotId: targetShotId, assetId: assetId }, photoValue),
           undoable: created.undoable && photo.undoable
         };
+      } else if (item.type === "addSequenceFrameWithPhoto") {
+        const allocate = newIdFactory(before);
+        const frameRaw = deps.bridge.applyCommand(before, "addSequenceFrame", [
+          item.shotId, item.afterFrameId, item.initialFramePatch, item.frameId
+        ], { newId: allocate, allowEmptySequenceFrame: true });
+        const frame = validateBridgeResult(frameRaw, before);
+        if (!frame.changed || !isRecord(frame.value) || typeof frame.value.frameId !== "string") {
+          throw makeError("SEQUENCE_FRAME_CREATE_FAILED", "沒有建立可保存照片的分鏡畫格；照片仍保留為候選。" );
+        }
+        targetFrameId = frame.value.frameId;
+        const photoRaw = deps.bridge.applyCommand(frame.project, "addShotPhotos", [
+          item.shotId,
+          preparedFiles.map(function (result) { return result.metadata; }),
+          targetFrameId
+        ], { newId: allocate });
+        const photo = validateBridgeResult(photoRaw, frame.project);
+        const photoValue = isRecord(photo.value) ? photo.value : {};
+        bridged = {
+          project: photo.project,
+          changed: frame.changed || photo.changed,
+          value: Object.assign({ frameId: targetFrameId }, photoValue),
+          undoable: frame.undoable && photo.undoable
+        };
       } else {
-        const raw = deps.bridge.applyCommand(before, item.type, item.type === "addShotPhotos"
+        const photoArgs = item.type === "addShotPhotos"
           ? [item.shotId, preparedFiles.map(function (result) { return result.metadata; })]
-          : [item.shotId, item.previousAssetId, preparedFiles[0].metadata],
+          : [item.shotId, item.previousAssetId, preparedFiles[0].metadata];
+        if (item.frameId !== undefined && item.frameId !== null) photoArgs.push(item.frameId);
+        const raw = deps.bridge.applyCommand(before, item.type, photoArgs,
         { newId: newIdFactory(before) });
         bridged = validateBridgeResult(raw, before);
       }
       if (item.hasPhotoCrop) {
         const shot = bridged.project.shots.find(function (candidate) { return candidate.id === targetShotId; });
+        const frame = shot && findSequenceFrameRecord(shot, targetFrameId);
         const photoValue = isRecord(bridged.value) ? bridged.value : null;
         const candidates = item.type === "replaceShotPhoto"
           ? [photoValue && photoValue.assetId]
           : [].concat(photoValue && photoValue.addedAssetIds || [], photoValue && photoValue.duplicateAssetIds || []);
         const assetId = candidates.find(function (candidate) {
-          return typeof candidate === "string" && shot && Array.isArray(shot.assetIds) && shot.assetIds.indexOf(candidate) >= 0;
+          return typeof candidate === "string" && frame && Array.isArray(frame.assetIds) && frame.assetIds.indexOf(candidate) >= 0;
         });
         if (!assetId) throw makeError("PHOTO_CROP_TARGET_MISSING", "照片已驗證，但找不到同一命令要套用裁切的主圖 Asset。沒有保存照片或裁切。");
-        const cropRaw = deps.bridge.applyCommand(bridged.project, "setShotPhotoCrop", [targetShotId, assetId, item.photoCrop], {
+        const cropArgs = [targetShotId, assetId, item.photoCrop];
+        if (targetFrameId !== undefined && targetFrameId !== null) cropArgs.push(targetFrameId);
+        const cropRaw = deps.bridge.applyCommand(bridged.project, "setShotPhotoCrop", cropArgs, {
           newId: newIdFactory(bridged.project)
         });
         const cropResult = validateBridgeResult(cropRaw, bridged.project);
@@ -1828,10 +1887,21 @@
         targetShotId = createdShot.value;
         baseProject = createdShot.project;
       }
+      if (item.createSequenceFrame) {
+        const frameRaw = deps.bridge.applyCommand(baseProject, "addSequenceFrame", [
+          targetShotId, item.afterFrameId, item.framePatch, item.frameId
+        ], { newId: allocate, allowEmptySequenceFrame: true });
+        const frameResult = validateBridgeResult(frameRaw, baseProject);
+        if (!frameResult.changed || !isRecord(frameResult.value) || frameResult.value.frameId !== item.frameId) {
+          throw makeError("SEQUENCE_FRAME_CREATE_FAILED", "沒有建立可保存 Drawing 的分鏡畫格。");
+        }
+        baseProject = frameResult.project;
+      }
       const shot = baseProject.shots.find(function (candidate) { return candidate.id === targetShotId; });
       if (!shot) throw makeError("SHOT_NOT_FOUND", "分鏡不存在。");
+      const frame = findSequenceFrameRecord(shot, item.frameId);
       if (item.backgroundAssetId !== null) {
-        if (shot.assetIds.indexOf(item.backgroundAssetId) < 0) throw makeError("SHOT_ASSET_NOT_FOUND", "Drawing 底圖必須是所屬分鏡目前引用的照片。");
+        if (frame.assetIds.indexOf(item.backgroundAssetId) < 0) throw makeError("SHOT_ASSET_NOT_FOUND", "Drawing 底圖必須是所屬分鏡畫格目前引用的照片。");
         const photo = baseProject.assets.find(function (asset) { return asset.id === item.backgroundAssetId; });
         if (!photo || photo.role !== "photoOriginal") throw makeError("INVALID_BACKGROUND_ASSET", "Drawing 底圖只能使用 photoOriginal Asset。");
         await loadVerifiedAsset(baseProject, photo);
@@ -1851,8 +1921,8 @@
           }
           isNoop = keys.every(function (key) { return patch[key] === (key === "visible"); });
         } else if (initialEdit.kind === "background") {
-          const sourceAssetId = shot.assetIds[0] || null;
-          const sourceCrop = sourceAssetId && shot.photoCropsByAssetId && shot.photoCropsByAssetId[sourceAssetId] || null;
+          const sourceAssetId = frame.assetIds[0] || null;
+          const sourceCrop = sourceAssetId && frame.photoCropsByAssetId && frame.photoCropsByAssetId[sourceAssetId] || null;
           isNoop = initialEdit.assetId === sourceAssetId && stableStringify(item.backgroundCrop) === stableStringify(sourceCrop);
         } else if (initialEdit.kind === "reuseScene") {
           const source = baseProject.drawings.find(function (drawing) { return drawing.id === initialEdit.sourceDrawingId; });
@@ -1869,7 +1939,9 @@
         }
       }
 
-      const createRaw = deps.bridge.applyCommand(baseProject, "createDrawingForShot", [targetShotId], { newId: allocate });
+      const createArgs = [targetShotId];
+      if (item.frameId) createArgs.push(item.frameId);
+      const createRaw = deps.bridge.applyCommand(baseProject, "createDrawingForShot", createArgs, { newId: allocate });
       const created = validateBridgeResult(createRaw, baseProject);
       if (!created.changed || typeof created.value !== "string") throw makeError("DRAWING_CREATE_FAILED", "Drawing bridge 沒有建立新的 Drawing。");
       let combinedProject = created.project;
@@ -1986,7 +2058,8 @@
         const drawing = before.drawings.find(function (candidate) { return candidate.id === item.drawingId; });
         if (!drawing) throw makeError("DRAWING_NOT_FOUND", "Drawing 不存在。");
         const shot = before.shots.find(function (candidate) { return candidate.id === drawing.shotId; });
-        if (!shot || shot.assetIds.indexOf(item.assetId) < 0) throw makeError("SHOT_ASSET_NOT_FOUND", "Drawing 底圖必須是所屬分鏡目前引用的照片。");
+        const frame = shot && findSequenceFrameRecord(shot, drawing.frameId);
+        if (!frame || frame.assetIds.indexOf(item.assetId) < 0) throw makeError("SHOT_ASSET_NOT_FOUND", "Drawing 底圖必須是所屬分鏡畫格目前引用的照片。");
         const photo = before.assets.find(function (asset) { return asset.id === item.assetId; });
         if (!photo || photo.role !== "photoOriginal") throw makeError("INVALID_BACKGROUND_ASSET", "Drawing 底圖只能使用 photoOriginal Asset。");
         await loadVerifiedAsset(before, photo);
@@ -2398,7 +2471,7 @@
       return copy;
     }
 
-    function queuePhotoCommand(type, shotId, previousAssetId, fileInput, commandOptions, shotCreation) {
+    function queuePhotoCommand(type, shotId, previousAssetId, fileInput, commandOptions, shotCreation, frameId, frameCreation) {
       try {
         requireInitialized();
         requireProject();
@@ -2410,13 +2483,13 @@
         if ((!currentLeaseValid || lifecycle.phase === "read_only") && !paused) throw makeError("READ_ONLY", lifecycle.readOnlyReason || "此專案目前為唯讀。");
 
         let files;
-        if (type === "addShotPhotos" || type === "addShotWithPhoto") {
+        if (type === "addShotPhotos" || type === "addShotWithPhoto" || type === "addSequenceFrameWithPhoto") {
           if (fileInput === null || fileInput === undefined) throw makeError("INVALID_ARGUMENT", "新增照片需要 File 或 FileList。");
           try { files = Array.prototype.slice.call(fileInput); }
           catch (cause) { throw makeError("INVALID_ARGUMENT", "新增照片需要 File 陣列或 FileList。", cause); }
           if (!files || typeof files.length !== "number") throw makeError("INVALID_ARGUMENT", "新增照片需要 File 陣列或 FileList。");
           if (files.length === 0) {
-            if (type === "addShotWithPhoto") throw makeError("INVALID_ARGUMENT", "建立帶照片的鏡頭需要選取一個檔案。");
+            if (type === "addShotWithPhoto" || type === "addSequenceFrameWithPhoto") throw makeError("INVALID_ARGUMENT", "建立帶照片的分鏡需要選取一個檔案。");
             return Promise.resolve({ addedAssetIds: [], duplicateAssetIds: [], revision: currentProject.revision });
           }
           if (files.length > 1) throw makeError("SHOT_PHOTO_LIMIT", "每個鏡次只能有一張照片。");
@@ -2444,6 +2517,20 @@
             initialPatch: captureJson(shotCreation.initialPatch === undefined ? {} : shotCreation.initialPatch),
             expectedRevision: callOptions.expectedRevision
           };
+        } else if (type === "addSequenceFrameWithPhoto") {
+          const project = deps.schema.validateProject(currentProject);
+          if (!project.shots.some(function (shot) { return shot.id === shotId; })) {
+            throw makeError("SHOT_NOT_FOUND", "分鏡不存在。");
+          }
+          if (!Number.isInteger(callOptions.expectedRevision)) {
+            throw makeError("INVALID_ARGUMENT", "建立帶照片的分鏡畫格需要有效的 Project revision。");
+          }
+          if (project.revision !== callOptions.expectedRevision) {
+            throw makeError("PHOTO_TARGET_REVISION_CHANGED", "專案已更新；沒有建立分鏡畫格或保存照片，請重新選取。" );
+          }
+          if (frameId !== undefined && frameId !== null && (typeof frameId !== "string" || !frameId.trim())) {
+            throw makeError("INVALID_SEQUENCE_FRAME_ID", "分鏡畫格 ID 必須是非空字串。");
+          }
         }
         const hasPhotoCrop = Object.prototype.hasOwnProperty.call(callOptions, "crop");
         if (hasPhotoCrop && files.length !== 1) throw makeError("PHOTO_CROP_REQUIRES_SINGLE_FILE", "單張照片裁切命令一次只能匯入一張照片。");
@@ -2457,7 +2544,10 @@
           shotId: shotId,
           sceneId: creation && creation.sceneId,
           initialPatch: creation && creation.initialPatch,
-          expectedRevision: creation && creation.expectedRevision,
+          expectedRevision: creation ? creation.expectedRevision : (type === "addSequenceFrameWithPhoto" ? callOptions.expectedRevision : null),
+          frameId: frameId,
+          afterFrameId: frameCreation && frameCreation.afterFrameId !== undefined ? frameCreation.afterFrameId : null,
+          initialFramePatch: captureJson(frameCreation && frameCreation.initialPatch || {}),
           previousAssetId: previousAssetId,
           files: files.slice(),
           onProgress: typeof callOptions.onProgress === "function" ? callOptions.onProgress : null,
@@ -2469,7 +2559,7 @@
       } catch (error) { return Promise.reject(normalizeError(error, "PHOTO_COMMAND_REJECTED", "無法排入照片命令。")); }
     }
 
-    function queueDrawingCreate(shotId, selectedBackgroundAssetId, hasBackgroundOverride, initialEdit, expectedRevision, selectedBackgroundCrop, hasBackgroundCropOverride) {
+    function queueDrawingCreate(shotId, selectedBackgroundAssetId, hasBackgroundOverride, initialEdit, expectedRevision, selectedBackgroundCrop, hasBackgroundCropOverride, frameId, framePatch, afterFrameId) {
       try {
         requireInitialized();
         requireProject();
@@ -2481,14 +2571,24 @@
         if (Number.isInteger(expectedRevision) && project.revision !== expectedRevision) throw makeError("DRAWING_TARGET_REVISION_CHANGED", "專案已更新；請重新載入後再建立 Drawing。");
         const shot = project.shots.find(function (candidate) { return candidate.id === shotId; });
         if (!shot) throw makeError("SHOT_NOT_FOUND", "分鏡不存在。");
-        const backgroundAssetId = hasBackgroundOverride ? selectedBackgroundAssetId : (shot.assetIds[0] || null);
+        const knownFrame = frameId === undefined || frameId === null || frameId === shot.id || frameId === shot.sequenceFrameId ||
+          (shot.sequenceFrames || []).some(function (frame) { return frame.id === frameId; });
+        const createSequenceFrame = !knownFrame;
+        if (createSequenceFrame && (typeof frameId !== "string" || !frameId.trim())) {
+          throw makeError("INVALID_SEQUENCE_FRAME_ID", "新增分鏡畫格 Drawing 需要穩定 frameId。");
+        }
+        if (createSequenceFrame && !Number.isInteger(expectedRevision)) {
+          throw makeError("INVALID_DRAWING_INITIAL_EDIT", "新增分鏡畫格 Drawing 需要有效的 Project revision。");
+        }
+        const targetFrame = createSequenceFrame ? { assetIds: [], drawingIds: [] } : findSequenceFrameRecord(shot, frameId);
+        const backgroundAssetId = hasBackgroundOverride ? selectedBackgroundAssetId : (targetFrame.assetIds[0] || null);
         if (backgroundAssetId !== null && (typeof backgroundAssetId !== "string" || !backgroundAssetId.trim())) {
           throw makeError("INVALID_BACKGROUND_ASSET", "照片底圖 ID 必須是非空字串或 null。");
         }
-        if (backgroundAssetId !== null && shot.assetIds.indexOf(backgroundAssetId) < 0) {
-          throw makeError("SHOT_ASSET_NOT_FOUND", "Drawing 底圖必須是所屬分鏡目前引用的照片。");
+        if (backgroundAssetId !== null && targetFrame.assetIds.indexOf(backgroundAssetId) < 0) {
+          throw makeError("SHOT_ASSET_NOT_FOUND", "Drawing 底圖必須是所屬分鏡畫格目前引用的照片。");
         }
-        const shotCrops = shot.photoCropsByAssetId || {};
+        const shotCrops = targetFrame.photoCropsByAssetId || {};
         const hasExplicitBackgroundCrop = hasBackgroundCropOverride && selectedBackgroundCrop !== undefined;
         const backgroundCrop = hasExplicitBackgroundCrop
           ? (selectedBackgroundCrop === null ? null : deps.schema.validatePhotoCrop(selectedBackgroundCrop, "$.backgroundCrop"))
@@ -2503,6 +2603,10 @@
           type: "createDrawingForShot",
           projectId: project.projectId,
           shotId: shotId,
+          frameId: frameId || null,
+          framePatch: captureJson(framePatch || {}),
+          afterFrameId: afterFrameId === undefined ? null : afterFrameId,
+          createSequenceFrame: createSequenceFrame,
           backgroundAssetId: backgroundAssetId,
           backgroundCrop: backgroundCrop,
           initialEdit: initialEdit ? captureJson(initialEdit) : null,
@@ -2512,7 +2616,7 @@
       } catch (error) { return Promise.reject(normalizeError(error, "DRAWING_COMMAND_REJECTED", "無法建立 Drawing。")); }
     }
 
-    function queueDrawingCreateWithInitialEdit(shotId, initialEdit, expectedRevision, backgroundCrop) {
+    function queueDrawingCreateWithInitialEdit(shotId, initialEdit, expectedRevision, backgroundCrop, frameId, framePatch, afterFrameId) {
       try {
         if (!isRecord(initialEdit)) throw makeError("INVALID_DRAWING_INITIAL_EDIT", "建立 Drawing 需要有效的初始編輯。");
         if (["stroke", "layerState", "background", "reuseScene", "snapshot"].indexOf(initialEdit.kind) < 0) {
@@ -2533,8 +2637,15 @@
         if (!Number.isInteger(expectedRevision)) throw makeError("INVALID_DRAWING_INITIAL_EDIT", "建立 Drawing 需要有效的 Project revision。");
         const hasBackgroundOverride = initialEdit.kind === "background";
         return queueDrawingCreate(shotId, hasBackgroundOverride ? initialEdit.assetId : null, hasBackgroundOverride,
-          initialEdit, expectedRevision, backgroundCrop, arguments.length > 3);
+          initialEdit, expectedRevision, backgroundCrop, arguments.length > 3, frameId, framePatch, afterFrameId);
       } catch (error) { return Promise.reject(normalizeError(error, "DRAWING_COMMAND_REJECTED", "無法建立 Drawing 與初始編輯。")); }
+    }
+
+    function queueDrawingCreateForSequenceFrame(shotId, frameId, initialEdit, expectedRevision, backgroundCrop, framePatch, afterFrameId) {
+      if (typeof frameId !== "string" || !frameId.trim()) {
+        return Promise.reject(makeError("INVALID_SEQUENCE_FRAME_ID", "新增分鏡畫格 Drawing 需要穩定 frameId。"));
+      }
+      return queueDrawingCreateWithInitialEdit(shotId, initialEdit, expectedRevision, backgroundCrop, frameId, framePatch, afterFrameId);
     }
 
     function queueAddShotWithDrawing(sceneId, initialPatch, snapshot, expectedRevision) {
@@ -2600,17 +2711,19 @@
       return loadVerifiedAsset(project, metadata);
     }
 
-    async function getShotPhoto(shotId, assetId) {
+    async function getShotPhoto(shotId, assetId, frameId) {
       requireInitialized();
       requireProject();
       const project = deps.schema.validateProject(currentProject);
       const shot = project.shots.find(function (item) { return item.id === shotId; });
       if (!shot) throw makeError("SHOT_NOT_FOUND", "分鏡不存在。");
-      if (shot.assetIds.indexOf(assetId) < 0) throw makeError("SHOT_ASSET_NOT_FOUND", "此分鏡目前沒有引用這張照片。");
+      const frame = findSequenceFrameRecord(shot, frameId);
+      if (frame.assetIds.indexOf(assetId) < 0) throw makeError("SHOT_ASSET_NOT_FOUND", "此分鏡畫格目前沒有引用這張照片。");
       const metadata = project.assets.find(function (asset) { return asset.id === assetId; });
       if (!metadata || metadata.role !== "photoOriginal") throw makeError("INVALID_SHOT_PHOTO_ASSET", "Shot 只能讀取 photoOriginal Asset。");
       const loaded = await loadVerifiedAsset(project, metadata);
       loaded.shotId = shotId;
+      if (frameId !== undefined && frameId !== null) loaded.frameId = frameId;
       return loaded;
     }
 
@@ -2621,17 +2734,28 @@
       const drawing = project.drawings.find(function (item) { return item.id === drawingId; });
       if (!drawing) throw makeError("DRAWING_NOT_FOUND", "Drawing 不存在。");
       const shot = project.shots.find(function (item) { return item.id === drawing.shotId; });
-      if (!shot || shot.drawingIds.indexOf(drawing.id) < 0) throw makeError("SHOT_DRAWING_MISMATCH", "Drawing 不屬於其宣告的 Shot。");
+      const frame = shot && findSequenceFrameRecord(shot, drawing.frameId);
+      if (!frame || frame.drawingIds.indexOf(drawing.id) < 0) throw makeError("SHOT_DRAWING_MISMATCH", "Drawing 不屬於其宣告的 Shot 與畫格。");
       return cloneJson(drawing);
     }
 
-    function getDrawingsForShot(shotId) {
+    function getSequenceFrames(shotId) {
       requireInitialized();
       requireProject();
       const project = deps.schema.validateProject(currentProject);
       const shot = project.shots.find(function (item) { return item.id === shotId; });
       if (!shot) throw makeError("SHOT_NOT_FOUND", "分鏡不存在。");
-      return shot.drawingIds.map(function (drawingId) { return getDrawing(drawingId); });
+      return projectSequenceFrames(shot);
+    }
+
+    function getDrawingsForShot(shotId, frameId) {
+      requireInitialized();
+      requireProject();
+      const project = deps.schema.validateProject(currentProject);
+      const shot = project.shots.find(function (item) { return item.id === shotId; });
+      if (!shot) throw makeError("SHOT_NOT_FOUND", "分鏡不存在。");
+      const frame = findSequenceFrameRecord(shot, frameId);
+      return frame.drawingIds.map(function (drawingId) { return getDrawing(drawingId); });
     }
 
     function queueCreate(spec) {
@@ -3628,6 +3752,15 @@
       updateProjectMetadata: function (metadata) { return queueCommand("updateProjectMetadata", [metadata]); },
       addScene: function (title) { return queueCommand("addScene", [title]); },
       updateScene: function (id, patch) { return queueCommand("updateScene", [id, patch]); },
+      getSequenceFrames: getSequenceFrames,
+      addSequenceFrame: function (shotId, afterFrameId, patch, frameId) {
+        const args = [shotId, afterFrameId === undefined ? null : afterFrameId, patch || {}];
+        if (frameId !== undefined) args.push(frameId);
+        return queueCommand("addSequenceFrame", args);
+      },
+      updateSequenceFrame: function (shotId, frameId, patch) { return queueCommand("updateSequenceFrame", [shotId, frameId, patch]); },
+      deleteSequenceFrame: function (shotId, frameId) { return queueCommand("deleteSequenceFrame", [shotId, frameId]); },
+      reorderSequenceFrames: function (shotId, orderedFrameIds) { return queueCommand("reorderSequenceFrames", [shotId, orderedFrameIds]); },
       addShot: function (sceneId, initialPatch) {
         const args = arguments.length ? [sceneId] : [];
         if (initialPatch !== undefined) args.push(initialPatch);
@@ -3660,31 +3793,55 @@
       deleteProductionTask: function (id) { return queueCommand("deleteProductionTask", [id]); },
       setAspectRatio: function (value) { return queueCommand("setAspectRatio", [value]); },
       updateOutputPreferences: function (patch) { return queueCommand("updateOutputPreferences", [patch]); },
-      createDrawingForShot: function (shotId, backgroundAssetId, backgroundCrop) {
+      createDrawingForShot: function (shotId, backgroundAssetId, backgroundCrop, frameId) {
         return queueDrawingCreate(shotId, backgroundAssetId, arguments.length > 1 && backgroundAssetId !== undefined,
-          null, null, backgroundCrop, arguments.length > 2);
+          null, null, backgroundCrop, arguments.length > 2, frameId);
       },
       createDrawingForShotWithInitialEdit: queueDrawingCreateWithInitialEdit,
+      createDrawingForSequenceFrame: queueDrawingCreateForSequenceFrame,
       addShotWithDrawing: queueAddShotWithDrawing,
       appendDrawingStroke: function (drawingId, layerId, strokeDraft) { return queueCommand("appendDrawingStroke", [drawingId, layerId, strokeDraft]); },
       eraseDrawingStroke: function (drawingId, layerId, strokeId) { return queueCommand("eraseDrawingStroke", [drawingId, layerId, strokeId]); },
       clearDrawingLayer: function (drawingId, layerId) { return queueCommand("clearDrawingLayer", [drawingId, layerId]); },
+      replaceDrawingLayerStrokes: function (drawingId, layerId, strokeDrafts) {
+        return queueCommand("replaceDrawingLayerStrokes", [drawingId, layerId, strokeDrafts]);
+      },
       setDrawingLayerState: function (drawingId, layerId, patch) { return queueCommand("setDrawingLayerState", [drawingId, layerId, patch]); },
       addDrawingLayer: function (drawingId, name) { return queueCommand("addDrawingLayer", [drawingId, name]); },
+      addDrawingLayerWithStrokes: function (drawingId, name, strokeDrafts) {
+        return queueCommand("addDrawingLayerWithStrokes", [drawingId, name, strokeDrafts]);
+      },
       deleteDrawingLayer: function (drawingId, layerId) { return queueCommand("deleteDrawingLayer", [drawingId, layerId]); },
       reorderDrawingLayers: function (drawingId, layerIds) { return queueCommand("reorderDrawingLayers", [drawingId, layerIds]); },
       reuseSceneLayer: function (sourceDrawingId, targetDrawingId) { return queueCommand("reuseSceneLayer", [sourceDrawingId, targetDrawingId]); },
       setDrawingBackground: function (drawingId, assetId) { return queueDrawingBackground(drawingId, assetId); },
       getDrawing: getDrawing,
       getDrawingsForShot: getDrawingsForShot,
-      addShotPhotos: function (shotId, files, photoOptions) { return queuePhotoCommand("addShotPhotos", shotId, null, files, photoOptions); },
+      addShotPhotos: function (shotId, files, photoOptions, frameId) {
+        return queuePhotoCommand("addShotPhotos", shotId, null, files, photoOptions, null, frameId);
+      },
+      addSequenceFrameWithPhoto: function (shotId, file, initialFramePatch, photoOptions, afterFrameId, frameId) {
+        const frameCreation = { afterFrameId: afterFrameId === undefined ? null : afterFrameId, initialPatch: initialFramePatch || {} };
+        return queuePhotoCommand("addSequenceFrameWithPhoto", shotId, null, [file], photoOptions, null, frameId, frameCreation);
+      },
       addShotWithPhoto: function (sceneId, file, initialPatch, photoOptions) {
         return queuePhotoCommand("addShotWithPhoto", null, null, [file], photoOptions, { sceneId: sceneId, initialPatch: initialPatch });
       },
-      reorderShotPhotos: function (shotId, orderedAssetIds) { return queueCommand("reorderShotPhotos", [shotId, orderedAssetIds]); },
-      setShotPhotoCrop: function (shotId, assetId, crop) { return queueCommand("setShotPhotoCrop", [shotId, assetId, crop]); },
-      removeShotPhoto: function (shotId, assetId) { return queueCommand("removeShotPhoto", [shotId, assetId]); },
-      replaceShotPhoto: function (shotId, previousAssetId, file, photoOptions) { return queuePhotoCommand("replaceShotPhoto", shotId, previousAssetId, file, photoOptions); },
+      reorderShotPhotos: function (shotId, orderedAssetIds, frameId) {
+        const args = [shotId, orderedAssetIds]; if (frameId !== undefined) args.push(frameId);
+        return queueCommand("reorderShotPhotos", args);
+      },
+      setShotPhotoCrop: function (shotId, assetId, crop, frameId) {
+        const args = [shotId, assetId, crop]; if (frameId !== undefined) args.push(frameId);
+        return queueCommand("setShotPhotoCrop", args);
+      },
+      removeShotPhoto: function (shotId, assetId, frameId) {
+        const args = [shotId, assetId]; if (frameId !== undefined) args.push(frameId);
+        return queueCommand("removeShotPhoto", args);
+      },
+      replaceShotPhoto: function (shotId, previousAssetId, file, photoOptions, frameId) {
+        return queuePhotoCommand("replaceShotPhoto", shotId, previousAssetId, file, photoOptions, null, frameId);
+      },
       getAsset: getAsset,
       getShotPhoto: getShotPhoto,
       undo: function () { return queueCommand("undo", []); },

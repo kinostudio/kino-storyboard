@@ -111,6 +111,13 @@ async function readState(page, label) {
     const doc = document.querySelector("#print-document");
     const slider = document.querySelector("#output-items-per-page");
     const pages = Array.from(doc.querySelectorAll(":scope > .output-page"));
+    doc.querySelectorAll('.output-worksheet-art').forEach(art => {
+      const rect = art.getBoundingClientRect();
+      const ratio = getComputedStyle(art).aspectRatio.split("/").map(Number);
+      const expected = ratio[0] / ratio[1];
+      if (rect.height && Number.isFinite(expected) && Math.abs(rect.width / rect.height - expected) > .02) throw new Error("Worksheet image aspect ratio changed: " + rect.width + "x" + rect.height);
+    });
+
     return {
       label,
       requestedDensity:Number(slider?.value || 0),
