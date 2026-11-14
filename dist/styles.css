@@ -1613,3 +1613,5 @@ body.is-read-only #shot-list .shot-card.is-gallery .shot-card-text-preview:focus
 @media (prefers-reduced-motion: reduce) {
   .shot-select-toggle, #shot-list .shot-card .shot-drawing-entry { transition: none; }
 }
+
+@media (max-width: 1000px) { .app-shell > .app-rail { position: relative; top: auto; inset-block-start: auto; } }

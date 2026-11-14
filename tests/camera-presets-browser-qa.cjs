@@ -238,6 +238,9 @@ async function main() {
       input.value = String(Math.min(4, Number(input.max)));
       input.dispatchEvent(new Event("input", { bubbles: true }));
     });
+    await page.locator('input[aria-label="圖層旋轉角度"]').evaluate(input => {
+      input.value="30"; input.dispatchEvent(new Event("input",{bubbles:true}));
+    });
     await page.locator(".ds-de-camera-preset-apply").click();
     await settled();
     const afterTransform = await page.evaluate(drawingId => {
@@ -248,6 +251,37 @@ async function main() {
     assert.equal(afterTransform.count, beforeTransform.count, "editing transforms all saved strokes without dropping any");
     assert.notDeepEqual(afterTransform.points, beforeTransform.points, "post-reload movement and scale change the layer geometry");
     assert.deepEqual(afterTransform.scene, beforeTransform.scene, "post-reload layer editing leaves scene artwork unchanged");
+    const layersSummary=page.locator('summary[aria-label="圖層"]');
+    if(!await layersSummary.evaluate(e=>e.parentElement.open)) await layersSummary.click();
+    for(let count=0;count<3;count++) {
+      await page.locator(".ds-de-add-layer").click();
+      await settled();
+    }
+    await page.screenshot({path:path.join(screenshotDir,"many-layers.png")});
+    const panel = page.locator(".ds-de-layer-row").first().locator("..");
+    const overflow = await panel.evaluate(element => ({client:element.clientWidth,scroll:element.scrollWidth}));
+    assert.ok(overflow.scroll <= overflow.client + 1, "layer list must not overflow horizontally");
+    const sceneRow=page.locator(".ds-de-layer-row").filter({hasText:/^場景/});
+    await sceneRow.locator('[data-layer-action="select"]').click();
+    await sceneRow.locator('[data-layer-action="adjustPreset"]').click();
+    await page.locator('input[aria-label="圖層旋轉角度"]').evaluate(input=>{
+      input.value="-15"; input.dispatchEvent(new Event("input",{bubbles:true}));
+    });
+    await page.locator(".ds-de-camera-preset-apply").click();
+    await settled();
+    const finalGeometry=await page.evaluate(id=>{
+      const drawing=StoryModel.getDrawing(id);
+      return drawing.layers.map(layer=>layer.strokes.map(stroke=>stroke.points));
+    },reloaded.drawingId);
+    await page.evaluate(async()=>{await StoryModel.undo();await StoryModel.redo();});
+    assert.deepEqual(await page.evaluate(id=>StoryModel.getDrawing(id).layers.map(layer=>layer.strokes.map(stroke=>stroke.points)),reloaded.drawingId),finalGeometry,"rotation undo/redo restores exact points");
+    const restoredGeometry=await page.evaluate(async()=>{
+      const archive=await StoryModel.exportCompletePackage();
+      const copy=await StoryModel.importCompletePackage(archive.archiveBytes,{mode:"copy"});
+      await StoryModel.selectProject(copy.projectId);
+      return StoryModel.getProject().drawings[0].layers.map(layer=>layer.strokes.map(stroke=>stroke.points));
+    });
+    assert.deepEqual(restoredGeometry,finalGeometry,"generic layer rotation survives ZIP restore");
     assert.deepEqual(errors, []);
     console.log(JSON.stringify({ result: "passed", checks: ["17 thumbnail presets", "vector labels and current color/opacity", "four normalized canvas ratios", "atomic add with one undo/redo", "hide/lock/reorder", "project reload", "ZIP copy", "post-reload whole-layer transforms"], aspectRatios: aspectCheck, presetStrokeCount: afterInsert.preset.strokes.length, zipBytes: exported.bytes, screenshots: ["desktop-preset-popover.png", "ipad-landscape-preset-popover.png", "desktop-layers-and-art.png", "ipad-landscape-layers-and-art.png"].map(name => path.join(screenshotDir, name)) }));
     await context.close();

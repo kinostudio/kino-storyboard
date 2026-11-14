@@ -189,6 +189,14 @@ async function main() {
     assert.ok(toolbarBox.y>=0 && toolbarBox.y<200);
     await page.screenshot({path:path.join(root,"tmp","screenplay-qa","pinned-toolbar-us.png")});
     await require("./screenplay-md-ui.cjs")(page);
+    await page.setViewportSize({width:885,height:772});
+    await page.evaluate(()=>window.scrollTo(0,document.body.scrollHeight));
+    assert.ok(await page.locator(".app-rail").evaluate(element=>{
+      const style=getComputedStyle(element);
+      return style.position !== "fixed" && style.position !== "sticky";
+    }));
+    assert.equal(await body.getAttribute("data-placeholder"),"...");
+    await page.screenshot({path:path.join(root,"tmp","screenplay-qa","narrow-scroll.png")});
     assert.deepEqual(errors, []);
     console.log("PASS default storyboard, screenplay writing, format switch, ZIP restore, editing and output.");
   } finally {
