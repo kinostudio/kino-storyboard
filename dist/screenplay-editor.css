@@ -149,3 +149,10 @@
 @media (max-width: 680px) { .se-editor-actions { justify-items: start; } }
 .se-script-run { display: block; }
 .se-writing-surface br[data-screenplay-separator] { display: none; }
+.se-scene-card .se-scene-title-wrap h3,.se-manuscript-meta { color: #494d52; }
+.se-manuscript-meta { margin-block: .7rem; }
+.se-manuscript-meta label { display: flex; align-items: baseline; gap: .65rem; min-height: 2rem; }
+.se-manuscript-meta label span { flex: 0 0 2em; user-select: none; -webkit-user-select: none; }
+.se-manuscript-meta input { flex: 1; min-width: 0; padding: .3rem 0; border: 0; background: transparent; color: inherit; font: inherit; }
+.se-manuscript-meta input:focus { outline: none; }
+.se-manuscript-meta input:focus-visible { box-shadow: 0 1px #a8afba; }

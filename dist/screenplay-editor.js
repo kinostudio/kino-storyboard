@@ -525,11 +525,20 @@
     return '<svg viewBox="0 0 20 20" aria-hidden="true" focusable="false"><path d="' + (paths[name] || paths.text) + '"></path></svg>';
   }
 
+  function sceneNumeral(number) {
+    const digits = "零一二三四五六七八九";
+    if (number < 10) return digits[number];
+    if (number < 100) return (number < 20 ? "" : digits[Math.floor(number / 10)]) + "十" + (digits[number % 10] || "").replace("零", "");
+    const unit = number >= 10000 ? 10000 : number >= 1000 ? 1000 : 100;
+    const rest = number % unit;
+    return sceneNumeral(Math.floor(number / unit)) + ({100:"百",1000:"千",10000:"萬"})[unit] + (rest ? (rest < unit / 10 ? "零" : "") + sceneNumeral(rest) : "");
+  }
+
   function sceneMarkup(scene, index, screenplay, project, entry) {
     const editable = canEdit();
     const linked = scene.sceneId && Array.isArray(project && project.scenes) && project.scenes.some((item) => item.id === scene.sceneId);
-    const title = screenplaySceneTitle(scene, index, screenplay);
-    const indexLabel = title === "場次 " + (index + 1) ? "" : "場次 " + (index + 1);
+    const title = "場次" + sceneNumeral(index + 1);
+    const sceneLine = scene.interiorExterior ? scene.interiorExterior + " / " + scene.location : scene.location;
     const blocks = scene.blocks.map((block, blockIndex) => blockMarkup(block, scene.blocks.length === 1 && blockIndex === 0)).join('<br data-screenplay-separator="true">');
     const emptyId = scene.blocks.find((block) => !blockDisplay(block))?.id || "";
     const linkOptions = sceneOptions(project, scene.sceneId, scene.id, screenplay).map((item) => '<option value="' + escapeHtml(item.value) + '"' + (scene.sceneId === item.value ? " selected" : "") + '>' + escapeHtml(item.label) + '</option>').join("");
@@ -538,13 +547,13 @@
     const editAttr = ' data-screenplay-edit-control="true"';
     const runButtons = ["action", "dialogue", "text"].map((type) => '<button type="button" class="se-tag-button"' + editAttr + ' data-screenplay-action="tag-selection" data-screenplay-scene-id="' + escapeHtml(scene.id) + '" data-tag-type="' + type + '" aria-label="標記選取文字為' + (type === "text" ? "一般文字" : type === "action" ? "動作" : "對白") + '" title="' + (type === "text" ? "一般文字" : type === "action" ? "動作" : "對白") + '"' + disabled + '>' + iconMarkup(type) + '</button>').join("");
     return '<section class="se-scene-card" data-screenplay-scene-card="' + escapeHtml(scene.id) + '">' +
-      '<header class="se-scene-card-head"><div class="se-scene-title-wrap"><span class="se-scene-index" data-screenplay-scene-index="' + escapeHtml(scene.id) + '"' + (indexLabel ? "" : " hidden") + '>' + escapeHtml(indexLabel) + '</span><h3 data-screenplay-scene-title="' + escapeHtml(scene.id) + '">' + escapeHtml(title) + '</h3></div>' +
+      '<header class="se-scene-card-head"><div class="se-scene-title-wrap"><h3 data-screenplay-scene-title="' + escapeHtml(scene.id) + '">' + escapeHtml(title) + '</h3></div>' +
       '<div class="se-scene-tools"><button type="button" class="se-icon-button"' + editAttr + ' data-screenplay-action="move-scene-up" data-screenplay-scene-id="' + escapeHtml(scene.id) + '"' + (index === 0 ? ' data-screenplay-fixed-disabled="true"' : "") + ' aria-label="場次上移" title="上移"' + (index === 0 || !editable ? " disabled" : "") + '>↑</button>' +
       '<button type="button" class="se-icon-button"' + editAttr + ' data-screenplay-action="move-scene-down" data-screenplay-scene-id="' + escapeHtml(scene.id) + '"' + (index === screenplay.scenes.length - 1 ? ' data-screenplay-fixed-disabled="true"' : "") + ' aria-label="場次下移" title="下移"' + (index === screenplay.scenes.length - 1 || !editable ? " disabled" : "") + '>↓</button>' +
       '<button type="button" class="se-icon-button is-danger"' + editAttr + ' data-screenplay-action="remove-scene" data-screenplay-scene-id="' + escapeHtml(scene.id) + '" aria-label="刪除劇本場次" title="刪除劇本場次"' + disabled + '>×</button></div></header>' +
-      '<div class="se-scene-meta-row"><span class="se-meta-label" aria-hidden="true">場景</span><select data-screenplay-meta="true" data-screenplay-field="interiorExterior" data-screenplay-edit-control="true" data-focus-key="' + escapeHtml(focusKey(["interiorExterior", scene.id])) + '" data-screenplay-scene-id="' + escapeHtml(scene.id) + '" aria-label="場景內外景"' + disabled + '><option value=""' + (!scene.interiorExterior ? " selected" : "") + '>內外景</option><option value="INT."' + (scene.interiorExterior === "INT." ? " selected" : "") + '>內景</option><option value="EXT."' + (scene.interiorExterior === "EXT." ? " selected" : "") + '>外景</option><option value="INT./EXT."' + (scene.interiorExterior === "INT./EXT." ? " selected" : "") + '>內外景</option></select><input type="text" data-screenplay-meta="true" data-screenplay-field="location" data-screenplay-edit-control="true" data-focus-key="' + escapeHtml(focusKey(["location", scene.id])) + '" data-screenplay-scene-id="' + escapeHtml(scene.id) + '" value="' + escapeHtml(scene.location) + '" placeholder="地點" aria-label="場景地點"' + disabled + '>' +
-      '<span class="se-meta-label" aria-hidden="true">時</span><input type="text" data-screenplay-meta="true" data-screenplay-field="time" data-screenplay-edit-control="true" data-focus-key="' + escapeHtml(focusKey(["time", scene.id])) + '" data-screenplay-scene-id="' + escapeHtml(scene.id) + '" value="' + escapeHtml(scene.time) + '" placeholder="日／夜" aria-label="時間"' + disabled + '>' +
-      '<span class="se-meta-label" aria-hidden="true">人</span><input type="text" data-screenplay-meta="true" data-screenplay-field="people" data-screenplay-edit-control="true" data-focus-key="' + escapeHtml(focusKey(["people", scene.id])) + '" data-screenplay-scene-id="' + escapeHtml(scene.id) + '" value="' + escapeHtml(scene.people) + '" placeholder="人物" aria-label="人物"' + disabled + '>' +
+      '<div class="se-manuscript-meta">' + [["location","場景",sceneLine,"內 / 地點"],["time","時",scene.time,""],["people","人",scene.people,""]].map(([field,label,value,hint]) =>
+        '<label><span>' + label + '</span><input data-screenplay-meta data-screenplay-edit-control data-screenplay-field="' + field + '" data-screenplay-scene-id="' + escapeHtml(scene.id) + '" data-focus-key="' + escapeHtml(focusKey([field,scene.id])) + '" value="' + escapeHtml(value) + '" placeholder="' + hint + '"' + disabled + '></label>'
+      ).join("") + '</div><div class="se-scene-meta-row">' +
       '<select class="se-scene-link-select" data-screenplay-field="sceneId" data-screenplay-edit-control="true" data-focus-key="' + escapeHtml(focusKey(["sceneId", scene.id])) + '" data-screenplay-scene-id="' + escapeHtml(scene.id) + '" aria-label="連結分鏡場次"' + disabled + '>' + linkOptions + '</select>' +
       (linked ? '<span class="se-link-state">已連結</span>' : canCreate ? '<button type="button" class="se-secondary-button"' + editAttr + ' data-screenplay-action="create-board-scene" data-screenplay-scene-id="' + escapeHtml(scene.id) + '"' + (entry.busyScenes.has(scene.id) ? ' data-screenplay-fixed-disabled="true" disabled' : "") + '>建立分鏡場次</button>' : '<span class="se-link-state">未連結</span>') + '</div>' +
       '<div class="se-writing-tools"><div class="se-tag-group" role="group" aria-label="標記選取文字">' + runButtons + '</div><span class="se-writing-hint">選取文字後可標記；Enter 換行，Ctrl/⌘+Enter 下一場</span><button type="button" class="se-next-scene-button"' + editAttr + ' data-screenplay-action="next-scene" data-screenplay-scene-id="' + escapeHtml(scene.id) + '" aria-label="新增下一場" title="新增下一場（Ctrl/⌘+Enter）"' + disabled + '><svg viewBox="0 0 20 20" aria-hidden="true" focusable="false"><path d="M3 10h12M10 5l5 5-5 5"/></svg></button></div>' +
@@ -668,18 +677,6 @@
     return true;
   }
 
-  function updateSceneTitle(entry, sceneId) {
-    const host = $("#view-screenplay");
-    const screenplay = entry && entry.value;
-    const index = screenplay ? screenplay.scenes.findIndex((item) => item.id === sceneId) : -1;
-    const scene = index >= 0 ? screenplay.scenes[index] : null;
-    const text = scene ? screenplaySceneTitle(scene, index, screenplay) : "";
-    const title = scene && host && Array.from(host.querySelectorAll("[data-screenplay-scene-title]")).find((item) => item.dataset.screenplaySceneTitle === sceneId);
-    const eyebrow = scene && host && Array.from(host.querySelectorAll("[data-screenplay-scene-index]")).find((item) => item.dataset.screenplaySceneIndex === sceneId);
-    if (title) title.textContent = text;
-    if (eyebrow) { eyebrow.hidden = text === "場次 " + (index + 1); eyebrow.textContent = eyebrow.hidden ? "" : "場次 " + (index + 1); }
-  }
-
   function updateFromElement(element, runShortcut) {
     const entry = getEntry(state.projectId);
     if (!entry || !element) return;
@@ -690,11 +687,19 @@
     if ((field === "subject" || field === "outline") && entry.value[field] !== element.value) { entry.value[field] = element.value; changed = true; }
     else if (field === "format" && entry.value.format !== (element.value === "us" ? "us" : "tw")) { entry.value.format = element.value === "us" ? "us" : "tw"; changed = true; }
     else if (field === "sceneId" && scene && scene.sceneId !== (element.value || null)) { scene.sceneId = element.value || null; changed = true; }
-    else if (["location", "time", "people", "interiorExterior"].includes(field) && scene && scene[field] !== element.value) { scene[field] = element.value; changed = true; }
+    else if (field === "location" && scene) {
+      const match = /^(INT\.\/EXT\.|INT\.|EXT\.|內|外|IN|OUT)\s*\/\s*(.*)$/i.exec(element.value);
+      const interiorExterior = match ? match[1] : "";
+      const location = match ? match[2] : element.value;
+      if (scene.location === location && scene.interiorExterior === interiorExterior) return;
+      Object.assign(scene, {location, interiorExterior});
+      changed = true;
+    }
+    else if (["time", "people"].includes(field) && scene && scene[field] !== element.value) { scene[field] = element.value; changed = true; }
     else return;
     if (!changed) return;
     markDirty(entry);
-    if (scene && ["location", "time", "interiorExterior"].includes(field)) updateSceneTitle(entry, sceneId);
+
   }
 
   function deleteVisiblePrefix(element, length) {
@@ -891,7 +896,22 @@
       if (state.composing === 0 && state.renderPending) { state.renderPending = false; render(); }
     });
     host.addEventListener("keydown", (event) => {
-      if (event.isComposing || event.keyCode === 229 || event.key !== "Enter") return;
+      if (event.isComposing || event.keyCode === 229) return;
+      const meta = event.target.closest("[data-screenplay-meta]");
+      if (meta && (event.key === "Enter" || event.key === "ArrowDown") && !event.shiftKey && !event.altKey) {
+        if (event.ctrlKey || event.metaKey) {
+          if (event.key !== "Enter") return;
+          nextScene(getEntry(state.projectId), findScene(getEntry(state.projectId), meta.dataset.screenplaySceneId));
+        } else {
+          const fields = Array.from(meta.closest(".se-scene-card").querySelectorAll("[data-screenplay-meta], [data-screenplay-writing-surface]"));
+          const next = fields[fields.indexOf(meta) + 1];
+          next.focus();
+          if (next.isContentEditable) setSurfaceSelection(next, 0, 0);
+        }
+        event.preventDefault();
+        return;
+      }
+      if (event.key !== "Enter") return;
       const surface = event.target && event.target.matches && event.target.matches("[data-screenplay-writing-surface]") ? event.target : null;
       if (surface && (event.ctrlKey || event.metaKey)) {
         event.preventDefault();
@@ -904,18 +924,17 @@
         updateBodyFromElement(surface);
         return;
       }
-      const meta = event.target && event.target.matches && event.target.matches("[data-screenplay-meta], .se-scene-link-select") ? event.target : null;
-      if (!meta) return;
-      event.preventDefault();
-      const row = meta.closest(".se-scene-meta-row");
-      if (!row) return;
-      const fields = Array.from(row.querySelectorAll("[data-screenplay-meta], .se-scene-link-select"));
-      const index = fields.indexOf(meta);
-      const next = fields[index + 1];
-      if (next) next.focus();
-      else {
-        const body = meta.closest("[data-screenplay-scene-card]")?.querySelector("[data-screenplay-writing-surface]");
-        if (body) { body.focus(); setSurfaceSelection(body, 0, 0); }
+    });
+    function completeLocation(element) {
+      if (element.dataset.screenplayField === "location" && /^(內|外|in|out)$/i.test(element.value)) {
+        element.value += " / ";
+        element.setSelectionRange(element.value.length, element.value.length);
+      }
+    }
+    host.addEventListener("compositionend", event => {
+      if (event.target.dataset.screenplayField === "location") {
+        completeLocation(event.target);
+        updateFromElement(event.target);
       }
     });
     host.addEventListener("input", (event) => {
@@ -923,7 +942,10 @@
       if (!element || !element.dataset || !element.dataset.screenplayField) return;
       if (element.matches("[data-screenplay-writing-surface]")) {
         if (!event.isComposing && !composingFields.has(element)) updateBodyFromElement(element);
-      } else updateFromElement(element, false);
+      } else if (!event.isComposing) {
+        if (!event.inputType || event.inputType.startsWith("insert")) completeLocation(element);
+        updateFromElement(element);
+      }
     });
     host.addEventListener("change", (event) => {
       const element = event.target;
