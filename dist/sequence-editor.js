@@ -87,6 +87,10 @@
         trailingSaving: null,
         focusInfo: null,
         forceFocus: false,
+        dragGesture: null,
+        deferredRender: false,
+        suppressClick: false,
+        suppressClickTimer: null,
         listeners: null,
         renderVersion: 0,
         mutationPending: 0,
@@ -96,7 +100,10 @@
       states.set(identity.key, state);
       bindModel(state);
     }
-    if (state.host && state.host !== options.host && !state.host.isConnected) releasePreviews(state);
+    if (state.host && state.host !== options.host) {
+      cancelPointerDrag(state);
+      if (!state.host.isConnected) releasePreviews(state);
+    }
     state.projectId = identity.projectId;
     state.shot = options.shot;
     state.model = options.model;
@@ -181,12 +188,17 @@
     state.projectBlocked = !current;
     if (!current) {
       if (state.trailingTimer) { clearTimeout(state.trailingTimer); state.trailingTimer = null; }
+      cancelPointerDrag(state);
       releasePreviews(state);
       if (state.photoTarget) state.photoTarget.blocked = true;
       lockPhotoSession(state, "專案或鏡頭已切換；照片沒有保存。");
       lockDrawingSession(state, "專案或鏡頭已切換；手繪保存已停用。");
     } else {
       const frames = sequenceFrames(state);
+      if (state.dragGesture && (!state.host || state.host !== state.dragGesture.host || !state.host.isConnected ||
+          !frames.some(function (frame) { return frame.id === state.dragGesture.sourceFrameId; }) ||
+          !sameIdOrder(frames.map(function (frame) { return frame.id; }), state.dragGesture.baseFrameIds))) cancelPointerDrag(state);
+      if (!state.dragGesture) flushDeferredRender(state);
       if (state.photoTarget && !state.photoTarget.placeholder && !frames.some(function (frame) { return frame.id === state.photoTarget.frameId; })) {
         state.photoTarget.blocked = true;
         lockPhotoSession(state, "目標連續分鏡已刪除；照片沒有保存。");
@@ -530,6 +542,13 @@
       }
     };
     const click = function (event) {
+      if (state.suppressClick) {
+        state.suppressClick = false;
+        if (state.suppressClickTimer) { clearTimeout(state.suppressClickTimer); state.suppressClickTimer = null; }
+        event.preventDefault();
+        event.stopPropagation();
+        return;
+      }
       const button = event.target && event.target.closest ? event.target.closest("[data-sequence-action]") : null;
       if (!button || !host.contains(button)) return;
       event.preventDefault();
@@ -547,7 +566,22 @@
       else if (action === "move-up" || action === "move-down") void moveFrame(state, id, action === "move-up" ? -1 : 1);
       else if (action === "delete") void deleteFrame(state, id);
     };
-    const listeners = { input: input, focusin: focusin, focusout: focusout, compositionstart: compositionstart, compositionend: compositionend, click: click };
+    const pointerdown = function (event) { sequencePointerDown(state, host, event); };
+    const pointermove = function (event) { sequencePointerMove(state, host, event); };
+    const pointerup = function (event) { sequencePointerUp(state, host, event, true); };
+    const pointercancel = function (event) { sequencePointerUp(state, host, event, false); };
+    const lostpointercapture = function (event) {
+      const gesture = state.dragGesture;
+      if (gesture && gesture.host === host && gesture.pointerId === event.pointerId) {
+        cancelPointerDrag(state);
+        flushDeferredRender(state);
+      }
+    };
+    const listeners = {
+      input: input, focusin: focusin, focusout: focusout, compositionstart: compositionstart,
+      compositionend: compositionend, click: click, pointerdown: pointerdown, pointermove: pointermove,
+      pointerup: pointerup, pointercancel: pointercancel, lostpointercapture: lostpointercapture
+    };
     Object.keys(listeners).forEach(function (type) { host.addEventListener(type, listeners[type]); });
     host.__kinoSequenceListeners = listeners;
   }
@@ -555,6 +589,12 @@
   function renderState(state, restoreFocus) {
     const host = state.host;
     if (!host) return;
+    if (state.dragGesture) {
+      state.deferredRender = true;
+      refreshStateControls(state);
+      return;
+    }
+    state.deferredRender = false;
     const active = activeFieldSnapshot(state, host);
     const focusInfo = state.focusInfo;
     const activeElement = root && root.document && root.document.activeElement;
@@ -737,20 +777,191 @@
     try { state.onChange(state.shotId); } catch (error) { report(state, error); }
   }
 
+  function clearPointerDragVisuals(gesture) {
+    const host = gesture && gesture.host;
+    if (host && host.querySelectorAll) {
+      host.querySelectorAll("[data-sequence-drop]").forEach(function (element) { delete element.dataset.sequenceDrop; });
+    }
+    if (gesture && gesture.sourceElement) gesture.sourceElement.classList.remove("is-sequence-dragging");
+  }
+
+  function cancelPointerDrag(state) {
+    const gesture = state && state.dragGesture;
+    if (!gesture) return;
+    state.dragGesture = null;
+    clearPointerDragVisuals(gesture);
+    try {
+      if (gesture.host && gesture.host.hasPointerCapture(gesture.pointerId)) gesture.host.releasePointerCapture(gesture.pointerId);
+    } catch (_) {}
+  }
+
+  function flushDeferredRender(state) {
+    if (!state || !state.deferredRender || state.dragGesture || state.projectBlocked) return;
+    const host = state.host;
+    if (!host || !host.isConnected) return;
+    const project = projectSnapshot(state);
+    if (!project || !Array.isArray(project.shots) || !project.shots.some(function (shot) { return shot.id === state.shotId; })) return;
+    state.deferredRender = false;
+    renderState(state, false);
+  }
+
+  function sameIdOrder(left, right) {
+    return left.length === right.length && left.every(function (id, index) { return id === right[index]; });
+  }
+
+  function dropOrder(baseIds, sourceId, targetId, position) {
+    if (sourceId === targetId) return null;
+    const ids = baseIds.slice();
+    const sourceIndex = ids.indexOf(sourceId);
+    if (sourceIndex < 0) return null;
+    ids.splice(sourceIndex, 1);
+    const targetIndex = ids.indexOf(targetId);
+    if (targetIndex < 0) return null;
+    ids.splice(targetIndex + (position === "after" ? 1 : 0), 0, sourceId);
+    return sameIdOrder(ids, baseIds) ? null : ids;
+  }
+
+  function updatePointerDrop(state, gesture, clientX, clientY) {
+    const document = root && root.document;
+    const pointTarget = document && document.elementFromPoint(clientX, clientY);
+    const target = pointTarget && pointTarget.closest ? pointTarget.closest(".sequence-group-head, .sequence-frame-row[data-sequence-saved-frame]") : null;
+    if (!target || !gesture.host.contains(target)) {
+      clearPointerDragVisuals(gesture);
+      gesture.dropOrder = null;
+      return;
+    }
+    let targetId;
+    let position;
+    if (target.matches(".sequence-group-head")) {
+      targetId = gesture.baseFrameIds[0];
+      position = "before";
+    } else {
+      targetId = target.dataset.sequenceFrameId;
+      const rect = target.getBoundingClientRect();
+      position = clientY < rect.top + rect.height / 2 ? "before" : "after";
+    }
+    const nextOrder = dropOrder(gesture.baseFrameIds, gesture.sourceFrameId, targetId, position);
+    clearPointerDragVisuals(gesture);
+    if (!nextOrder) {
+      gesture.dropOrder = null;
+      return;
+    }
+    target.dataset.sequenceDrop = position;
+    gesture.dropTarget = target;
+    gesture.dropOrder = nextOrder;
+  }
+
+  async function saveFrameOrder(state, ids, guard) {
+    if (!writable(state) || typeof state.model.reorderSequenceFrames !== "function") return false;
+    const project = projectSnapshot(state);
+    if (!project || !Array.isArray(project.shots) || !project.shots.some(function (shot) { return shot.id === state.shotId; })) return false;
+    if (guard && (project.projectId !== guard.projectId ||
+        state.host !== guard.host || !guard.host || !guard.host.isConnected)) return false;
+    const frames = sequenceFrames(state);
+    const currentIds = frames.map(function (frame) { return frame.id; });
+    if (guard && !sameIdOrder(currentIds, guard.frameIds)) return false;
+    if (ids.length !== currentIds.length || currentIds.some(function (id) { return !ids.includes(id); }) || sameIdOrder(ids, currentIds)) return false;
+    state.mutationPending += 1;
+    try {
+      await state.model.reorderSequenceFrames(state.shotId, ids);
+      notifyChange(state);
+      return true;
+    } catch (error) {
+      report(state, error);
+      return false;
+    } finally { state.mutationPending = Math.max(0, state.mutationPending - 1); }
+  }
+
+  function sequencePointerDown(state, host, event) {
+    if (state.dragGesture) return;
+    if (state.suppressClickTimer) { clearTimeout(state.suppressClickTimer); state.suppressClickTimer = null; }
+    state.suppressClick = false;
+    if (!host.isConnected || event.isPrimary === false || event.button !== 0 || !writable(state)) return;
+    const target = event.target && event.target.closest ? event.target : null;
+    if (!target || !host.contains(target) || target.closest("button, input, textarea, select, [contenteditable='true'], [data-sequence-action], .sequence-image-cell, .sequence-frame-fields, .sequence-frame-tools, .sequence-master-tools")) return;
+    const row = target.closest(".sequence-frame-row[data-sequence-saved-frame]");
+    const head = !row && target.closest(".sequence-group-head");
+    if ((!row && !head) || !host.contains(row || head)) return;
+    const project = projectSnapshot(state);
+    if (!project || !Array.isArray(project.shots) || !project.shots.some(function (shot) { return shot.id === state.shotId; })) return;
+    const frames = sequenceFrames(state);
+    if (frames.length < 2) return;
+    const sourceFrameId = row ? row.dataset.sequenceFrameId : frames[0].id;
+    const frameIds = frames.map(function (frame) { return frame.id; });
+    if (!frameIds.includes(sourceFrameId)) return;
+    const gesture = {
+      pointerId: event.pointerId,
+      pointerType: event.pointerType,
+      sourceFrameId: sourceFrameId,
+      sourceElement: row || head,
+      host: host,
+      projectId: project.projectId,
+      frameIds: frameIds,
+      baseFrameIds: frameIds,
+      active: false,
+      dropOrder: null,
+      dropTarget: null,
+      startX: event.clientX,
+      startY: event.clientY
+    };
+    state.dragGesture = gesture;
+    try { host.setPointerCapture(event.pointerId); } catch (_) {}
+  }
+
+  function sequencePointerMove(state, host, event) {
+    const gesture = state.dragGesture;
+    if (!gesture || gesture.host !== host || gesture.pointerId !== event.pointerId) return;
+    if (!gesture.active) {
+      if (Math.hypot(event.clientX - gesture.startX, event.clientY - gesture.startY) < 6) return;
+      const project = projectSnapshot(state);
+      const liveFrames = sequenceFrames(state);
+      if (!project || project.projectId !== gesture.projectId ||
+          !Array.isArray(project.shots) || !project.shots.some(function (shot) { return shot.id === state.shotId; })) {
+        cancelPointerDrag(state);
+        flushDeferredRender(state);
+        return;
+      }
+      if (!sameIdOrder(liveFrames.map(function (frame) { return frame.id; }), gesture.baseFrameIds) ||
+          !liveFrames.some(function (frame) { return frame.id === gesture.sourceFrameId; })) {
+        cancelPointerDrag(state);
+        flushDeferredRender(state);
+        return;
+      }
+      gesture.active = true;
+      gesture.sourceElement.classList.add("is-sequence-dragging");
+    }
+    event.preventDefault();
+    updatePointerDrop(state, gesture, event.clientX, event.clientY);
+  }
+
+  function sequencePointerUp(state, host, event, commit) {
+    const gesture = state.dragGesture;
+    if (!gesture || gesture.host !== host || gesture.pointerId !== event.pointerId) return;
+    if (gesture.active && commit) updatePointerDrop(state, gesture, event.clientX, event.clientY);
+    const order = gesture.active && commit ? gesture.dropOrder : null;
+    const guard = { host: host, projectId: gesture.projectId, frameIds: gesture.baseFrameIds };
+    const wasActive = gesture.active;
+    cancelPointerDrag(state);
+    if (wasActive) {
+      state.suppressClick = true;
+      state.suppressClickTimer = setTimeout(function () {
+        state.suppressClick = false;
+        state.suppressClickTimer = null;
+      }, 500);
+    }
+    if (order) {
+      void saveFrameOrder(state, order, guard).finally(function () { flushDeferredRender(state); });
+    } else flushDeferredRender(state);
+  }
+
   async function moveFrame(state, id, delta) {
-    if (!writable(state) || typeof state.model.reorderSequenceFrames !== "function") return;
     const frames = sequenceFrames(state);
     const from = frames.findIndex(function (frame) { return frame.id === id; });
     const to = from + delta;
     if (from < 0 || to < 0 || to >= frames.length) return;
     const ids = frames.map(function (frame) { return frame.id; });
     ids.splice(to, 0, ids.splice(from, 1)[0]);
-    state.mutationPending += 1;
-    try {
-      await state.model.reorderSequenceFrames(state.shotId, ids);
-      notifyChange(state);
-    } catch (error) { report(state, error); }
-    finally { state.mutationPending = Math.max(0, state.mutationPending - 1); }
+    await saveFrameOrder(state, ids);
   }
 
   async function deleteFrame(state, id) {

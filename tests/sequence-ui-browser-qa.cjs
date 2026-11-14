@@ -28,6 +28,24 @@ async function closeDrawingDraft(page) {
   await popup.waitFor({ state: "detached" });
 }
 
+async function dragFromBlankSpace(page, source, target, edge, beforeDrop) {
+  const start = await source.evaluate((row) => {
+    const rect = row.getBoundingClientRect();
+    return { x: rect.left + rect.width * .58, y: rect.top + 2 };
+  });
+  const end = await target.evaluate((row, targetEdge) => {
+    const rect = row.getBoundingClientRect();
+    const y = targetEdge === "after" ? rect.bottom - 2 : targetEdge === "middle" ? rect.top + rect.height / 2 : rect.top + 2;
+    return { x: rect.left + rect.width * .58, y };
+  }, edge);
+  await page.mouse.move(start.x, start.y);
+  await page.mouse.down();
+  await page.waitForTimeout(100);
+  await page.mouse.move(end.x, end.y, { steps: 8 });
+  if (beforeDrop) await beforeDrop();
+  await page.mouse.up();
+}
+
 async function main() {
   const browserPath = process.env.PLAYWRIGHT_EXECUTABLE_PATH || chromium.executablePath();
   assert.ok(fs.existsSync(browserPath), "Pinned Chromium executable is missing.");
@@ -52,7 +70,9 @@ async function main() {
     const page = await context.newPage();
     page.setDefaultTimeout(15000);
     const pageErrors = [];
+    let filechooserCount = 0;
     page.on("pageerror", (error) => pageErrors.push(error.message));
+    page.on("filechooser", () => { filechooserCount += 1; });
     const response = await page.goto("http://127.0.0.1:" + server.address().port, { waitUntil: "domcontentloaded" });
     assert.ok(response && response.ok(), "Local storyboard returned an unsuccessful response.");
     await page.locator("#lifecycle-project-title").waitFor({ state: "visible" });
@@ -171,11 +191,54 @@ async function main() {
     await page.screenshot({ path: path.join(root, "tmp", "sequence-ui-qa.png"), fullPage: true });
 
     const savedRows = host.locator(".sequence-frame-row[data-sequence-saved-frame]");
-    const originalOrder = await page.evaluate((id) => StoryModel.getSequenceFrames(id).map((frame) => frame.id), shotId);
+    const beforeDrag = await page.evaluate((id) => ({
+      order: StoryModel.getSequenceFrames(id).map((frame) => frame.id),
+      shotCount: StoryModel.getProject().shots.length
+    }), shotId);
+    const bId = beforeDrag.order[1];
+    const cId = beforeDrag.order[2];
+    const bVisualField = host.locator('[data-sequence-frame-id="' + bId + '"][data-sequence-field="visual"]');
+    await bVisualField.fill("B 畫面拖曳前編輯");
+    const filechoosersBeforeDrag = filechooserCount;
+    await dragFromBlankSpace(
+      page,
+      host.locator('.sequence-frame-row[data-sequence-frame-id="' + cId + '"]'),
+      host.locator('.sequence-frame-row[data-sequence-frame-id="' + bId + '"]'),
+      "before",
+      async () => {
+        assert.equal(await host.locator('[data-sequence-drop="before"]').count(), 1, "Drag shows one non-layout drop indicator before B.");
+        await page.screenshot({ path: path.join(root, "tmp", "sequence-drag-qa.png"), fullPage: true });
+      }
+    );
+    const expectedDragOrder = [beforeDrag.order[0], cId, bId, beforeDrag.order[3]];
+    await page.waitForFunction((args) => StoryModel.getSequenceFrames(args.id).map((frame) => frame.id).join(",") === args.order.join(","), {
+      id: shotId,
+      order: expectedDragOrder
+    });
+    const afterDrag = await page.evaluate((id) => ({
+      order: StoryModel.getSequenceFrames(id).map((frame) => frame.id),
+      shotCount: StoryModel.getProject().shots.length
+    }), shotId);
+    assert.deepEqual(afterDrag.order, expectedDragOrder, "Dragging C onto the upper half of B moves C before B.");
+    assert.equal(await page.evaluate((args) => StoryModel.getSequenceFrames(args.id).find((frame) => frame.id === args.frameId).visual, { id: shotId, frameId: bId }), "B 畫面拖曳前編輯", "The blur save completes while the drag keeps the same frame order.");
+    assert.equal(afterDrag.shotCount, beforeDrag.shotCount, "A frame drag does not reorder or create master Shots.");
+    assert.equal(filechooserCount, filechoosersBeforeDrag, "Dragging over a row never opens the photo picker.");
+
+    const dId = beforeDrag.order[3];
+    const dragAfterOrder = [beforeDrag.order[0], bId, dId, cId];
+    await dragFromBlankSpace(page, host.locator('.sequence-frame-row[data-sequence-frame-id="' + cId + '"]'), host.locator('.sequence-frame-row[data-sequence-frame-id="' + dId + '"]'), "after");
+    await page.waitForFunction((args) => StoryModel.getSequenceFrames(args.id).map((frame) => frame.id).join(",") === args.order.join(","), { id: shotId, order: dragAfterOrder });
+    const dragMasterOrder = [cId, beforeDrag.order[0], bId, dId];
+    await dragFromBlankSpace(page, host.locator('.sequence-frame-row[data-sequence-frame-id="' + cId + '"]'), host.locator(".sequence-group-head"), "middle");
+    await page.waitForFunction((args) => StoryModel.getSequenceFrames(args.id).map((frame) => frame.id).join(",") === args.order.join(","), { id: shotId, order: dragMasterOrder });
+    assert.equal(await page.evaluate(() => StoryModel.getProject().shots.length), beforeDrag.shotCount, "All within-group drags keep the master Shot count unchanged.");
+    assert.equal(filechooserCount, filechoosersBeforeDrag, "Dragging before/after rows and onto A never opens the photo picker.");
+
+    const keyboardBaseOrder = await page.evaluate((id) => StoryModel.getSequenceFrames(id).map((frame) => frame.id), shotId);
     await savedRows.nth(0).locator('[data-sequence-action="move-down"]').click();
-    await page.waitForFunction((args) => StoryModel.getSequenceFrames(args.id).map((frame) => frame.id).join(",") !== args.order.join(","), { id: shotId, order: originalOrder });
+    await page.waitForFunction((args) => StoryModel.getSequenceFrames(args.id).map((frame) => frame.id).join(",") !== args.order.join(","), { id: shotId, order: keyboardBaseOrder });
     const reordered = await page.evaluate((id) => StoryModel.getSequenceFrames(id).map((frame) => frame.id), shotId);
-    assert.equal(reordered[1], originalOrder[2], "The child row reorder control swaps stable frame content.");
+    assert.equal(reordered[1], keyboardBaseOrder[2], "The keyboard-accessible reorder controls still move one frame.");
     page.once("dialog", (dialog) => dialog.accept());
     await host.locator('.sequence-frame-row[data-sequence-saved-frame]').first().getByRole("button", { name: /刪除/ }).click();
     await page.waitForFunction((args) => StoryModel.getSequenceFrames(args.id).length === args.count - 1, { id: shotId, count: 4 });
@@ -206,7 +269,7 @@ async function main() {
     assert.equal(projectSwitch.missingFrameToasts, 0, "The old sequence state cannot show ‘frame not found’ after project switch.");
     assert.deepEqual(pageErrors, [], "The browser reports no uncaught page errors.");
     await context.close();
-    console.log("PASS sequence editor UI: transient placeholder, multiline fields, canceled photo/drawing, atomic first stroke, crop confirmation and previews, frame reorder/delete");
+    console.log("PASS sequence editor UI: transient placeholder, multiline fields, canceled photo/drawing, atomic first stroke, crop confirmation and previews, pointer/keyboard reorder, delete");
     console.log("PASS ZIP-copy project switch: 0 application error toasts");
     console.log("SCREENSHOT tmp/sequence-ui-qa.png");
   } finally {
