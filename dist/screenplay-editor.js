@@ -477,13 +477,11 @@
   }
 
   function focusSurface(sceneId, start, end) {
-    root.setTimeout(() => {
       const host = $("#view-screenplay");
       const surface = host && Array.from(host.querySelectorAll("[data-screenplay-writing-surface]")).find((node) => node.dataset.screenplaySceneId === sceneId);
       if (!surface) return;
       surface.focus({ preventScroll: true });
       setSurfaceSelection(surface, start, end);
-    }, 0);
   }
 
   function insertPlainText(surface, value) {
@@ -512,6 +510,36 @@
     range.collapse(true);
     if (selection) { selection.removeAllRanges(); selection.addRange(range); }
     return false;
+  }
+
+  function exitEmptyDialogue(surface) {
+    const selection = root.getSelection();
+    if (!selection?.isCollapsed || !selection.rangeCount) return false;
+    const node = selection.anchorNode;
+    const run = (node.nodeType === 1 ? node : node.parentElement).closest("[data-screenplay-run-type='dialogue']");
+    if (!run || !surface.contains(run)) return false;
+    const offset = surfacePointOffset(run, node, selection.anchorOffset);
+    const text = visibleText(run);
+    const lineStart = text.lastIndexOf("\n", Math.max(0,offset - 1)) + 1;
+    const nextBreak = text.indexOf("\n",offset);
+    const lineEnd = nextBreak < 0 ? text.length : nextBreak;
+    if (!lineStart || text.slice(lineStart,lineEnd).trim()) return false;
+    const range = selection.getRangeAt(0);
+    range.setEnd(run,run.childNodes.length);
+    range.deleteContents();
+    const plain = surface.ownerDocument.createElement("span");
+    plain.className = "se-script-run is-text";
+    plain.dataset.screenplayRun = "true";
+    plain.dataset.screenplayRunId = makeId("script-block");
+    plain.dataset.screenplayRunType = "text";
+    plain.dataset.screenplayRunCharacter = "";
+    plain.appendChild(surface.ownerDocument.createElement("br"));
+    run.after(plain);
+    range.setStart(plain,0);
+    range.collapse(true);
+    selection.removeAllRanges();
+    selection.addRange(range);
+    return true;
   }
 
   function insertLineBreak(surface) {
@@ -647,9 +675,9 @@
       '<details class="se-overview"' + (state.overviewOpen ? " open" : "") + '><summary class="se-overview-summary"><div><span class="se-eyebrow">PROJECT NOTES</span><h3>主旨與大綱</h3></div><span class="se-overview-chevron" aria-hidden="true">⌄</span></summary><div class="se-overview-grid">' +
       labelField("主旨", "subject", screenplay.subject, "", { multiline: true, rows: 5, placeholder: "一句話描述故事核心" }) +
       labelField("故事大綱", "outline", screenplay.outline, "", { multiline: true, rows: 5, placeholder: "整理故事起承轉合…" }) + '</div></details>' +
-      '<section class="se-scene-section"><div class="se-section-heading"><div><span class="se-eyebrow">SCENE OUTLINE</span><h3>場次與內容</h3><p>Ctrl／⌘ + Shift + 1 動作 · 2 對白 · 3 一般文字</p></div><button type="button" class="se-primary-button" data-screenplay-edit-control="true" data-screenplay-action="add-scene" aria-label="新增劇本場次"' + (!editable ? " disabled" : "") + '>＋ 新增劇本場次</button></div>' +
+      '<section class="se-scene-section"><div class="se-section-heading"><div><span class="se-eyebrow">SCENE OUTLINE</span><h3>場次與內容</h3><p>F1 動作 · F2 對白 · F3 一般文字</p></div><button type="button" class="se-primary-button" data-screenplay-edit-control="true" data-screenplay-action="add-scene" aria-label="新增劇本場次"' + (!editable ? " disabled" : "") + '>＋ 新增劇本場次</button></div>' +
       '<div class="se-writing-tools" role="toolbar" aria-label="腳本標記">' +
-      ["action","dialogue","text"].map((type,index) => '<button type="button" class="se-tag-button" data-screenplay-action="tag-selection" data-tag-type="' + type + '" aria-label="' + ["動作","對白","一般文字"][index] + '" title="' + ["動作","對白","一般文字"][index] + ' Ctrl/⌘+Shift+' + (index+1) + '">' + iconMarkup(type) + '</button>').join("") +
+      ["action","dialogue","text"].map((type,index) => '<button type="button" class="se-tag-button" data-screenplay-action="tag-selection" data-tag-type="' + type + '" aria-label="' + ["動作","對白","一般文字"][index] + '" title="' + ["動作","對白","一般文字"][index] + ' F' + (index+1) + '">' + iconMarkup(type) + '</button>').join("") +
       '<button type="button" class="se-next-scene-button" data-screenplay-action="next-scene" aria-label="新增下一場" title="新增下一場 Ctrl/⌘+Enter">＋</button></div>' +
       (sceneCards || '<div class="se-empty-scenes"><span>＋</span><strong>還沒有劇本場次</strong><p>新增一場，從場景設定或劇本內容開始。</p></div>') + '</section></div>';
     if (compareHost) compareMarkup(project, screenplay);
@@ -900,8 +928,8 @@
     });
     host.addEventListener("keydown", (event) => {
       if (event.isComposing || event.keyCode === 229) return;
-          if ((event.ctrlKey || event.metaKey) && event.shiftKey && ["Digit1","Digit2","Digit3"].includes(event.code)) {
-        const type = {Digit1:"action",Digit2:"dialogue",Digit3:"text"}[event.code];
+          if (!event.ctrlKey && !event.metaKey && !event.altKey && ["F1","F2","F3"].includes(event.key)) {
+        const type = {F1:"action",F2:"dialogue",F3:"text"}[event.key];
         const surface = state.activeSurface;
         if (surface?.isConnected) {
           event.preventDefault();
@@ -934,7 +962,18 @@
       }
       if (surface) {
         event.preventDefault();
-        insertLineBreak(surface);
+        const selection = root.getSelection();
+        if (selection?.isCollapsed && selection.anchorNode === surface) {
+          const previous = surface.childNodes[selection.anchorOffset - 1];
+          if (previous?.dataset?.screenplayRunType === "dialogue") {
+            const range = selection.getRangeAt(0);
+            range.selectNodeContents(previous);
+            range.collapse(false);
+            selection.removeAllRanges();
+            selection.addRange(range);
+          }
+        }
+        if (!exitEmptyDialogue(surface)) insertLineBreak(surface);
         updateBodyFromElement(surface);
         return;
       }
