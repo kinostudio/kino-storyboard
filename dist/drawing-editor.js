@@ -4268,6 +4268,9 @@
     points.forEach(point=>{x1=Math.min(x1,point.x);y1=Math.min(y1,point.y);x2=Math.max(x2,point.x);y2=Math.max(y2,point.y);});
     this.layerBox={x:fitted.x+x1*fitted.width,y:fitted.y+y1*fitted.height,width:Math.max(8,(x2-x1)*fitted.width),height:Math.max(8,(y2-y1)*fitted.height)};
     Object.assign(this.transformBox.style,{left:this.layerBox.x+"px",top:this.layerBox.y+"px",width:this.layerBox.width+"px",height:this.layerBox.height+"px"});
+    const rotationHandle=this.transformBox.querySelector('[data-transform-handle="rotate"]');
+    rotationHandle.style.top=this.layerBox.y < 42 ? "8px" : "";
+
   };
 
   DrawingEditor.prototype.startLayerGesture = function (event) {
