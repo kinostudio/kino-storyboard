@@ -1490,3 +1490,12 @@ body.is-read-only #shot-list .shot-card.is-gallery .shot-card-text-preview:focus
 #shot-list .shot-card .shot-card-text-preview textarea:focus {
   height: calc(7em + 4px);
 }
+
+.shot-move-options { display: grid; gap: 12px; margin: 10px 0 14px; }
+.shot-move-option-group > .field-label { display: block; margin-bottom: 6px; }
+.shot-move-tags { display: flex; flex-wrap: wrap; gap: 6px; }
+.shot-move-tag { min-height: 36px; padding: 7px 10px; border: 1px solid #e0e4e8; border-radius: 8px; background: #fafbf9; color: #5a687e; font: inherit; font-size: 11px; cursor: pointer; }
+.shot-move-tag[aria-pressed="true"] { background: #e8edf7; border-color: #7788ac; color: #31466d; }
+.shot-move-tag:focus-visible { outline: 2px solid #647ca5; outline-offset: 2px; }
+.shot-move-tag:disabled { opacity: .5; cursor: default; }
+@media (pointer: coarse) { .shot-move-tag { min-height: 44px; } }

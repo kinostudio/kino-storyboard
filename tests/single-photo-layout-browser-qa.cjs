@@ -68,9 +68,30 @@ async function main() {
      return ids.indexOf(sourceId)>ids.indexOf(targetId);
    },{sourceId,targetId},{timeout:5000});
  }
+
+ const move=page.locator("#shot-move");
+ await move.fill("自訂推鏡");
+ await move.press("Tab");
+ for (const label of ["特寫","FIX","PAN L","PAN R","ZOOM IN","ZOOM OUT"]) {
+   await page.getByRole("button",{name:label,exact:true}).click();
+   await page.waitForFunction(label=>document.querySelector("#shot-move").value.includes(label),label);
+ }
+ assert.equal(await page.getByRole("button",{name:"左PAN",exact:true}).count(),0);
+ assert.equal(await page.getByRole("button",{name:"右PAN",exact:true}).count(),0);
+ await page.getByRole("button",{name:"PAN R",exact:true}).click();
+ const expected=await move.inputValue();
+ assert.ok(expected.includes("自訂推鏡") && !expected.includes("PAN R"));
+ await page.waitForFunction(expected=>window.StoryModel.getState().shots.some(s=>s.move===expected),expected);
+ const editedId=await move.getAttribute("data-entity-id");
+ await page.reload();
+ await page.getByRole("button",{name:/待命名專案 revision/}).click();
+ await page.locator('#shot-list [data-shot="'+editedId+'"]').click({position:{x:3,y:8}});
+ assert.equal(await page.locator("#shot-move").inputValue(),expected);
+ assert.equal(await page.getByRole("button",{name:"特寫",exact:true}).getAttribute("aria-pressed"),"true");
+ assert.equal(await page.getByRole("button",{name:"PAN R",exact:true}).getAttribute("aria-pressed"),"false");
  assert.deepEqual(errors,[]);
+
  console.log("PASS: list/gallery multiline VO, image drag reorder and no multi-photo panel");
  } finally {await browser.close();server.close();}
 }
 main().catch(e=>{console.error(e);server.close();process.exitCode=1});
-
