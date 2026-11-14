@@ -71,8 +71,27 @@ async function main(){
  const cards=page.locator("#shot-list .shot-card[data-shot]");
  const ids=await cards.evaluateAll(items=>items.map(e=>e.dataset.shot));
  let fileChoosers=0;page.on("filechooser",()=>fileChoosers++);
- await cards.nth(0).locator(".shot-thumb").click();
- await cards.nth(1).locator("[data-shot-select]").click();
+ const firstCard=cards.nth(0), firstToggle=firstCard.locator("[data-shot-select]"), drawing=firstCard.locator(".shot-drawing-entry");
+ await page.mouse.move(0,0);
+ assert.equal(await firstToggle.evaluate(button=>getComputedStyle(button).opacity),"0");
+ await firstCard.hover();
+ await page.waitForTimeout(180);
+ const hoverState=await firstCard.evaluate(card=>({hover:card.matches(":hover"),focusWithin:card.matches(":focus-within"),opacity:getComputedStyle(card.querySelector("[data-shot-select]")).opacity}));
+ assert.equal(hoverState.opacity,"0.78",JSON.stringify(hoverState));
+ if(await drawing.count()){
+   assert.equal(await drawing.evaluate(button=>getComputedStyle(button).opacity),"0");
+   await firstCard.locator(".shot-art-wrap").hover();
+   await page.waitForTimeout(180);
+   assert.equal(await drawing.evaluate(button=>getComputedStyle(button).opacity),"1");
+ }
+ await firstToggle.click();
+ await page.waitForTimeout(180);
+ assert.equal(await firstToggle.getAttribute("aria-checked"),"true");
+ assert.equal(await firstToggle.evaluate(button=>getComputedStyle(button).opacity),"1");
+ const secondCard=cards.nth(1), secondToggle=secondCard.locator("[data-shot-select]");
+ await secondCard.hover();
+ await secondToggle.click();
+ assert.equal(await secondToggle.getAttribute("aria-checked"),"true");
  assert.equal(await page.locator('[data-shot-select][aria-checked="true"]').count(),2);
  const a=await cards.nth(0).locator(".shot-thumb").boundingBox();
  const b=await cards.nth(2).boundingBox();

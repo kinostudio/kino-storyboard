@@ -7580,9 +7580,13 @@
     }
     const shotModeButton = $("#shot-reorder-mode");
     if (shotModeButton) {
+      const actionLabel = shotMultiSelectMode ? "完成多選" : "多選鏡頭";
       shotModeButton.classList.toggle("is-active", shotMultiSelectMode);
       shotModeButton.setAttribute("aria-pressed", shotMultiSelectMode ? "true" : "false");
-      shotModeButton.textContent = shotMultiSelectMode ? "完成多選" : "多選鏡頭";
+      shotModeButton.setAttribute("aria-label", actionLabel);
+      shotModeButton.title = actionLabel;
+      const label = shotModeButton.querySelector(".storyboard-visually-hidden");
+      if (label) label.textContent = actionLabel;
     }
     const scheduleModeButton = $("#schedule-reorder-mode");
     if (scheduleModeButton) {
@@ -7599,8 +7603,11 @@
         toggle.className = "shot-select-toggle"; toggle.setAttribute("role","checkbox");
         card.appendChild(toggle);
       }
-      toggle.hidden = !shotMultiSelectMode;
-      toggle.setAttribute("aria-label", "選取" + shotNumberWithTitle(byId(card.dataset.shot)));
+      toggle.hidden = false;
+      const selectionLabel = shotNumberWithTitle(byId(card.dataset.shot));
+      const actionLabel = (selected ? "取消選取 " : "選取 ") + selectionLabel;
+      toggle.setAttribute("aria-label", actionLabel);
+      toggle.title = actionLabel;
       toggle.setAttribute("aria-checked", String(selected));
       toggle.textContent = selected ? "✓" : "";
     });

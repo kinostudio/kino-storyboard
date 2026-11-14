@@ -1,0 +1,31 @@
+"use strict";
+const assert = require("node:assert/strict");
+const fs = require("node:fs/promises");
+module.exports = async function checkMarkdown(page) {
+  await page.locator(".workspace-tab[data-view=screenplay]").click();
+  const subject = page.locator("[data-screenplay-field=subject]");
+  const original = await subject.inputValue();
+  assert.ok(original);
+  const action = name => page.locator('[data-screenplay-action="' + name + '"]');
+  const downloadEvent = page.waitForEvent("download");
+  await action("export-markdown").click();
+  const download = await downloadEvent;
+  assert.match(download.suggestedFilename(), /\.md$/i);
+  const bytes = await fs.readFile(await download.path());
+  assert.ok(bytes.toString("utf8").includes(original));
+  await subject.fill("取消匯入必須保留這一版");
+  await page.evaluate(() => ScreenplayEditor.flush());
+  const importFile = async () => {
+    const event = page.waitForEvent("filechooser");
+    await action("import-markdown").click();
+    await (await event).setFiles({name:"roundtrip.md", mimeType:"text/markdown", buffer:bytes});
+  };
+  await importFile();
+  await action("cancel-import-markdown").click();
+  assert.equal(await subject.inputValue(), "取消匯入必須保留這一版");
+  await importFile();
+  await action("confirm-import-markdown").click();
+  await page.waitForFunction(expected => document.querySelector("[data-screenplay-field=subject]").value === expected, original);
+  await page.evaluate(() => ScreenplayEditor.flush());
+  assert.equal(await page.evaluate(() => StoryModel.getScreenplay().subject), original);
+};

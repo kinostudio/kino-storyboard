@@ -428,6 +428,7 @@ async function main() {
       return { revision: project.revision, shotCount: project.shots.length, drawingCount: project.drawings.length };
     });
     await page.locator('#shot-list [data-shot-placeholder-field="title"]').fill("Drawing return resumes auto-save");
+    await page.locator("#shot-list [data-shot-placeholder] .shot-art-wrap").hover();
     await page.locator('#shot-list [data-placeholder-action="drawing"]').click();
     await page.locator(".ds-de-canvas").waitFor({ state: "visible" });
     await page.locator(".ds-de-back").click();
@@ -448,6 +449,7 @@ async function main() {
       const project = window.StoryModel.getProject();
       return { revision: project.revision, shotCount: project.shots.length, drawingCount: project.drawings.length };
     });
+    await page.locator("#shot-list [data-shot-placeholder] .shot-art-wrap").hover();
     await page.locator('#shot-list [data-placeholder-action="drawing"]').click();
     await page.locator(".ds-de-canvas").waitFor({ state: "visible" });
     await page.waitForFunction(() => document.querySelector(".ds-de-canvas").getContext("2d"));
@@ -463,6 +465,7 @@ async function main() {
       return { revision: project.revision, shotCount: project.shots.length, drawingCount: project.drawings.length };
     }), beforeDrawingDiscard, "Drawing strokes followed by Return do not create Shot or Drawing.");
 
+    await page.locator("#shot-list [data-shot-placeholder] .shot-art-wrap").hover();
     await page.locator('#shot-list [data-placeholder-action="drawing"]').click();
     await page.locator(".ds-de-canvas").waitFor({ state: "visible" });
     canvasBox = await page.locator(".ds-de-canvas").boundingBox();

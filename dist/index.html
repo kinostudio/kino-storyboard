@@ -8,7 +8,7 @@
   <meta name="theme-color" content="#18243b">
   <title>KINO Storyboard｜光落下的地方</title>
   <link rel="icon" type="image/svg+xml" href="kino-storyboard.svg">
-  <link rel="stylesheet" href="styles.css?v=20261114script1">
+  <link rel="stylesheet" href="styles.css?v=20261114toolbar1">
   <link rel="stylesheet" href="output.css?v=20261114script1">
   <link rel="stylesheet" href="drawing-editor.css?v=20261114sequence1">
   <link rel="stylesheet" href="photo-crop-editor.css?v=20261029v38">
@@ -40,9 +40,11 @@
   <script defer src="shot-index.js?v=20261106scan1"></script>
   <link rel="stylesheet" href="sequence-editor.css?v=20261114sequence2">
   <script defer src="sequence-editor.js?v=20261114sequence2"></script>
-  <link rel="stylesheet" href="screenplay-editor.css">
-  <script defer src="screenplay-editor.js"></script>
-  <script defer src="app.js?v=20261114script1"></script>
+  <link rel="stylesheet" href="screenplay-editor.css?v=20261114script2">
+  <script defer src="screenplay-markdown.js?v=20261114script2"></script>
+  <script defer src="screenplay-markdown-ui.js?v=20261114script2"></script>
+  <script defer src="screenplay-editor.js?v=20261114script2"></script>
+  <script defer src="app.js?v=20261114toolbar1"></script>
 </head>
 <body>
   <section class="lifecycle-gate" id="lifecycle-gate" aria-live="polite" aria-labelledby="lifecycle-title">
@@ -120,11 +122,15 @@
         <section class="storyboard-panel">
           <div class="panel-heading">
             <div><div class="eyebrow" id="chapter-eyebrow">ALL SCENES</div><h2 id="storyboard-heading">全部分鏡</h2><p class="panel-subtitle" id="storyboard-subtitle">以鏡頭為單位，整理畫面、節奏與聲音。</p></div>
-            <div class="panel-actions"><button class="outline-button reorder-mode-toggle" id="shot-reorder-mode" type="button" aria-pressed="false">多選鏡頭</button><button class="outline-button" id="add-shot"><svg viewBox="0 0 20 20" aria-hidden="true"><path d="M10 4v12M4 10h12"/></svg>新增鏡頭</button><div class="view-switch shot-view-switch" role="group" aria-label="分鏡檢視方式"><button type="button" class="is-active" data-shot-view="list" aria-pressed="true"><svg viewBox="0 0 20 20" aria-hidden="true"><path d="M7 5h10M7 10h10M7 15h10"/><circle cx="3.5" cy="5" r=".6"/><circle cx="3.5" cy="10" r=".6"/><circle cx="3.5" cy="15" r=".6"/></svg><span>清單</span></button><button type="button" data-shot-view="gallery" aria-pressed="false"><svg viewBox="0 0 20 20" aria-hidden="true"><rect x="2.5" y="2.5" width="6" height="6" rx="1"/><rect x="11.5" y="2.5" width="6" height="6" rx="1"/><rect x="2.5" y="11.5" width="6" height="6" rx="1"/><rect x="11.5" y="11.5" width="6" height="6" rx="1"/></svg><span>圖庫</span></button></div></div>
+            <div class="panel-actions">
+              <button class="outline-button reorder-mode-toggle storyboard-icon-action" id="shot-reorder-mode" type="button" aria-label="多選鏡頭" title="多選鏡頭" aria-pressed="false"><svg viewBox="0 0 20 20" aria-hidden="true"><rect x="2.5" y="3" width="6" height="6" rx="1"/><path d="m4 6 1.4 1.4L7.8 5M11.5 5h6M11.5 9h6M2.5 13h6v4h-6zM11.5 15h6"/></svg><span class="storyboard-visually-hidden">多選鏡頭</span></button>
+              <button class="outline-button" id="add-shot"><svg viewBox="0 0 20 20" aria-hidden="true"><path d="M10 4v12M4 10h12"/></svg>新增鏡頭</button>
+              <button type="button" class="icon-button storyboard-icon-action" id="screenplay-compare-toggle" aria-label="對照腳本" title="對照腳本" aria-expanded="false" aria-controls="screenplay-compare-host"><svg viewBox="0 0 20 20" aria-hidden="true"><rect x="2.5" y="3" width="6" height="14" rx="1"/><rect x="11.5" y="3" width="6" height="14" rx="1"/><path d="M4.5 6h2M4.5 9h2M13.5 6h2M13.5 9h2"/></svg></button>
+              <button type="button" class="icon-button storyboard-icon-action voiceover-toggle" data-voiceover-action="open" aria-label="檢視全片台詞／旁白稿" title="檢視全片台詞／旁白稿"><svg viewBox="0 0 20 20" aria-hidden="true"><path d="M3 4.5h14v9H9l-4 3v-3H3z"/><path d="M6 7.5h8M6 10.5h5"/></svg></button>
+              <div class="view-switch shot-view-switch" role="group" aria-label="分鏡檢視方式"><button type="button" class="is-active" data-shot-view="list" aria-pressed="true"><svg viewBox="0 0 20 20" aria-hidden="true"><path d="M7 5h10M7 10h10M7 15h10"/><circle cx="3.5" cy="5" r=".6"/><circle cx="3.5" cy="10" r=".6"/><circle cx="3.5" cy="15" r=".6"/></svg><span>清單</span></button><button type="button" data-shot-view="gallery" aria-pressed="false"><svg viewBox="0 0 20 20" aria-hidden="true"><rect x="2.5" y="2.5" width="6" height="6" rx="1"/><rect x="11.5" y="2.5" width="6" height="6" rx="1"/><rect x="2.5" y="11.5" width="6" height="6" rx="1"/><rect x="11.5" y="11.5" width="6" height="6" rx="1"/></svg><span>圖庫</span></button></div>
+            </div>
           </div>
-          <button type="button" class="outline-button" id="screenplay-compare-toggle" aria-expanded="false" aria-controls="screenplay-compare-host">對照腳本</button>
           <aside id="screenplay-compare-host" hidden></aside>
-          <button type="button" class="outline-button voiceover-toggle" data-voiceover-action="open">檢視全片台詞／旁白稿</button>
           <div class="storyboard-meta"><div class="meta-chips"><span class="soft-chip" id="visible-count">— 個鏡頭</span><span class="soft-chip"><span class="meta-mark"></span><span id="runtime-label">預估片長 —</span></span></div><div class="reorder-hints"><span class="hint-text" id="shot-reorder-status" aria-live="polite">按下卡片空白並移動即可拖曳排序；捲頁請從卡片間隙開始 · Ctrl／⌘ 加選、Shift 範圍</span><span class="reorder-selection-status" id="shot-reorder-selection-status" aria-live="polite" hidden></span></div></div>
           <section class="shot-photo-import-banner" id="shot-photo-import-banner" aria-live="polite" aria-label="照片匯入暫存" hidden></section>
           <div class="shot-list is-list" id="shot-list" data-shot-view="list"></div>
