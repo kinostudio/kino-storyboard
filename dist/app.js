@@ -1306,9 +1306,8 @@
     const reload = assetId && shotPhotoReadErrors.has(photoReadKey(state && state.projectId, shot.id, assetId))
       ? '<button type="button" class="shot-photo-action" data-shot-photo-action="reload" data-shot-id="' + escapeHtml(shot.id) + '" data-asset-id="' + escapeHtml(assetId) + '" aria-label="重新載入' + escapeHtml(shotName) + '的照片">重新載入</button>'
       : '';
-    const manager = renderShotPhotoManager(shot);
     const readonlyNote = '<span class="shot-photo-readonly-note">' + READ_ONLY_HELP + '</span>';
-    return '<div class="shot-photo-actions">' + reload + manager + readonlyNote + '</div><span class="shot-photo-card-status" data-photo-status-shot="' + escapeHtml(shot.id) + '" hidden></span>';
+    return '<div class="shot-photo-actions">' + reload + readonlyNote + '</div><span class="shot-photo-card-status" data-photo-status-shot="' + escapeHtml(shot.id) + '" hidden></span>';
   }
   function shotPhotoManagerKey(projectId, shotId) {
     return String(projectId || "") + "\u0000" + String(shotId || "");

@@ -130,6 +130,17 @@ async function main() {
       const afterPhoto = model.getProject();
       const photoShot = afterPhoto.shots.find((shot) => shot.id === photoResult.shotId);
       const photoAsset = photoShot && photoShot.assetIds[0];
+      const legacy = structuredClone(afterPhoto);
+      const original = legacy.assets.find(a => a.id === photoAsset);
+      const extra = Object.assign({}, original, {id: original.id + "-legacy", sha256: "a".repeat(64)});
+      legacy.assets.push(extra);
+      legacy.shots.find(s => s.id === photoShot.id).assetIds.push(extra.id);
+      const kept = window.StoryProjectBridge.applyCommand(legacy, "replaceShotPhoto", [photoShot.id, photoAsset, original]);
+      if (kept.project.shots.find(s => s.id === photoShot.id).assetIds.length !== 1 || kept.project.assets.length !== legacy.assets.length) throw new Error("Legacy replacement must keep one reference and preserve original assets");
+      const replacement = Object.assign({}, original, {id: original.id + "-replacement", sha256: "b".repeat(64)});
+      const replaced = window.StoryProjectBridge.applyCommand(legacy, "replaceShotPhoto", [photoShot.id, photoAsset, replacement]);
+      if (replaced.project.shots.find(s => s.id === photoShot.id).assetIds.join() !== replacement.id) throw new Error("Replacement must have exactly one photo");
+
       const photoCrop = photoShot && photoShot.photoCropsByAssetId && photoShot.photoCropsByAssetId[photoAsset];
       const afterPhotoHistory = model.getHistoryStatus();
       const photoLoaded = photoAsset ? await model.getShotPhoto(photoResult.shotId, photoAsset) : null;
