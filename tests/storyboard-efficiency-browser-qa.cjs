@@ -47,16 +47,8 @@ async function main(){
  await page.locator("#shot-duration").fill("");
  await page.locator("#shot-duration").press("Tab");
  assert.equal(await page.getByText("INVALID_DURATION",{exact:false}).count(),0);
- await page.locator("#inspector [data-duration-wheel]").click();
- const seconds=page.getByRole("listbox",{name:"整數秒",exact:true});
- await seconds.evaluate(e=>e.scrollTop=7*44);
- const tenths=page.getByRole("listbox",{name:"十分之一秒",exact:true});
- await tenths.evaluate(e=>e.scrollTop=5*44);
- await page.waitForFunction(()=>document.querySelector('[aria-label="整數秒"] [aria-selected="true"]').textContent==="7");
- await page.waitForFunction(()=>document.querySelector('[aria-label="十分之一秒"] [aria-selected="true"]').textContent==="5");
- await page.getByRole("button",{name:"完成",exact:true}).click();
- await page.waitForTimeout(500);
-
+ await page.locator("#shot-duration").fill("7.5");
+ await page.locator("#shot-duration").press("Tab");
  await page.waitForFunction(()=>StoryModel.getState().shots.some(s=>s.duration===7.5));
  await page.getByRole("button",{name:"檢視全片台詞／旁白稿",exact:true}).click();
  await page.getByRole("button",{name:"複製全文",exact:true}).click();
@@ -115,7 +107,7 @@ async function main(){
  assert.equal(await panel.evaluate(e=>e.scrollTop),position);
  assert.equal(await page.evaluate(()=>document.scrollingElement.scrollTop),0);
  assert.deepEqual(errors,[]);
- console.log("PASS text-first shots, seconds wheel, VO copy/TXT, visible multi-selection, group drag and independent scroll");
+ console.log("PASS text-first shots, direct seconds, VO copy/TXT, visible multi-selection, group drag and independent scroll");
  }finally{await browser.close();server.close();}
 }
 main().catch(e=>{console.error(e);server.close();process.exitCode=1});

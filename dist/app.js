@@ -3168,67 +3168,20 @@
     $$("#shot-list [data-shot-field='duration'], #shot-list [data-shot-placeholder-field='duration'], #inspector [data-shot-field='duration']").forEach(field => {
       field.type = "text"; field.inputMode = "decimal"; field.placeholder = "0";
       if (field.value === "0" && document.activeElement !== field && !fieldDraftFor(field)) field.value = "";
-      if (field.parentElement.querySelector("[data-duration-wheel]")) return;
-      const open = document.createElement("button");
-      open.type = "button"; open.dataset.durationWheel = "";
-      open.className = "duration-wheel-open"; open.setAttribute("aria-label", "滑動選擇秒數");
-      open.innerHTML = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M8 7l4-4 4 4M8 17l4 4 4-4M5 12h14"/></svg>';
-      field.parentElement.appendChild(open);
+      window.DurationScrub.attach(field, {
+        canEdit: () => !isReadOnly(),
+        context: () => state.projectId,
+        commit: async target => {
+          if (target.dataset.shotPlaceholderField) {
+            handleShotPlaceholderInput(target);
+            scheduleShotPlaceholderAutoPromotion();
+          } else {
+            captureFieldDraft(target);
+            await commitDraftField(target).catch(error => message(error.message || "秒數尚未保存", true));
+          }
+        }
+      });
     });
-  }
-  function openDurationWheel(field) {
-    if (!field || isReadOnly()) return;
-    const projectId = state.projectId;
-    const initial = Math.max(0, Number(field.value) || 0);
-    const dialog = document.createElement("dialog");
-    dialog.className = "duration-wheel-dialog";
-    dialog.setAttribute("aria-label", "設定影片秒數");
-    const heading = document.createElement("h3"); heading.textContent = "影片秒數";
-    const wheels = document.createElement("div"); wheels.className = "duration-wheels";
-    const makeWheel = (label, values, selected) => {
-      const wheel = document.createElement("div");
-      wheel.className = "duration-wheel"; wheel.setAttribute("role", "listbox");
-      wheel.setAttribute("aria-label", label); wheel.tabIndex = 0;
-      const rows = values.map(value => {
-        const row = document.createElement("div"); row.setAttribute("role", "option");
-        row.textContent = value; row.dataset.value = value; wheel.appendChild(row); return row;
-      });
-      const index = () => Math.min(rows.length-1,Math.max(0,Math.round(wheel.scrollTop / 44)));
-      const update = () => rows.forEach((row,i) => row.setAttribute("aria-selected", String(i === index())));
-      wheel.addEventListener("scroll", update, {passive:true});
-      wheel.addEventListener("keydown", event => {
-        if (!["ArrowUp","ArrowDown","Home","End"].includes(event.key)) return;
-        event.preventDefault();
-        const next = event.key === "Home" ? 0 : event.key === "End" ? rows.length-1 : index() + (event.key === "ArrowDown" ? 1 : -1);
-        wheel.scrollTo({top:Math.min(rows.length-1,Math.max(0,next))*44,behavior:"smooth"});
-      });
-      wheel.addEventListener("click", event => {
-        const row = event.target.closest("[data-value]");
-        if (row) wheel.scrollTo({top:rows.indexOf(row)*44,behavior:"smooth"});
-      });
-      wheels.appendChild(wheel);
-      return {wheel, init:()=>{wheel.scrollTop = Math.max(0,values.indexOf(selected))*44;update();}, value:()=>values[index()]};
-    };
-    const values = Array.from({length:121},(_,i)=>i);
-    if (Math.floor(initial)>120) values.push(Math.floor(initial));
-    const seconds = makeWheel("整數秒",values,Math.floor(initial));
-    const tenths = makeWheel("十分之一秒",Array.from({length:10},(_,i)=>i),Math.round(initial*10)%10);
-    const hint = document.createElement("p"); hint.textContent = "秒　／　0.1 秒";
-    const actions = document.createElement("div"); actions.className = "duration-wheel-actions";
-    const cancel = document.createElement("button");cancel.type = "button";cancel.textContent = "取消";cancel.className="outline-button";
-    const done = document.createElement("button");done.type="button";done.textContent="完成";done.className="outline-button";
-    cancel.onclick=()=>dialog.close();
-    done.onclick=async()=>{
-      if (!field.isConnected || state.projectId !== projectId || isReadOnly()) {dialog.close();return;}
-      field.value=String(seconds.value()+tenths.value()/10);
-      if (field.dataset.shotPlaceholderField) {handleShotPlaceholderInput(field);scheduleShotPlaceholderAutoPromotion();}
-      else {captureFieldDraft(field);await commitDraftField(field).catch(error=>message(error.message || "秒數尚未保存",true));}
-      dialog.close();
-    };
-    dialog.addEventListener("close",()=>{dialog.remove();if(field.isConnected)field.focus({preventScroll:true});},{once:true});
-    dialog.addEventListener("click",event=>{if(event.target===dialog){const r=dialog.getBoundingClientRect();if(event.clientX<r.left||event.clientX>r.right||event.clientY<r.top||event.clientY>r.bottom)dialog.close();}});
-    actions.append(cancel,done);dialog.append(heading,wheels,hint,actions);document.body.appendChild(dialog);
-    dialog.showModal();seconds.init();tenths.init();seconds.wheel.focus({preventScroll:true});
   }
 
   function renderVoiceover() {
@@ -8479,8 +8432,6 @@
     $("#shot-reorder-mode").addEventListener("click", () => toggleReorderMode("shots"));
     $("#schedule-reorder-mode").addEventListener("click", () => toggleReorderMode("entries"));
     document.addEventListener("click", async (event) => {
-      const wheel = event.target.closest("[data-duration-wheel]");
-      if (wheel) {event.preventDefault();openDurationWheel(wheel.parentElement.querySelector("input"));return;}
       const moveTag = event.target.closest("[data-shot-move-tag]");
       if (moveTag) {
         event.preventDefault();
