@@ -36,6 +36,7 @@ async function main() {
  const errors=[];page.on("pageerror",e=>errors.push(e.message));
  await page.goto("http://127.0.0.1:"+server.address().port);
  await page.getByRole("button",{name:"建立示範專案",exact:true}).click();
+ await page.locator(".shot-art-wrap").first().hover();
  await page.locator(".shot-drawing-entry").first().click();
  await page.locator(".ds-de-canvas").waitFor();
  await page.waitForFunction(()=>document.querySelector(".ds-de-stage").getBoundingClientRect().height>200);

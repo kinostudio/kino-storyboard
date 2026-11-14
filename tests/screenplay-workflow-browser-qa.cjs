@@ -42,12 +42,69 @@ async function main() {
     const body = page.locator("[data-screenplay-writing-surface]").first();
     await body.fill("/a 小安停在池邊");
     await page.waitForFunction(() => StoryModel.getScreenplay()?.scenes[0]?.blocks[0]?.type === "action" && StoryModel.getScreenplay().scenes[0].blocks[0].text === "小安停在池邊");
+    await page.locator("[data-screenplay-action=add-scene]").click();
+    await page.waitForFunction(() => StoryModel.getScreenplay()?.scenes.length === 2);
+    const secondDraftId = await page.locator("[data-screenplay-scene-card]").nth(1).getAttribute("data-screenplay-scene-card");
+    const secondCard = page.locator('[data-screenplay-scene-card="' + secondDraftId + '"]');
+    const secondBody = secondCard.locator("[data-screenplay-writing-surface]");
+    await secondBody.fill("前段 李：你好");
+    await secondBody.press("End");
+    await secondBody.press("Enter");
+    await secondBody.pressSequentially("再見 中 王:早安 後段");
+    const selectBodyText = async (surface, selectedText) => surface.evaluate((element, needle) => {
+      const walker = document.createTreeWalker(element, NodeFilter.SHOW_TEXT);
+      const nodes = [];
+      let text = "";
+      while (walker.nextNode()) {
+        const node = walker.currentNode;
+        nodes.push({node, start: text.length, end: text.length + node.nodeValue.length});
+        text += node.nodeValue;
+      }
+      const start = text.indexOf(needle);
+      if (start < 0) throw new Error("找不到要測試的劇本文字：" + needle);
+      const point = offset => {
+        const item = nodes.find(part => offset >= part.start && offset <= part.end);
+        if (!item) throw new Error("劇本選取位置不在文字節點中");
+        return {node:item.node, offset:offset-item.start};
+      };
+      const range = document.createRange();
+      const from = point(start);
+      const to = point(start + needle.length);
+      range.setStart(from.node, from.offset);
+      range.setEnd(to.node, to.offset);
+      const selection = window.getSelection();
+      selection.removeAllRanges();
+      selection.addRange(range);
+    }, selectedText);
+    await selectBodyText(secondBody, "李：你好\n再見");
+    await secondCard.locator("button[data-tag-type=dialogue]").click();
+    await page.waitForFunction(() => {
+      const blocks = StoryModel.getScreenplay()?.scenes[1]?.blocks || [];
+      return blocks.some(block => block.type === "dialogue" && block.character === "李" && block.text === "你好\n再見");
+    });
+    await selectBodyText(secondBody, "王:早安");
+    await secondCard.locator("button[data-tag-type=dialogue]").click();
+    await page.waitForFunction(() => {
+      const blocks = StoryModel.getScreenplay()?.scenes[1]?.blocks || [];
+      return blocks.some(block => block.type === "dialogue" && block.character === "王" && block.text === "早安");
+    });
+    await secondBody.scrollIntoViewIfNeeded();
+    fs.mkdirSync(path.join(root, "tmp", "screenplay-qa"), {recursive:true});
+    await page.screenshot({path:path.join(root, "tmp", "screenplay-qa", "editor.png")});
+    await body.press("Control+Enter");
+    await page.waitForFunction(() => {
+      const scenes = StoryModel.getScreenplay().scenes;
+      return scenes.length === 3 && document.activeElement?.dataset.screenplaySceneId === scenes[1].id && scenes[1].id !== scenes[2].id;
+    });
+    await secondBody.press("Control+Enter");
+    await page.waitForFunction(id => {
+      const scenes = StoryModel.getScreenplay().scenes;
+      return scenes.length === 4 && scenes[2].id === id && document.activeElement?.dataset.screenplaySceneId === scenes[3].id;
+    }, secondDraftId);
     const sceneId = await page.evaluate(() => StoryModel.getProject().scenes[0].id);
     await page.locator("select[data-screenplay-field=sceneId]").first().selectOption(sceneId);
     await page.locator("button[data-screenplay-format=us]").click();
     await page.locator("button[data-screenplay-format=tw]").click();
-    fs.mkdirSync(path.join(root, "tmp", "screenplay-qa"), {recursive:true});
-    await page.screenshot({path:path.join(root, "tmp", "screenplay-qa", "editor.png")});
     await navigate("storyboard");
     await page.locator("#chapter-list [data-chapter=" + JSON.stringify(sceneId) + "]").click();
     await page.locator("#screenplay-compare-toggle").click();

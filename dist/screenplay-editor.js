@@ -274,7 +274,7 @@
     return { id: id || makeId("script-block"), type: type === "action" ? "action" : "text", character: "", text: String(visibleText || "") };
   }
 
-  function appendVisible(node, output) {
+  function appendVisible(node, output, isRoot) {
     if (!node) return;
     if (node.nodeType === 3) { output.push(node.nodeValue || ""); return; }
     if (node.nodeType !== 1 && node.nodeType !== 11) return;
@@ -282,14 +282,14 @@
       output.push("\n");
       return;
     }
-    if (node.nodeType === 1 && /^(DIV|P)$/.test(node.tagName) && output.length && !String(output[output.length - 1]).endsWith("\n")) output.push("\n");
-    Array.from(node.childNodes).forEach((child) => appendVisible(child, output));
-    if (node.nodeType === 1 && /^(DIV|P)$/.test(node.tagName) && output.length && !String(output[output.length - 1]).endsWith("\n")) output.push("\n");
+    if (!isRoot && node.nodeType === 1 && /^(DIV|P)$/.test(node.tagName) && output.length && !String(output[output.length - 1]).endsWith("\n")) output.push("\n");
+    Array.from(node.childNodes).forEach((child) => appendVisible(child, output, false));
+    if (!isRoot && node.nodeType === 1 && /^(DIV|P)$/.test(node.tagName) && output.length && !String(output[output.length - 1]).endsWith("\n")) output.push("\n");
   }
 
   function visibleText(node) {
     const output = [];
-    appendVisible(node, output);
+    appendVisible(node, output, true);
     return output.join("");
   }
 
@@ -482,17 +482,38 @@
   }
 
   function insertPlainText(surface, value) {
+    const doc = surface.ownerDocument;
+    surface.focus({ preventScroll: true });
+    if (typeof doc.execCommand === "function" && doc.execCommand("insertText", false, String(value || ""))) return true;
     const selection = root.getSelection && root.getSelection();
     let range;
     if (selection && selection.rangeCount && surface.contains(selection.anchorNode) && surface.contains(selection.focusNode)) range = selection.getRangeAt(0);
-    else { range = surface.ownerDocument.createRange(); range.selectNodeContents(surface); range.collapse(false); }
+    else { range = doc.createRange(); range.selectNodeContents(surface); range.collapse(false); }
     range.deleteContents();
-    const node = surface.ownerDocument.createTextNode(String(value || ""));
-    range.insertNode(node);
-    range.setStartAfter(node);
+    const fragment = doc.createDocumentFragment();
+    const parts = String(value || "").split("\n");
+    let last = null;
+    parts.forEach((part, index) => {
+      if (part) { last = doc.createTextNode(part); fragment.appendChild(last); }
+      if (index < parts.length - 1) {
+        fragment.appendChild(doc.createElement("br"));
+      }
+    });
+    if (!fragment.childNodes.length) return;
+    range.insertNode(fragment);
+    if (last && last.nodeType === 3) range.setStart(last, last.nodeValue.length);
+    else if (last && last.nodeType === 1) range.setStartAfter(last);
+    else { range.selectNodeContents(surface); range.collapse(false); }
     range.collapse(true);
     if (selection) { selection.removeAllRanges(); selection.addRange(range); }
-    surface.focus();
+    return false;
+  }
+
+  function insertLineBreak(surface) {
+    const doc = surface.ownerDocument;
+    surface.focus({ preventScroll: true });
+    if (typeof doc.execCommand === "function" && doc.execCommand("insertLineBreak", false, null)) return true;
+    return insertPlainText(surface, "\n");
   }
 
   function iconMarkup(name) {
@@ -526,7 +547,7 @@
       '<span class="se-meta-label" aria-hidden="true">人</span><input type="text" data-screenplay-meta="true" data-screenplay-field="people" data-screenplay-edit-control="true" data-focus-key="' + escapeHtml(focusKey(["people", scene.id])) + '" data-screenplay-scene-id="' + escapeHtml(scene.id) + '" value="' + escapeHtml(scene.people) + '" placeholder="人物" aria-label="人物"' + disabled + '>' +
       '<select class="se-scene-link-select" data-screenplay-field="sceneId" data-screenplay-edit-control="true" data-focus-key="' + escapeHtml(focusKey(["sceneId", scene.id])) + '" data-screenplay-scene-id="' + escapeHtml(scene.id) + '" aria-label="連結分鏡場次"' + disabled + '>' + linkOptions + '</select>' +
       (linked ? '<span class="se-link-state">已連結</span>' : canCreate ? '<button type="button" class="se-secondary-button"' + editAttr + ' data-screenplay-action="create-board-scene" data-screenplay-scene-id="' + escapeHtml(scene.id) + '"' + (entry.busyScenes.has(scene.id) ? ' data-screenplay-fixed-disabled="true" disabled' : "") + '>建立分鏡場次</button>' : '<span class="se-link-state">未連結</span>') + '</div>' +
-      '<div class="se-writing-tools"><div class="se-tag-group" role="group" aria-label="標記選取文字">' + runButtons + '</div><span class="se-writing-hint">選取文字後可標記；Enter 換行，Ctrl/⌘+Enter 下一場</span><button type="button" class="se-next-scene-button"' + editAttr + ' data-screenplay-action="next-scene" data-screenplay-scene-id="' + escapeHtml(scene.id) + '" aria-label="下一場" title="下一場（Ctrl/⌘+Enter）"' + disabled + '><svg viewBox="0 0 20 20" aria-hidden="true" focusable="false"><path d="M3 10h12M10 5l5 5-5 5"/></svg></button></div>' +
+      '<div class="se-writing-tools"><div class="se-tag-group" role="group" aria-label="標記選取文字">' + runButtons + '</div><span class="se-writing-hint">選取文字後可標記；Enter 換行，Ctrl/⌘+Enter 下一場</span><button type="button" class="se-next-scene-button"' + editAttr + ' data-screenplay-action="next-scene" data-screenplay-scene-id="' + escapeHtml(scene.id) + '" aria-label="新增下一場" title="新增下一場（Ctrl/⌘+Enter）"' + disabled + '><svg viewBox="0 0 20 20" aria-hidden="true" focusable="false"><path d="M3 10h12M10 5l5 5-5 5"/></svg></button></div>' +
       '<div class="se-writing-surface" contenteditable="' + (editable ? "true" : "false") + '" role="textbox" aria-multiline="true" aria-label="劇本內容，場次 ' + (index + 1) + '" data-screenplay-edit-control="true" data-screenplay-writing-surface="true" data-screenplay-field="body" data-focus-key="' + escapeHtml(focusKey(["body", scene.id])) + '" data-screenplay-scene-id="' + escapeHtml(scene.id) + '" data-screenplay-empty-block-id="' + escapeHtml(emptyId) + '" data-placeholder="在這裡連續書寫或貼上內容…">' + blocks + '</div>' +
       '</section>';
   }
@@ -772,10 +793,7 @@
     try {
       await flushEntry(entry);
       if (currentProjectId() !== entry.projectId) throw new Error("專案已切換；請返回原專案繼續編輯。");
-      const index = entry.value.scenes.indexOf(scene);
-      const next = entry.value.scenes[index + 1];
-      if (next) focusAfterRender(focusKey(["body", next.id]), true);
-      else addSceneAfter(entry, scene);
+      addSceneAfter(entry, scene);
     } catch (error) {
       entry.actionError = errorMessage(error);
       refreshStatus(entry);
@@ -882,7 +900,7 @@
       }
       if (surface) {
         event.preventDefault();
-        insertPlainText(surface, "\n");
+        insertLineBreak(surface);
         updateBodyFromElement(surface);
         return;
       }
