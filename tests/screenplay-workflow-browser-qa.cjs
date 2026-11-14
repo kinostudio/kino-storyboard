@@ -50,7 +50,16 @@ async function main() {
     await secondBody.fill("前段 李：你好");
     await secondBody.press("End");
     await secondBody.press("Enter");
-    await secondBody.pressSequentially("再見 中 王:早安 後段");
+    await secondBody.pressSequentially("再見");
+    await secondBody.evaluate(element => {
+      const transfer = new DataTransfer();
+      transfer.setData("text/plain", " 中 王:早安\n後段");
+      element.dispatchEvent(new ClipboardEvent("paste", {bubbles:true, cancelable:true, clipboardData:transfer}));
+    });
+    await page.waitForFunction(() => {
+      const blocks = StoryModel.getScreenplay()?.scenes[1]?.blocks || [];
+      return blocks.length === 1 && blocks[0].type === "text" && blocks[0].text.includes("你好\n再見") && blocks[0].text.includes("王:早安\n後段");
+    });
     const selectBodyText = async (surface, selectedText) => surface.evaluate((element, needle) => {
       const walker = document.createTreeWalker(element, NodeFilter.SHOW_TEXT);
       const nodes = [];
