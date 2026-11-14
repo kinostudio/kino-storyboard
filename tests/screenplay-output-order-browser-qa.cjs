@@ -74,11 +74,12 @@ async function main() {
       const screenplay = window.StoryModel.getScreenplay();
       await window.StoryModel.saveScreenplay(Object.assign({},screenplay,{format:"us"}));
     });
-    await page.waitForFunction(() => document.querySelector(".output-screenplay-block.is-us.is-action"));
-    const usStyles = await page.locator(".output-screenplay-block.is-us.is-dialogue").first().evaluate(element => ({
+    await waitForOutput(page, "SCRIPT-UNLINKED");
+    await page.waitForFunction(() => !document.querySelector("#print-output").disabled && document.querySelector("#print-document .output-screenplay-block.is-us.is-action"));
+    const usStyles = await page.locator("#print-document .output-screenplay-block.is-us.is-dialogue").first().evaluate(element => ({
       marker:getComputedStyle(element.querySelector("div"),"::before").content,
       characterCount:element.querySelectorAll(".output-screenplay-character").length,
-      dialogueIndent:getComputedStyle(element).marginLeft
+      dialogueIndent:element.getBoundingClientRect().left - element.parentElement.getBoundingClientRect().left
     }));
     assert.notEqual(usStyles.marker, '"△ "', "US screenplay should not show the Taiwan action marker");
     assert.equal(usStyles.characterCount, 1, "US dialogue role should remain separate from its dialogue");
