@@ -119,12 +119,12 @@ async function main() {
     await body.press("Control+Enter");
     await page.waitForFunction(() => {
       const scenes = StoryModel.getScreenplay().scenes;
-      return scenes.length === 3 && document.activeElement?.dataset.screenplaySceneId === scenes[1].id && scenes[1].id !== scenes[2].id;
+      return scenes.length === 4 && document.activeElement?.dataset.screenplaySceneId === scenes[1].id && scenes[1].id !== scenes[2].id;
     });
     await secondBody.press("Control+Enter");
     await page.waitForFunction(id => {
       const scenes = StoryModel.getScreenplay().scenes;
-      return scenes.length === 4 && scenes[2].id === id && document.activeElement?.dataset.screenplaySceneId === scenes[3].id;
+      return scenes.length === 5 && scenes[2].id === id && document.activeElement?.dataset.screenplaySceneId === scenes[3].id;
     }, secondDraftId);
     const sceneId = await page.evaluate(() => StoryModel.getProject().scenes[0].id);
     await page.evaluate(async id => { await ScreenplayEditor.flush(); const doc=StoryModel.getScreenplay(); doc.scenes[0].sceneId=id; await StoryModel.saveScreenplay(doc); },sceneId);
@@ -161,7 +161,8 @@ async function main() {
     for (const format of ["tw","us"]) {
       await page.locator("button[data-screenplay-format=" + format + "]").click();
       await page.locator("[data-screenplay-action=add-scene]").click();
-      const dialogueBody=page.locator("[data-screenplay-writing-surface]").last();
+      const dialogueId=await page.locator("[data-screenplay-writing-surface]").last().getAttribute("data-screenplay-scene-id");
+      const dialogueBody=page.locator('[data-screenplay-writing-surface][data-screenplay-scene-id="'+dialogueId+'"]');
       await dialogueBody.fill("甲：你好");
       await dialogueBody.evaluate(element => {
         element.focus();
@@ -173,12 +174,12 @@ async function main() {
       await dialogueBody.press("Enter");
       await dialogueBody.pressSequentially("第二句");
       await page.evaluate(() => ScreenplayEditor.flush());
-      assert.ok(await page.evaluate(() => StoryModel.getScreenplay().scenes.at(-1).blocks.some(block => block.type === "dialogue" && block.text.includes("你好\n第二句"))));
+      assert.ok(await page.evaluate(() => StoryModel.getScreenplay().scenes.at(-2).blocks.some(block => block.type === "dialogue" && block.text.includes("你好\n第二句"))));
       await dialogueBody.press("Enter");
       await dialogueBody.press("Enter");
       await page.keyboard.type("一般文字");
       await page.evaluate(() => ScreenplayEditor.flush());
-      assert.ok(await page.evaluate(() => StoryModel.getScreenplay().scenes.at(-1).blocks.some(block => block.type === "text" && block.text.includes("一般文字"))));
+      assert.ok(await page.evaluate(() => StoryModel.getScreenplay().scenes.at(-2).blocks.some(block => block.type === "text" && block.text.includes("一般文字"))));
     }
     const role = page.locator(".se-role-separator").first();
     assert.equal(await role.evaluate(e=>getComputedStyle(e).display),"none");
@@ -188,6 +189,15 @@ async function main() {
     const toolbarBox=await toolbar.boundingBox();
     assert.ok(toolbarBox.y>=0 && toolbarBox.y<200);
     await page.screenshot({path:path.join(root,"tmp","screenplay-qa","pinned-toolbar-us.png")});
+    const emptySceneId=await page.evaluate(()=> {
+      const scenes=StoryModel.getScreenplay().scenes;
+      if(ScreenplayEditor.hasSceneContent(scenes.at(-1))) throw Error("missing trailing blank scene");
+      return scenes.at(-1).id;
+    });
+    await navigate("output");
+    await page.selectOption("#output-type","screenplay");
+    await page.waitForFunction(()=>!document.querySelector("#print-output").disabled);
+    assert.equal(await page.locator('[data-output-record="screenplay/scene/'+emptySceneId+'"]').count(),0,"blank scene must not be output");
     await require("./screenplay-md-ui.cjs")(page);
     await page.setViewportSize({width:885,height:772});
     await page.evaluate(()=>window.scrollTo(0,document.body.scrollHeight));

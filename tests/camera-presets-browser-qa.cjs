@@ -92,7 +92,7 @@ async function main() {
       input.value = "60";
       input.dispatchEvent(new Event("input", { bubbles: true }));
     });
-    await page.locator('input[aria-label="運鏡圖層大小"]').evaluate(input => {
+    await page.locator('input[aria-label="圖層縮放"]').evaluate(input => {
       input.value = "125";
       input.dispatchEvent(new Event("input", { bubbles: true }));
     });
@@ -229,11 +229,11 @@ async function main() {
       const layer = drawing.layers.find(item => item.name === "運鏡 PAN R");
       return { count: layer.strokes.length, points: layer.strokes.flatMap(stroke => stroke.points.map(point => [point.x, point.y])), scene: drawing.layers.find(item => item.kind === "scene").strokes };
     }, reloaded.drawingId);
-    await page.locator('input[aria-label="運鏡圖層大小"]').evaluate(input => {
+    await page.locator('input[aria-label="圖層縮放"]').evaluate(input => {
       input.value = "115";
       input.dispatchEvent(new Event("input", { bubbles: true }));
     });
-    const xRange = page.locator('input[aria-label="運鏡圖層水平位置"]');
+    const xRange = page.locator('input[aria-label="圖層水平位置"]');
     await xRange.evaluate(input => {
       input.value = String(Math.min(4, Number(input.max)));
       input.dispatchEvent(new Event("input", { bubbles: true }));

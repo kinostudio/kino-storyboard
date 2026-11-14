@@ -625,10 +625,10 @@
       wrapper.append(title, input, output);
       return { wrapper: wrapper, input: input, output: output };
     };
-    this.cameraPresetX = makePresetRange("水平", -20, 20, 0, "運鏡圖層水平位置");
-    this.cameraPresetY = makePresetRange("垂直", -20, 20, 0, "運鏡圖層垂直位置");
+    this.cameraPresetX = makePresetRange("水平", -20, 20, 0, "圖層水平位置");
+    this.cameraPresetY = makePresetRange("垂直", -20, 20, 0, "圖層垂直位置");
     this.cameraPresetRotation = makePresetRange("旋轉", -180, 180, 0, "圖層旋轉角度");
-    this.cameraPresetScale = makePresetRange("縮放", 50, 150, 100, "運鏡圖層大小");
+    this.cameraPresetScale = makePresetRange("縮放", 50, 150, 100, "圖層縮放");
     this.cameraPresetFlipX = document.createElement("input");
     this.cameraPresetFlipX.type = "checkbox";
     this.cameraPresetFlipX.setAttribute("aria-label", "水平翻轉運鏡圖層");
@@ -1389,7 +1389,9 @@
       actions.appendChild(remove);
       if (layer.strokes.length > 0) {
         const adjust = button("調整圖層", "ds-de-icon-button ds-de-layer-adjust");
-        iconOnly(adjust, "settings");
+        appendIcon(adjust, "settings");
+        adjust.appendChild(create("span","","變形"));
+        adjust.setAttribute("aria-label","變形圖層");
         adjust.dataset.layerId = layer.id;
         adjust.dataset.layerAction = "adjustPreset";
         adjust.disabled = layer.id !== this.layerId || !this.canTransformCameraPreset(layer.id);
