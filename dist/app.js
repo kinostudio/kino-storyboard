@@ -5249,7 +5249,7 @@
     addFrontMatter("outline",us ? "Outline" : "大綱",screenplay.outline);
     const chapters = new Map((context.ui.chapters || []).map((scene,index) => [scene.id,{scene:scene,index:index}]));
     (Array.isArray(screenplay.scenes) ? screenplay.scenes : []).forEach((scene,index) => {
-      if (!scene || typeof scene !== "object") return;
+      if (!window.ScreenplayEditor.hasSceneContent(scene)) return;
       const linked = scene.sceneId && chapters.get(scene.sceneId);
       const interior = String(scene.interiorExterior || "");
       const displayInterior = us ? (/^(內|內景|IN|INT\.)$/i.test(interior) ? "INT." : /^(外|外景|OUT|EXT\.)$/i.test(interior) ? "EXT." : interior) : interior;
@@ -5279,7 +5279,7 @@
     context.itemLabel = "項";
     context.scope = "全片劇本";
     context.subtitle = context.project.screenplay && context.project.screenplay.format === "us" ? "Screenplay · Subject, Outline and Scenes" : "劇本 · 主旨、大綱與場次";
-    context.summary = (context.project.screenplay && context.project.screenplay.format === "us" ? "Subject/Outline " : "主旨／大綱 ") + records.filter((record) => record.kind === "screenplay-frontmatter").length + " 項 · " + (Array.isArray(context.project.screenplay && context.project.screenplay.scenes) ? context.project.screenplay.scenes.length : 0) + " 場";
+    context.summary = (context.project.screenplay && context.project.screenplay.format === "us" ? "Subject/Outline " : "主旨／大綱 ") + records.filter((record) => record.kind === "screenplay-frontmatter").length + " 項 · " + (Array.isArray(context.project.screenplay && context.project.screenplay.scenes) ? context.project.screenplay.scenes.filter(window.ScreenplayEditor.hasSceneContent).length : 0) + " 場";
     context.footer = context.projectTitle + " · 全片劇本";
     context.noteBase = "已填寫的主旨與大綱各輸出一次，依已保存順序輸出每個劇本場次；未連結分鏡場次的劇本內容也會保留。";
     renderOutputSourceChoices(context,[]);
@@ -5333,7 +5333,7 @@
     context.itemLabel = "項";
     context.scope = "全片劇本與分鏡";
     context.subtitle = "劇本場次後接全片分鏡";
-    context.summary = frontMatter.length + " 項主旨／大綱 · " + (Array.isArray(context.project.screenplay && context.project.screenplay.scenes) ? context.project.screenplay.scenes.length : 0) + " 場劇本 · " + context.records.filter((record) => record.kind === "shot").length + " 張分鏡";
+    context.summary = frontMatter.length + " 項主旨／大綱 · " + (Array.isArray(context.project.screenplay && context.project.screenplay.scenes) ? context.project.screenplay.scenes.filter(window.ScreenplayEditor.hasSceneContent).length : 0) + " 場劇本 · " + context.records.filter((record) => record.kind === "shot").length + " 張分鏡";
     context.footer = context.projectTitle + " · 全片劇本與分鏡";
     context.noteBase = "先輸出有內容的主旨與大綱各一次、每個劇本場次一次，再依場次交錯輸出鏡頭與 A／B／C 等連續分鏡；未連結場次與鏡頭也會保留。";
   }

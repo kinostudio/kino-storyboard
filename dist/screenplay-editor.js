@@ -186,8 +186,25 @@
     return true;
   }
 
+  function hasSceneContent(scene) {
+    return !!scene && (["location","time","people","interiorExterior"].some(field => String(scene[field] || "").trim()) ||
+      (scene.blocks || []).some(block => String(block.text || "").trim() || String(block.character || "").trim()));
+  }
+
+  function ensureNextScene(entry) {
+    if (!entry || (entry.value.scenes.length && !hasSceneContent(entry.value.scenes.at(-1)))) return;
+    const scene = emptyScene();
+    entry.value.scenes.push(scene);
+    const host = $("#view-screenplay");
+    const section = host && $(".se-scene-section",host);
+    if (section && host.querySelector("[data-screenplay-project]")?.dataset.screenplayProject === entry.projectId) {
+      section.insertAdjacentHTML("beforeend",sceneMarkup(scene,entry.value.scenes.length-1,entry.value,currentProject(),entry));
+    }
+  }
+
   function markDirty(entry) {
     if (!entry) return;
+    ensureNextScene(entry);
     entry.version += 1;
     entry.dirty = true;
     entry.error = null;
@@ -663,6 +680,7 @@
     state.projectId = projectId;
     const entry = getEntry(projectId);
     const project = currentProject();
+    ensureNextScene(entry);
     const screenplay = entry ? entry.value : emptyScreenplay();
     const editable = canEdit();
     if (!project || !entry) {
@@ -677,7 +695,7 @@
     const status = entry.actionError || (entry.error ? errorMessage(entry.error) : entry.pending ? "正在保存…" : entry.dirty ? "尚未保存" : entry.saved ? "已保存" : "草稿尚未保存");
     host.innerHTML = '<div class="se-editor-shell" data-screenplay-project="' + escapeHtml(projectId) + '" data-screenplay-format="' + escapeHtml(screenplay.format) + '"><header class="se-editor-header"><div><span class="se-eyebrow">OPTIONAL WRITING SPACE</span><h2>劇本草稿</h2><p>整理主旨、故事大綱與場次內容；劇本草稿不會改寫分鏡。</p></div><div class="se-editor-actions">' + format + '<div data-screenplay-markdown-host="true"></div></div></header>' +
       '<div class="se-save-row"><span data-screenplay-save-status="true"' + (entry.error || entry.actionError ? ' class="is-error"' : "") + ' aria-live="polite">' + escapeHtml(status) + '</span><button type="button" class="se-retry-button" data-screenplay-action="retry-save"' + (!(entry.error && entry.dirty) ? " hidden" : "") + '>重試保存</button></div>' +
-      '<details class="se-overview"' + (state.overviewOpen ? " open" : "") + '><summary class="se-overview-summary"><div><span class="se-eyebrow">PROJECT NOTES</span><h3>主旨與大綱</h3></div><span class="se-overview-chevron" aria-hidden="true">⌄</span></summary><div class="se-overview-grid">' +
+      '<details class="se-overview"' + (state.overviewOpen ? " open" : "") + '><summary class="se-overview-summary"><div><span class="se-eyebrow">PROJECT NOTES</span><h3>主旨與大綱</h3></div><span class="se-overview-chevron" aria-hidden="true"><svg viewBox="0 0 20 20"><path d="m5 7 5 5 5-5"/></svg></span></summary><div class="se-overview-grid">' +
       labelField("主旨", "subject", screenplay.subject, "", { multiline: true, rows: 5, placeholder: "一句話描述故事核心" }) +
       labelField("故事大綱", "outline", screenplay.outline, "", { multiline: true, rows: 5, placeholder: "整理故事起承轉合…" }) + '</div></details>' +
       '<section class="se-scene-section"><div class="se-section-heading"><div><span class="se-eyebrow">SCENE OUTLINE</span><h3>場次與內容</h3><p>F1 動作 · F2 對白 · F3 一般文字</p></div><button type="button" class="se-primary-button" data-screenplay-edit-control="true" data-screenplay-action="add-scene" aria-label="新增劇本場次"' + (!editable ? " disabled" : "") + '>＋ 新增劇本場次</button></div>' +
@@ -894,6 +912,8 @@
     if (actionName === "create-board-scene") { createBoardScene(entry, scene); return; }
     if (!canEdit()) return;
     if (actionName === "add-scene") {
+      const last = entry.value.scenes.at(-1);
+      if (last && !hasSceneContent(last)) { focusAfterRender(focusKey(["location",last.id]),false); return; }
       const added = emptyScene(); entry.value.scenes.push(added); markDirty(entry); render(); focusAfterRender(focusKey(["location", added.id]), false); return;
     }
     if (actionName === "remove-scene" && scene) {
@@ -1111,5 +1131,5 @@
 
   bindToggle();
   subscribe();
-  root.ScreenplayEditor = Object.freeze({ render: render, compare: compare, flush: flush, hasPending: hasPending, getDraft: getDraft, replaceDraft: replaceDraft });
+  root.ScreenplayEditor = Object.freeze({ hasSceneContent: hasSceneContent, render: render, compare: compare, flush: flush, hasPending: hasPending, getDraft: getDraft, replaceDraft: replaceDraft });
 })(typeof window !== "undefined" ? window : null);

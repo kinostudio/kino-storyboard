@@ -92,7 +92,7 @@ async function main() {
       input.value = "60";
       input.dispatchEvent(new Event("input", { bubbles: true }));
     });
-    await page.locator('input[aria-label="運鏡圖層大小"]').evaluate(input => {
+    await page.locator('input[aria-label="圖層縮放"]').evaluate(input => {
       input.value = "125";
       input.dispatchEvent(new Event("input", { bubbles: true }));
     });
@@ -224,16 +224,28 @@ async function main() {
     await persistedRow.locator('button[data-layer-action="adjustPreset"]').click();
     await page.locator(".ds-de-camera-preset-preview").waitFor({ state: "visible" });
     assert(await page.locator(".ds-de-camera-preset-grid").isHidden(), "reopened layer adjustment starts from the saved layer strokes");
+    const previewCheck=await page.evaluate(()=>{
+      const editor=presetQa.editor, seen=[];
+      const original=editor.drawStroke;
+      editor.drawStroke=function(context,stroke,canvas){seen.push(stroke.id);return original.call(this,context,stroke,canvas);};
+      try {editor.renderCameraPresetPreview();}
+      finally {editor.drawStroke=original;}
+      const referenceIds=editor.drawing.layers.filter(layer=>layer.visible && layer.id!==editor.cameraPresetEdit.layerId).flatMap(layer=>layer.strokes.map(stroke=>stroke.id));
+      return {referenceIds,seen};
+    });
+    assert.ok(previewCheck.referenceIds.length);
+    assert.ok(previewCheck.referenceIds.every(id=>previewCheck.seen.includes(id)),"transform preview renders other visible layers");
+    await page.screenshot({path:path.join(screenshotDir,"composite-transform-preview.png")});
     const beforeTransform = await page.evaluate(drawingId => {
       const drawing = StoryModel.getDrawing(drawingId);
       const layer = drawing.layers.find(item => item.name === "運鏡 PAN R");
       return { count: layer.strokes.length, points: layer.strokes.flatMap(stroke => stroke.points.map(point => [point.x, point.y])), scene: drawing.layers.find(item => item.kind === "scene").strokes };
     }, reloaded.drawingId);
-    await page.locator('input[aria-label="運鏡圖層大小"]').evaluate(input => {
+    await page.locator('input[aria-label="圖層縮放"]').evaluate(input => {
       input.value = "115";
       input.dispatchEvent(new Event("input", { bubbles: true }));
     });
-    const xRange = page.locator('input[aria-label="運鏡圖層水平位置"]');
+    const xRange = page.locator('input[aria-label="圖層水平位置"]');
     await xRange.evaluate(input => {
       input.value = String(Math.min(4, Number(input.max)));
       input.dispatchEvent(new Event("input", { bubbles: true }));

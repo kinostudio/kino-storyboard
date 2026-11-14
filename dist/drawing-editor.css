@@ -296,3 +296,6 @@
 .ds-de-drawer-panel .ds-de-layer-header { width: 100%; flex: none; }
 .ds-de-drawer-panel .ds-de-layers,.ds-de-drawer-panel .ds-de-layer-list { flex-wrap: nowrap; height: auto; }
 .ds-de-drawer-panel .ds-de-layer-row { flex: none; width: 100%; }
+
+.ds-drawing-editor .ds-de-layer-adjust { width: auto; padding-inline: 10px; gap: 5px; }
+.ds-de-layer-adjust span { font-size: 12px; }
