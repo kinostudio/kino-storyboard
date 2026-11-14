@@ -342,6 +342,60 @@
     });
     sameMembers(project.sceneOrder, scenes.map(function (scene) { return scene.id; }), rootPath + ".sceneOrder");
 
+    if (Object.prototype.hasOwnProperty.call(project, "screenplay")) {
+      const screenplayPath = rootPath + ".screenplay";
+      const screenplay = record(project.screenplay, screenplayPath);
+      const screenplayFields = ["subject", "outline", "format", "scenes"];
+      if (Object.keys(screenplay).length !== screenplayFields.length ||
+          Object.keys(screenplay).some(function (key) { return screenplayFields.indexOf(key) < 0; })) {
+        fail("INVALID_SCREENPLAY", screenplayPath, "screenplay 只接受 subject、outline、format、scenes 欄位。");
+      }
+      text(screenplay.subject, screenplayPath + ".subject", true);
+      text(screenplay.outline, screenplayPath + ".outline", true);
+      if (screenplay.format !== "tw" && screenplay.format !== "us") {
+        fail("INVALID_SCREENPLAY_FORMAT", screenplayPath + ".format", "screenplay.format 必須是 tw 或 us。");
+      }
+      const linkedSceneIds = new Set();
+      array(screenplay.scenes, screenplayPath + ".scenes").forEach(function (scene, index) {
+        const scenePath = screenplayPath + ".scenes[" + index + "]";
+        record(scene, scenePath);
+        const sceneFields = ["id", "sceneId", "location", "time", "people", "interiorExterior", "blocks"];
+        if (Object.keys(scene).length !== sceneFields.length ||
+            Object.keys(scene).some(function (key) { return sceneFields.indexOf(key) < 0; })) {
+          fail("INVALID_SCREENPLAY_SCENE", scenePath, "screenplay scene 欄位不完整或含有未支援欄位。");
+        }
+        addUniqueId(seenIds, scene.id, scenePath + ".id");
+        if (scene.sceneId !== null) {
+          const linkedSceneId = id(scene.sceneId, scenePath + ".sceneId");
+          if (!sceneById.has(linkedSceneId)) {
+            fail("ORPHAN_SCREENPLAY_SCENE_REFERENCE", scenePath + ".sceneId", "screenplay scene 引用了不存在的 storyboard Scene。");
+          }
+          if (linkedSceneIds.has(linkedSceneId)) {
+            fail("DUPLICATE_SCREENPLAY_SCENE_LINK", scenePath + ".sceneId", "一個 storyboard Scene 只能連結一個 screenplay scene。");
+          }
+          linkedSceneIds.add(linkedSceneId);
+        }
+        ["location", "time", "people", "interiorExterior"].forEach(function (field) {
+          text(scene[field], scenePath + "." + field, true);
+        });
+        array(scene.blocks, scenePath + ".blocks").forEach(function (block, blockIndex) {
+          const blockPath = scenePath + ".blocks[" + blockIndex + "]";
+          record(block, blockPath);
+          const blockFields = ["id", "type", "character", "text"];
+          if (Object.keys(block).length !== blockFields.length ||
+              Object.keys(block).some(function (key) { return blockFields.indexOf(key) < 0; })) {
+            fail("INVALID_SCREENPLAY_BLOCK", blockPath, "screenplay block 欄位不完整或含有未支援欄位。");
+          }
+          addUniqueId(seenIds, block.id, blockPath + ".id");
+          if (!["action", "dialogue", "text"].includes(block.type)) {
+            fail("INVALID_SCREENPLAY_BLOCK_TYPE", blockPath + ".type", "screenplay block type 必須是 action、dialogue 或 text。");
+          }
+          text(block.character, blockPath + ".character", true);
+          text(block.text, blockPath + ".text", true);
+        });
+      });
+    }
+
     const shotIdsByScene = new Map();
     const shotById = new Map();
     const frameOwnersById = new Map();

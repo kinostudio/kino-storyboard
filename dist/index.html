@@ -8,14 +8,14 @@
   <meta name="theme-color" content="#18243b">
   <title>KINO Storyboard｜光落下的地方</title>
   <link rel="icon" type="image/svg+xml" href="kino-storyboard.svg">
-  <link rel="stylesheet" href="styles.css?v=20261114sequence1">
-  <link rel="stylesheet" href="output.css?v=20261114sequence1">
+  <link rel="stylesheet" href="styles.css?v=20261114script1">
+  <link rel="stylesheet" href="output.css?v=20261114script1">
   <link rel="stylesheet" href="drawing-editor.css?v=20261114sequence1">
   <link rel="stylesheet" href="photo-crop-editor.css?v=20261029v38">
   <link rel="stylesheet" href="production-timeline.css?v=20261029g">
   <link rel="stylesheet" href="project-metadata.css?v=20261028b">
   <link rel="stylesheet" href="time-input.css">
-  <script defer src="project-schema.js?v=20261114sequence1"></script>
+  <script defer src="project-schema.js?v=20261114script1"></script>
   <script defer src="history-engine.js?v=20261029v36"></script>
   <script defer src="storage-contract.js"></script>
   <script defer src="project-migrations.js?v=20261101out5"></script>
@@ -26,8 +26,8 @@
   <script defer src="vendor/fflate/fflate-0.8.3.umd.js"></script>
   <script defer src="zip-adapter.js?v=20261028k"></script>
   <script defer src="project-package.js?v=20261114sequence1"></script>
-  <script defer src="package-copy.js?v=20261114sequence1"></script>
-  <script defer src="model.js?v=20261114sequence1"></script>
+  <script defer src="package-copy.js?v=20261114script1"></script>
+  <script defer src="model.js?v=20261114script1"></script>
   <script defer src="storyboard-renderer.js?v=20261107drawing3"></script>
   <script defer src="photo-crop-renderer.js?v=20261029v38"></script>
   <script defer src="photo-crop-editor.js?v=20261114sequence1"></script>
@@ -40,7 +40,9 @@
   <script defer src="shot-index.js?v=20261106scan1"></script>
   <link rel="stylesheet" href="sequence-editor.css?v=20261114sequence2">
   <script defer src="sequence-editor.js?v=20261114sequence2"></script>
-  <script defer src="app.js?v=20261114sequence2"></script>
+  <link rel="stylesheet" href="screenplay-editor.css">
+  <script defer src="screenplay-editor.js"></script>
+  <script defer src="app.js?v=20261114script1"></script>
 </head>
 <body>
   <section class="lifecycle-gate" id="lifecycle-gate" aria-live="polite" aria-labelledby="lifecycle-title">
@@ -56,6 +58,7 @@
         <img class="brand-logo" src="kino-storyboard-transparent.svg" alt="">
       </div>
       <div class="rail-rule"></div>
+      <button class="rail-button" data-view="screenplay" aria-label="文字腳本" title="文字腳本"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 3h14v18H5zM8 7h8M8 11h6M8 15h8"/></svg><span>腳本</span></button>
       <button class="rail-button is-active" data-view="storyboard" aria-label="分鏡" title="分鏡">
         <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3.5" y="4" width="17" height="16" rx="2.2"/><path d="M8.5 4v16M15.5 4v16M4 8h4M16 8h4M4 16h4M16 16h4"/></svg>
         <span>分鏡</span>
@@ -98,6 +101,7 @@
       </section>
 
       <nav class="workspace-tabs" aria-label="專案工作區">
+        <button class="workspace-tab" data-view="screenplay"><span class="tab-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 3h14v18H5zM8 7h8M8 11h6M8 15h8"/></svg></span>文字腳本</button>
         <button class="workspace-tab is-active" data-view="storyboard"><span class="tab-icon"><svg viewBox="0 0 20 20" aria-hidden="true"><rect x="2.5" y="3" width="15" height="14" rx="2"/><path d="M7 3v14m6-14v14M3 7h4m6 0h4M3 13h4m6 0h4"/></svg></span>分鏡 <span class="tab-count" id="shot-count">—</span></button>
         <button class="workspace-tab" data-view="schedule"><span class="tab-icon"><svg viewBox="0 0 20 20" aria-hidden="true"><rect x="3" y="4" width="14" height="13" rx="2"/><path d="M6.5 2.5v3M13.5 2.5v3M3 8h14M6.5 11h2m3 0h2m-6 3h2"/></svg></span>拍攝安排 <span class="tab-count" id="day-count">—</span></button>
         <button class="workspace-tab" data-view="output"><span class="tab-icon"><svg viewBox="0 0 20 20" aria-hidden="true"><path d="M5 2.8h6l4 4v10.4H5a1.7 1.7 0 0 1-1.7-1.7v-11A1.7 1.7 0 0 1 5 2.8Z"/><path d="M11 3v4h3.8M6.5 11h7m-7 3h7"/></svg></span>輸出</button>
@@ -105,6 +109,7 @@
         <button class="quiet-button" id="project-menu" title="專案設定與備份"><svg viewBox="0 0 20 20" aria-hidden="true"><circle cx="4" cy="10" r="1"/><circle cx="10" cy="10" r="1"/><circle cx="16" cy="10" r="1"/></svg><span>專案</span></button>
       </nav>
 
+      <section class="workspace-view" id="view-screenplay" aria-label="文字腳本" hidden></section>
       <section class="workspace-view is-active" id="view-storyboard" aria-label="分鏡工作區">
         <aside class="chapter-sidebar" aria-label="場次導覽">
           <div class="side-head scene-side-head"><div><span class="eyebrow">SCENE STRUCTURE</span><h2>場次 <span class="count-chip" id="chapter-count">—</span></h2></div><button class="scene-add-button" data-action="add-scene" aria-label="新增場次">＋ 新增場次</button></div>
@@ -117,6 +122,8 @@
             <div><div class="eyebrow" id="chapter-eyebrow">ALL SCENES</div><h2 id="storyboard-heading">全部分鏡</h2><p class="panel-subtitle" id="storyboard-subtitle">以鏡頭為單位，整理畫面、節奏與聲音。</p></div>
             <div class="panel-actions"><button class="outline-button reorder-mode-toggle" id="shot-reorder-mode" type="button" aria-pressed="false">多選鏡頭</button><button class="outline-button" id="add-shot"><svg viewBox="0 0 20 20" aria-hidden="true"><path d="M10 4v12M4 10h12"/></svg>新增鏡頭</button><div class="view-switch shot-view-switch" role="group" aria-label="分鏡檢視方式"><button type="button" class="is-active" data-shot-view="list" aria-pressed="true"><svg viewBox="0 0 20 20" aria-hidden="true"><path d="M7 5h10M7 10h10M7 15h10"/><circle cx="3.5" cy="5" r=".6"/><circle cx="3.5" cy="10" r=".6"/><circle cx="3.5" cy="15" r=".6"/></svg><span>清單</span></button><button type="button" data-shot-view="gallery" aria-pressed="false"><svg viewBox="0 0 20 20" aria-hidden="true"><rect x="2.5" y="2.5" width="6" height="6" rx="1"/><rect x="11.5" y="2.5" width="6" height="6" rx="1"/><rect x="2.5" y="11.5" width="6" height="6" rx="1"/><rect x="11.5" y="11.5" width="6" height="6" rx="1"/></svg><span>圖庫</span></button></div></div>
           </div>
+          <button type="button" class="outline-button" id="screenplay-compare-toggle" aria-expanded="false" aria-controls="screenplay-compare-host">對照腳本</button>
+          <aside id="screenplay-compare-host" hidden></aside>
           <button type="button" class="outline-button voiceover-toggle" data-voiceover-action="open">檢視全片台詞／旁白稿</button>
           <div class="storyboard-meta"><div class="meta-chips"><span class="soft-chip" id="visible-count">— 個鏡頭</span><span class="soft-chip"><span class="meta-mark"></span><span id="runtime-label">預估片長 —</span></span></div><div class="reorder-hints"><span class="hint-text" id="shot-reorder-status" aria-live="polite">按下卡片空白並移動即可拖曳排序；捲頁請從卡片間隙開始 · Ctrl／⌘ 加選、Shift 範圍</span><span class="reorder-selection-status" id="shot-reorder-selection-status" aria-live="polite" hidden></span></div></div>
           <section class="shot-photo-import-banner" id="shot-photo-import-banner" aria-live="polite" aria-label="照片匯入暫存" hidden></section>
@@ -166,7 +173,7 @@
           <section class="output-settings">
             <div class="eyebrow">DOCUMENT SETUP</div><h2>準備輸出</h2><p class="panel-subtitle">預覽這份工作副本的閱讀範圍與版面。</p>
             <div class="form-divider"></div>
-            <label class="field-label" for="output-type">文件類型</label><select id="output-type" class="select-control"><option value="storyboard">分鏡文件</option><option value="schedule">拍攝安排</option></select>
+            <label class="field-label" for="output-type">文件類型</label><select id="output-type" class="select-control"><option value="storyboard">分鏡文件</option><option value="schedule">拍攝安排</option><option value="screenplay">僅文字腳本</option><option value="combined">腳本＋分鏡</option></select>
             <div class="field-gap"></div>
             <div id="storyboard-scope-group"><label class="field-label" for="output-scope">輸出範圍</label><select id="output-scope" class="select-control"><option value="all">全部分鏡</option><option value="chapter">目前場次</option><option value="selected">目前選取鏡頭</option></select><span class="field-note">搜尋條件不會自動縮減輸出內容。</span></div>
             <div class="field-gap"></div>

@@ -51,7 +51,10 @@
     return new Set(keys.split(" "));
   }
 
-  const PROJECT_KEYS = shape("projectId schemaVersion revision title createdAt updatedAt aspectRatio projectType scenes sceneOrder shots shotOrderByScene shootingDays shootingDayOrder scheduleEntries scheduleOrderByDay productionTasks productionTaskOrder productionTimelineOrder assets drawings outputPreferences");
+  const PROJECT_KEYS = shape("projectId schemaVersion revision title createdAt updatedAt aspectRatio projectType scenes sceneOrder shots shotOrderByScene shootingDays shootingDayOrder scheduleEntries scheduleOrderByDay productionTasks productionTaskOrder productionTimelineOrder assets drawings outputPreferences screenplay");
+  const SCREENPLAY_KEYS = shape("subject outline format scenes");
+  const SCREENPLAY_SCENE_KEYS = shape("id sceneId location time people interiorExterior blocks");
+  const SCREENPLAY_BLOCK_KEYS = shape("id type character text");
   const SCENE_KEYS = shape("projectId id title displayNo");
   const SHOT_KEYS = shape("projectId id sceneId shotNo shotNoLocked displayNo title visual script sound move tags super durationSeconds legacyArt assetIds photoCropsByAssetId drawingIds sequenceFrameId sequenceFrames");
   const DAY_KEYS = shape("projectId id date title start location contactName contactPhone productionCompany businessNumber expectedWrap notices contacts groupCalls vehicles");
@@ -86,6 +89,17 @@
   function checkProjectShape(project) {
     exactShape(project, PROJECT_KEYS, "project");
     project.scenes.forEach(function (scene, index) { exactShape(scene, SCENE_KEYS, "project.scenes[" + index + "]"); });
+    if (Object.prototype.hasOwnProperty.call(project, "screenplay")) {
+      const screenplay = project.screenplay;
+      exactShape(screenplay, SCREENPLAY_KEYS, "project.screenplay");
+      screenplay.scenes.forEach(function (scene, index) {
+        const scenePath = "project.screenplay.scenes[" + index + "]";
+        exactShape(scene, SCREENPLAY_SCENE_KEYS, scenePath);
+        scene.blocks.forEach(function (block, blockIndex) {
+          exactShape(block, SCREENPLAY_BLOCK_KEYS, scenePath + ".blocks[" + blockIndex + "]");
+        });
+      });
+    }
     project.shots.forEach(function (shot, index) {
       exactShape(shot, SHOT_KEYS, "project.shots[" + index + "]");
       (shot.sequenceFrames || []).forEach(function (frame, frameIndex) {
@@ -219,6 +233,10 @@
       records.forEach(function (record) { entries.push({ kind: kind, id: record.id }); });
     }
     collect("scene", project.scenes);
+    if (project.screenplay) {
+      collect("screenplayScene", project.screenplay.scenes);
+      project.screenplay.scenes.forEach(function (scene) { collect("screenplayBlock", scene.blocks); });
+    }
     collect("shot", project.shots);
     project.shots.forEach(function (shot) {
       if (shot.sequenceFrameId) entries.push({ kind: "sequenceFrame", id: shot.sequenceFrameId });
@@ -383,6 +401,13 @@
       scene.id = mapped(scene.id, "scene.id");
     });
     project.sceneOrder = project.sceneOrder.map(function (id) { return mapped(id, "sceneOrder"); });
+    if (project.screenplay) {
+      project.screenplay.scenes.forEach(function (scene) {
+        scene.id = mapped(scene.id, "screenplay.scene.id");
+        if (scene.sceneId !== null) scene.sceneId = mapped(scene.sceneId, "screenplay.scene.sceneId");
+        scene.blocks.forEach(function (block) { block.id = mapped(block.id, "screenplay.block.id"); });
+      });
+    }
     project.shots.forEach(function (shot) {
       shot.projectId = project.projectId;
       shot.id = mapped(shot.id, "shot.id");
