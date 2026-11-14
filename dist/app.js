@@ -2998,7 +2998,7 @@
   function sequenceEditorOptions(host) {
     const shot = byId(host.dataset.sequenceHost);
     return {host, model, shot, projectId:state.projectId, shotNumber:(currentShotIndex().chapterNumbers.get(shot.chapterId) || 0) + "-" + shotSequence(shot),
-      onError:error => message(error && error.message || String(error),true), onChange:() => renderShotList()};
+      onError:error => message(error && error.message || String(error),true), onChange:() => renderSequenceEditors()};
   }
   function renderSequenceEditors() {
     if (!window.KinoSequenceEditor) return;
@@ -6145,8 +6145,9 @@
       else if (currentView === "voiceover") renderVoiceover();
       reconcileSavedDrafts(); saveStatus(event.saveStatus); updateHistoryButtons(); refreshLifecycle(modelLifecycle()); return;
     }
-    if (type === "updateShot") {
+    if (type === "updateShot" || type === "updateSequenceFrame") {
       syncCommittedShotViews(previousState);
+      if (type === "updateSequenceFrame") renderSequenceEditors();
       // Clear a matching committed draft before syncing the unfocused inspector counterpart.
       // Newer drafts and composing controls remain protected by the draft/focus guards.
       reconcileSavedDrafts();
