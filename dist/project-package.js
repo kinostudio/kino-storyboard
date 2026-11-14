@@ -227,22 +227,27 @@
     }
     const assetsById = new Map(project.assets.map(function (asset) { return [asset.id, asset]; }));
     project.shots.forEach(function (shot) {
-      const seenAssetIds = new Set();
-      shot.assetIds.forEach(function (assetId) {
-        if (seenAssetIds.has(assetId)) {
-          fail("DUPLICATE_SHOT_ASSET_REFERENCE", "同一 Shot 不可重複引用相同照片 Asset。", {
-            shotId: shot.id,
-            assetId: assetId
-          });
-        }
-        seenAssetIds.add(assetId);
-        const asset = assetsById.get(assetId);
-        if (!asset || asset.role !== "photoOriginal") {
-          fail("INVALID_SHOT_PHOTO_ASSET", "Shot 的照片清單只能引用 photoOriginal Asset。", {
-            shotId: shot.id,
-            assetId: assetId,
-            role: asset && asset.role || null
-          });
+      [{ assetIds: shot.assetIds, master: true }].concat(shot.sequenceFrames || []).forEach(function (frame) {
+        const seenAssetIds = new Set();
+        frame.assetIds.forEach(function (assetId) {
+          if (seenAssetIds.has(assetId)) {
+            fail("DUPLICATE_SHOT_ASSET_REFERENCE", "同一分鏡畫格不可重複引用相同照片 Asset。", {
+              shotId: shot.id,
+              assetId: assetId
+            });
+          }
+          seenAssetIds.add(assetId);
+          const asset = assetsById.get(assetId);
+          if (!asset || asset.role !== "photoOriginal") {
+            fail("INVALID_SHOT_PHOTO_ASSET", "分鏡畫格的照片只能引用 photoOriginal Asset。", {
+              shotId: shot.id,
+              assetId: assetId,
+              role: asset && asset.role || null
+            });
+          }
+        });
+        if (!frame.master && frame.assetIds.length > 1) {
+          fail("SHOT_PHOTO_LIMIT", "每個分鏡畫格只能有一張照片。", { shotId: shot.id });
         }
       });
     });

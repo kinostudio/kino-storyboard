@@ -96,10 +96,10 @@
     return cloneJson(crop);
   }
 
-  function validateShotPhotoCrops(shot, path) {
-    if (!Object.prototype.hasOwnProperty.call(shot, "photoCropsByAssetId")) return;
-    const crops = record(shot.photoCropsByAssetId, path + ".photoCropsByAssetId");
-    const references = new Set(shot.assetIds);
+  function validatePhotoCrops(frame, path) {
+    if (!Object.prototype.hasOwnProperty.call(frame, "photoCropsByAssetId")) return;
+    const crops = record(frame.photoCropsByAssetId, path + ".photoCropsByAssetId");
+    const references = new Set(frame.assetIds);
     Object.keys(crops).forEach(function (assetId) {
       const cropPath = path + ".photoCropsByAssetId." + assetId;
       id(assetId, cropPath);
@@ -344,6 +344,7 @@
 
     const shotIdsByScene = new Map();
     const shotById = new Map();
+    const frameOwnersById = new Map();
     shots.forEach(function (shot, index) {
       const path = rootPath + ".shots[" + index + "]";
       record(shot, path);
@@ -363,8 +364,38 @@
       if (!Number.isInteger(shot.durationSeconds * 10)) fail("INVALID_DURATION_PRECISION", path + ".durationSeconds", "影片秒數最多一位小數。");
       if (shot.legacyArt !== undefined) text(shot.legacyArt, path + ".legacyArt", true);
       array(shot.assetIds, path + ".assetIds").forEach(function (assetId, assetIndex) { id(assetId, path + ".assetIds[" + assetIndex + "]"); });
-      validateShotPhotoCrops(shot, path);
+      validatePhotoCrops(shot, path);
       array(shot.drawingIds, path + ".drawingIds").forEach(function (drawingId, drawingIndex) { id(drawingId, path + ".drawingIds[" + drawingIndex + "]"); });
+      const hasSequenceFrameId = Object.prototype.hasOwnProperty.call(shot, "sequenceFrameId");
+      const hasSequenceFrames = Object.prototype.hasOwnProperty.call(shot, "sequenceFrames");
+      if (hasSequenceFrameId !== hasSequenceFrames) {
+        fail("INCOMPLETE_SEQUENCE_FRAME_DATA", path + ".sequenceFrames", "sequenceFrameId 與 sequenceFrames 必須同時存在或同時缺席。");
+      }
+      if (hasSequenceFrames) {
+        const masterFrameId = addUniqueId(seenIds, shot.sequenceFrameId, path + ".sequenceFrameId");
+        const frames = array(shot.sequenceFrames, path + ".sequenceFrames");
+        if (frames.length === 0) fail("EMPTY_SEQUENCE_FRAMES", path + ".sequenceFrames", "啟用連續分鏡時至少需要一個後續畫格。");
+        frameOwnersById.set(masterFrameId, { shot: shot, frame: shot, master: true });
+        frames.forEach(function (frame, frameIndex) {
+          const framePath = path + ".sequenceFrames[" + frameIndex + "]";
+          record(frame, framePath);
+          const frameFields = new Set(["id", "visual", "script", "super", "assetIds", "photoCropsByAssetId", "drawingIds"]);
+          Object.keys(frame).forEach(function (name) {
+            if (!frameFields.has(name)) fail("INVALID_SEQUENCE_FRAME_FIELD", framePath + "." + name, "分鏡畫格不可覆寫 Shot 的共享欄位。");
+          });
+          addUniqueId(seenIds, frame.id, framePath + ".id");
+          ["visual", "script", "super"].forEach(function (name) { text(frame[name], framePath + "." + name, true); });
+          array(frame.assetIds, framePath + ".assetIds").forEach(function (assetId, assetIndex) {
+            id(assetId, framePath + ".assetIds[" + assetIndex + "]");
+          });
+          if (frame.assetIds.length > 1) fail("SHOT_PHOTO_LIMIT", framePath + ".assetIds", "每個分鏡畫格只能引用一張照片 Asset。");
+          validatePhotoCrops(frame, framePath);
+          array(frame.drawingIds, framePath + ".drawingIds").forEach(function (drawingId, drawingIndex) {
+            id(drawingId, framePath + ".drawingIds[" + drawingIndex + "]");
+          });
+          frameOwnersById.set(frame.id, { shot: shot, frame: frame, master: false });
+        });
+      }
       shotById.set(shot.id, shot);
       if (!shotIdsByScene.has(shot.sceneId)) shotIdsByScene.set(shot.sceneId, []);
       shotIdsByScene.get(shot.sceneId).push(shot.id);
@@ -516,6 +547,13 @@
       }
       integer(drawing.revision, path + ".revision", 0);
       if (!shotById.has(drawing.shotId)) fail("ORPHAN_SHOT_REFERENCE", path + ".shotId", "Drawing 引用了不存在的 Shot。");
+      if (Object.prototype.hasOwnProperty.call(drawing, "frameId")) {
+        id(drawing.frameId, path + ".frameId");
+        const frameOwner = frameOwnersById.get(drawing.frameId);
+        if (!frameOwner || frameOwner.shot.id !== drawing.shotId) {
+          fail("ORPHAN_SEQUENCE_FRAME_REFERENCE", path + ".frameId", "Drawing 引用的分鏡畫格不存在或不屬於同一 Shot。");
+        }
+      }
       const canvas = record(drawing.canvas, path + ".canvas");
       if (!ASPECT_RATIOS.includes(canvas.aspectRatio)) fail("INVALID_ASPECT_RATIO", path + ".canvas.aspectRatio", "Drawing 畫幅無效。");
       integer(canvas.width, path + ".canvas.width", 1);
@@ -672,23 +710,39 @@
     });
 
     shots.forEach(function (shot) {
-      shot.assetIds.forEach(function (assetId) {
-        if (!assetById.has(assetId)) fail("ORPHAN_ASSET_REFERENCE", rootPath + ".shots." + shot.id + ".assetIds", "Shot 引用了不存在的 Asset。");
-      });
-      Object.keys(shot.photoCropsByAssetId || {}).forEach(function (assetId) {
-        if (assetById.get(assetId).role !== "photoOriginal") {
-          fail("INVALID_PHOTO_CROP_ASSET", rootPath + ".shots." + shot.id + ".photoCropsByAssetId." + assetId, "裁切只能套用於不可變 photoOriginal Asset。");
-        }
-      });
-      shot.drawingIds.forEach(function (drawingId) {
-        if (!drawingById.has(drawingId)) fail("ORPHAN_DRAWING_REFERENCE", rootPath + ".shots." + shot.id + ".drawingIds", "Shot 引用了不存在的 Drawing。");
-        if (drawingById.get(drawingId).shotId !== shot.id) fail("DRAWING_OWNER_MISMATCH", rootPath + ".shots." + shot.id + ".drawingIds", "Drawing 必須屬於引用它的 Shot。");
+      const frames = [{ frame: shot, id: shot.sequenceFrameId || null, master: true }]
+        .concat((shot.sequenceFrames || []).map(function (frame) { return { frame: frame, id: frame.id, master: false }; }));
+      frames.forEach(function (item) {
+        const frame = item.frame;
+        const framePath = item.master
+          ? rootPath + ".shots." + shot.id
+          : rootPath + ".shots." + shot.id + ".sequenceFrames." + frame.id;
+        frame.assetIds.forEach(function (assetId) {
+          if (!assetById.has(assetId)) fail("ORPHAN_ASSET_REFERENCE", framePath + ".assetIds", "分鏡畫格引用了不存在的 Asset。");
+        });
+        Object.keys(frame.photoCropsByAssetId || {}).forEach(function (assetId) {
+          if (assetById.get(assetId).role !== "photoOriginal") {
+            fail("INVALID_PHOTO_CROP_ASSET", framePath + ".photoCropsByAssetId." + assetId, "裁切只能套用於不可變 photoOriginal Asset。");
+          }
+        });
+        frame.drawingIds.forEach(function (drawingId) {
+          const drawing = drawingById.get(drawingId);
+          if (!drawing) fail("ORPHAN_DRAWING_REFERENCE", framePath + ".drawingIds", "分鏡畫格引用了不存在的 Drawing。");
+          if (drawing.shotId !== shot.id || (item.master
+            ? Object.prototype.hasOwnProperty.call(drawing, "frameId") && drawing.frameId !== shot.sequenceFrameId
+            : drawing.frameId !== frame.id)) {
+            fail("DRAWING_OWNER_MISMATCH", framePath + ".drawingIds", "Drawing 必須由相同 Shot 與分鏡畫格引用。");
+          }
+        });
       });
     });
     drawings.forEach(function (drawing) {
-      const owner = shotById.get(drawing.shotId);
-      if (!owner || owner.drawingIds.indexOf(drawing.id) < 0) {
-        fail("DRAWING_OWNER_MISMATCH", rootPath + ".drawings." + drawing.id, "Drawing 必須同時由所屬 Shot 引用。");
+      const frameOwner = Object.prototype.hasOwnProperty.call(drawing, "frameId")
+        ? frameOwnersById.get(drawing.frameId)
+        : null;
+      const owner = drawing.frameId ? frameOwner && frameOwner.frame : shotById.get(drawing.shotId);
+      if (!owner || owner.drawingIds.indexOf(drawing.id) < 0 || (frameOwner && frameOwner.shot.id !== drawing.shotId)) {
+        fail("DRAWING_OWNER_MISMATCH", rootPath + ".drawings." + drawing.id, "Drawing 必須同時由所屬分鏡畫格引用。");
       }
     });
 

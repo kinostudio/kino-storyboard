@@ -209,7 +209,7 @@
 .output-page[data-layout="vo"] .output-record-wrap{border:0;border-bottom:1px solid #e3e6e8;border-radius:0;background:transparent}
 .output-page[data-layout="contact"] .output-record-wrap{border:0;border-radius:0;background:transparent}
 .output-page[data-layout="worksheet"] .output-worksheet-row{display:grid;grid-template-columns:minmax(0,var(--worksheet-art-width,34%)) minmax(0,1fr);align-items:center;gap:calc(3mm * var(--page-scale));height:100%;min-width:0;min-height:0;padding:calc(1.5mm * var(--page-scale)) 0;overflow:visible}
-.output-page[data-layout="worksheet"] .output-worksheet-art{width:auto;height:100%;max-width:100%;max-height:100%;aspect-ratio:var(--storyboard-aspect-ratio,16 / 9);justify-self:start;align-self:center}
+.output-page[data-layout="worksheet"] .output-worksheet-art{width:100%;height:auto;max-width:100%;max-height:none;aspect-ratio:var(--storyboard-aspect-ratio,16 / 9);justify-self:start;align-self:center}
 .output-page[data-layout="worksheet"] .output-worksheet-main{min-width:0;min-height:0;align-self:center;overflow-wrap:anywhere;word-break:break-word}
 .output-page[data-layout="proposal"] .output-proposal-card{display:grid;grid-template-columns:minmax(0,1fr);grid-template-rows:auto auto;align-content:start;justify-items:stretch;gap:calc(1.2mm * var(--page-scale));height:100%;min-width:0;min-height:0;padding:calc(1.2mm * var(--page-scale));overflow:visible}
 .output-page[data-layout="proposal"] .output-card-art{width:var(--proposal-art-width,100%);max-width:100%;height:auto;max-height:none;aspect-ratio:var(--storyboard-aspect-ratio,16 / 9);justify-self:center;align-self:start}

@@ -126,7 +126,12 @@
     this.build();
   }
 
-  PhotoCropEditor.prototype.loadImage = function () {
+  PhotoCropEditor.prototype.loadImage = async function () {
+    const importer = globalThis.DirectorStoryboardPhotoImport;
+    if (!importer || typeof importer.validateHeader !== "function") throw new Error("圖片安全檢查尚未載入；沒有解碼照片。");
+    if (!this.imageBlob.size || this.imageBlob.size > importer.PHOTO_IMPORT_POLICY.maxBytes) throw new Error("照片必須小於或等於 20 MiB，且不可空白。");
+    importer.validateHeader(new Uint8Array(await this.imageBlob.arrayBuffer()));
+    if (this.destroyed) throw new Error("裁切已取消；沒有解碼照片。");
     const image = this.image;
     if (image.complete && image.naturalWidth > 0) return Promise.resolve(image);
     const promise = new Promise(function (resolve, reject) {

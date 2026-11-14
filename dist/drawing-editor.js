@@ -15,6 +15,103 @@
     "2.35:1": Object.freeze({ width: 2350, height: 1000 })
   });
 
+  const CAMERA_FONT = {
+    A: [[[0,6],[0,2],[2,0],[4,2],[4,6]], [[0,4],[4,4]]],
+    B: [[[0,0],[0,6]], [[0,0],[3,0],[4,1],[4,2],[3,3],[0,3]], [[3,3],[4,4],[4,5],[3,6],[0,6]]],
+    C: [[[4,0],[1,0],[0,1],[0,5],[1,6],[4,6]]],
+    D: [[[0,0],[0,6],[3,6],[4,5],[4,1],[3,0],[0,0]]],
+    E: [[[4,0],[0,0],[0,6],[4,6]], [[0,3],[3,3]]],
+    F: [[[0,6],[0,0],[4,0]], [[0,3],[3,3]]],
+    G: [[[4,0],[1,0],[0,1],[0,5],[1,6],[4,6],[4,3],[2,3]]],
+    H: [[[0,0],[0,6]], [[4,0],[4,6]], [[0,3],[4,3]]],
+    I: [[[0,0],[4,0]], [[2,0],[2,6]], [[0,6],[4,6]]],
+    L: [[[0,0],[0,6],[4,6]]],
+    M: [[[0,6],[0,0],[2,3],[4,0],[4,6]]],
+    N: [[[0,6],[0,0],[4,6],[4,0]]],
+    O: [[[1,0],[3,0],[4,1],[4,5],[3,6],[1,6],[0,5],[0,1],[1,0]]],
+    P: [[[0,6],[0,0],[3,0],[4,1],[4,2],[3,3],[0,3]]],
+    R: [[[0,6],[0,0],[3,0],[4,1],[4,2],[3,3],[0,3]], [[2,3],[4,6]]],
+    S: [[[4,0],[1,0],[0,1],[0,2],[1,3],[3,3],[4,4],[4,5],[3,6],[0,6]]],
+    T: [[[0,0],[4,0]], [[2,0],[2,6]]],
+    U: [[[0,0],[0,5],[1,6],[3,6],[4,5],[4,0]]],
+    V: [[[0,0],[2,6],[4,0]]],
+    W: [[[0,0],[0,6],[2,4],[4,6],[4,0]]],
+    X: [[[0,0],[4,6]], [[4,0],[0,6]]],
+    Y: [[[0,0],[2,3],[4,0]], [[2,3],[2,6]]],
+    Z: [[[0,0],[4,0],[0,6],[4,6]]],
+    "/": [[[4,0],[0,6]]]
+  };
+
+  function cameraTextPaths(text, left, top, height, role) {
+    const cell = (height || 42) / 6;
+    const advance = cell * 6;
+    const start = left === undefined ? (1000 - Math.max(0, text.length * advance - cell)) / 2 : left;
+    const paths = [];
+    Array.from(text).forEach(function (character, index) {
+      const glyph = CAMERA_FONT[character];
+      if (!glyph) return;
+      glyph.forEach(function (path) {
+        paths.push({ kind: "pen", keepOrientation: true, role: role || "label", points: path.map(function (point) {
+          return [start + index * advance + point[0] * cell, (top === undefined ? 42 : top) + point[1] * cell];
+        }) });
+      });
+    });
+    return paths;
+  }
+
+  const cameraPen = function (points, keepOrientation) { return { kind: "pen", points: points, keepOrientation: Boolean(keepOrientation) }; };
+  const cameraArrow = function (from, to) { return { kind: "cameraArrow", points: [from, to] }; };
+  const cameraBox = function (x, y, width, height) {
+    return cameraPen([[x,y],[x+width,y],[x+width,y+height],[x,y+height],[x,y]]);
+  };
+  const cameraMark = function (x, y) {
+    return [cameraBox(x,y,112,62), cameraPen([[x+24,y],[x+24,y-18],[x+70,y-18],[x+70,y]]),
+      cameraPen([[x+112,y+18],[x+142,y+5],[x+142,y+57],[x+112,y+44]])];
+  };
+  const cameraCircle = function (cx, cy, radius) {
+    const points = [];
+    for (let index = 0; index <= 24; index += 1) {
+      const angle = Math.PI * 2 * index / 24;
+      points.push([cx + Math.cos(angle) * radius, cy + Math.sin(angle) * radius]);
+    }
+    return cameraPen(points);
+  };
+  const cameraPreset = function (label, paths, annotations) {
+    return Object.freeze({ label: label, paths: paths.flat(), annotations: annotations || [] });
+  };
+  const CAMERA_PRESETS = Object.freeze([
+    cameraPreset("ZOOM IN", [cameraBox(210,150,580,300), cameraBox(360,225,280,150),
+      cameraArrow([245,180],[385,245]), cameraArrow([755,180],[615,245]), cameraArrow([245,420],[385,355]), cameraArrow([755,420],[615,355])]),
+    cameraPreset("ZOOM OUT", [cameraBox(210,150,580,300), cameraBox(360,225,280,150),
+      cameraArrow([385,245],[245,180]), cameraArrow([615,245],[755,180]), cameraArrow([385,355],[245,420]), cameraArrow([615,355],[755,420])]),
+    cameraPreset("DOLLY IN", [cameraPen([[200,150],[800,150],[900,430],[100,430],[200,150]]), cameraPen([[380,230],[620,230],[660,350],[340,350],[380,230]]),
+      cameraArrow([230,180],[390,245]), cameraArrow([770,180],[610,245]), cameraArrow([160,405],[350,345]), cameraArrow([840,405],[650,345])]),
+    cameraPreset("DOLLY OUT", [cameraPen([[200,150],[800,150],[900,430],[100,430],[200,150]]), cameraPen([[380,230],[620,230],[660,350],[340,350],[380,230]]),
+      cameraArrow([390,245],[230,180]), cameraArrow([610,245],[770,180]), cameraArrow([350,345],[160,405]), cameraArrow([650,345],[840,405])]),
+    cameraPreset("PAN L", [cameraBox(230,150,540,300), cameraPen([[500,245],[500,355]]), cameraPen([[465,300],[535,300]]),
+      cameraArrow([690,205],[350,205]), cameraArrow([650,400],[380,400])]),
+    cameraPreset("PAN R", [cameraBox(230,150,540,300), cameraPen([[500,245],[500,355]]), cameraPen([[465,300],[535,300]]),
+      cameraArrow([350,205],[690,205]), cameraArrow([380,400],[650,400])]),
+    cameraPreset("TILT UP", [cameraBox(230,150,540,300), cameraPen([[500,240],[500,360]]),
+      cameraArrow([360,385],[360,220]), cameraArrow([640,385],[640,220])]),
+    cameraPreset("TILT DOWN", [cameraBox(230,150,540,300), cameraPen([[500,240],[500,360]]),
+      cameraArrow([360,220],[360,385]), cameraArrow([640,220],[640,385])]),
+    cameraPreset("TRUCK L", [cameraMark(420,255), cameraPen([[160,420],[840,420]]), cameraPen([[200,400],[200,440]]), cameraPen([[800,400],[800,440]]), cameraArrow([700,370],[300,370])]),
+    cameraPreset("TRUCK R", [cameraMark(420,255), cameraPen([[160,420],[840,420]]), cameraPen([[200,400],[200,440]]), cameraPen([[800,400],[800,440]]), cameraArrow([300,370],[700,370])]),
+    cameraPreset("BOOM UP", [cameraPen([[500,150],[500,430]]), cameraPen([[390,425],[610,425]]), cameraMark(445,300), cameraArrow([650,390],[650,205])]),
+    cameraPreset("BOOM DOWN", [cameraPen([[500,150],[500,430]]), cameraPen([[390,155],[610,155]]), cameraMark(445,190), cameraArrow([650,205],[650,390])]),
+    cameraPreset("ARC L", [cameraCircle(500,300,52), cameraPen([[760,385],[810,320],[800,245],[755,180],[680,135],[600,120]]),
+      cameraArrow([680,135],[600,120]), cameraMark(220,250)]),
+    cameraPreset("ARC R", [cameraCircle(500,300,52), cameraPen([[240,385],[190,320],[200,245],[245,180],[320,135],[400,120]]),
+      cameraArrow([320,135],[400,120]), cameraMark(670,250)]),
+    cameraPreset("FOLLOW", [cameraBox(160,150,680,300), cameraCircle(330,300,40), cameraCircle(670,300,40),
+      cameraArrow([280,390],[720,390]), cameraPen([[330,235],[330,365]]), cameraPen([[670,235],[670,365]])]),
+    cameraPreset("DOLLY ZOOM", [cameraBox(210,150,580,300), cameraBox(360,225,280,150),
+      cameraArrow([245,185],[385,245]), cameraArrow([615,355],[755,420]), cameraPen([[300,390],[400,330],[500,300],[600,330],[700,390]])]),
+    cameraPreset("A / B", [cameraBox(115,190,330,220), cameraBox(555,190,330,220), cameraArrow([455,300],[545,300])],
+      cameraTextPaths("A", 230, 270, 60, "annotation").concat(cameraTextPaths("B", 670, 270, 60, "annotation")))
+  ]);
+
   function getCanonicalCanvasSize(aspectRatio) {
     const size = CANONICAL_CANVASES[aspectRatio];
     if (!size) throw new RangeError("不支援的 Drawing 畫幅：" + aspectRatio);
@@ -178,7 +275,8 @@
       back: "m14 5-7 7 7 7",
       layers: "m3 8 9-5 9 5-9 5-9-5M3 12l9 5 9-5M3 16l9 5 9-5",
       settings: "M4 6h16M4 12h16M4 18h16M8 3v6M16 9v6M10 15v6",
-      plus: "M12 5v14M5 12h14"
+      plus: "M12 5v14M5 12h14",
+      camera: "M3 7h4l2-3h6l2 3h4v13H3zM12 10a3.5 3.5 0 1 0 0 7 3.5 3.5 0 0 0 0-7z"
     };
     const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
     svg.setAttribute("viewBox", "0 0 24 24");
@@ -311,6 +409,11 @@
     this.pencilOnly = Boolean(opts.pencilOnly);
     this.mode = "focus";
     this.activeStroke = null;
+    this.cameraPresetSelection = null;
+    this.cameraPresetTransform = { x: 0, y: 0, scale: 100, flipX: false, flipY: false };
+    this.cameraPresetEdit = null;
+    this.strokeQueue = [];
+    this.renderFrame = null;
     this.eraserPointer = null;
     this.pendingOperation = null;
     this.drawingBusy = false;
@@ -444,7 +547,10 @@
     this.layerGroup.appendChild(this.layerControls);
     this.addLayerButton = button("新增圖層", "ds-de-choice ds-de-add-layer");
     this.addLayerButton.dataset.layerAction = "add";
-    this.layerGroup.appendChild(this.addLayerButton);
+    this.layerGroup.querySelector(".ds-de-label").remove();
+    const layerHeader = create("div", "ds-de-layer-header");
+    layerHeader.append(create("strong","","圖層"), iconOnly(this.addLayerButton,"plus"));
+    this.layerGroup.prepend(layerHeader);
 
     this.layerStateGroup = create("div", "ds-de-control-group");
     this.clearLayerButton = button("清空作用圖層", "ds-de-utility");
@@ -485,6 +591,61 @@
       this.toolButtons.set(tool.id, control);
       this.toolGroup.appendChild(control);
     }, this);
+
+    this.cameraPresetDrawer = create("details", "ds-de-camera-presets");
+    this.cameraPresetToggle = create("summary", "ds-de-camera-preset-toggle");
+    this.cameraPresetToggle.setAttribute("aria-label", "鏡頭運動預設");
+    this.cameraPresetToggle.title = "鏡頭運動預設";
+    appendIcon(this.cameraPresetToggle, "camera");
+    this.cameraPresetPanel = create("div", "ds-de-camera-preset-panel");
+    this.cameraPresetGrid = create("div", "ds-de-camera-preset-grid");
+    CAMERA_PRESETS.forEach(function (preset) {
+      const choice = button(preset.label, "ds-de-camera-preset-choice");
+      choice.dataset.cameraPreset = preset.label;
+      choice.textContent = "";
+      const thumbnail = document.createElement("canvas");
+      thumbnail.width = 128; thumbnail.height = 72;
+      thumbnail.className = "ds-de-camera-preset-thumbnail";
+      thumbnail.setAttribute("aria-hidden", "true");
+      choice.append(thumbnail, create("span", "", preset.label));
+      this.cameraPresetGrid.appendChild(choice);
+      this.drawCameraPresetThumbnail(thumbnail, preset);
+    }, this);
+    this.cameraPresetPreview = document.createElement("canvas");
+    this.cameraPresetPreview.width = 320; this.cameraPresetPreview.height = 180;
+    this.cameraPresetPreview.className = "ds-de-camera-preset-preview";
+    this.cameraPresetPreview.setAttribute("aria-label", "鏡頭運動預覽");
+    const makePresetRange = function (label, min, max, value, ariaLabel) {
+      const wrapper = create("label", "ds-de-camera-preset-range");
+      const title = create("span", "", label);
+      const input = document.createElement("input");
+      input.type = "range"; input.min = String(min); input.max = String(max); input.step = "1"; input.value = String(value);
+      input.setAttribute("aria-label", ariaLabel);
+      const output = create("output", "", String(value));
+      wrapper.append(title, input, output);
+      return { wrapper: wrapper, input: input, output: output };
+    };
+    this.cameraPresetX = makePresetRange("水平", -20, 20, 0, "運鏡圖層水平位置");
+    this.cameraPresetY = makePresetRange("垂直", -20, 20, 0, "運鏡圖層垂直位置");
+    this.cameraPresetScale = makePresetRange("縮放", 50, 150, 100, "運鏡圖層大小");
+    this.cameraPresetFlipX = document.createElement("input");
+    this.cameraPresetFlipX.type = "checkbox";
+    this.cameraPresetFlipX.setAttribute("aria-label", "水平翻轉運鏡圖層");
+    const flipX = create("label", "ds-de-camera-preset-flip", "水平翻轉");
+    flipX.prepend(this.cameraPresetFlipX);
+    this.cameraPresetFlipY = document.createElement("input");
+    this.cameraPresetFlipY.type = "checkbox";
+    this.cameraPresetFlipY.setAttribute("aria-label", "垂直翻轉運鏡圖層");
+    const flipY = create("label", "ds-de-camera-preset-flip", "垂直翻轉");
+    flipY.prepend(this.cameraPresetFlipY);
+    this.cameraPresetEditLabel = create("strong", "ds-de-camera-preset-edit-label", "先選擇一個預設");
+    this.cameraPresetAdjustments = create("div", "ds-de-camera-preset-adjustments");
+    this.cameraPresetAdjustments.append(this.cameraPresetX.wrapper, this.cameraPresetY.wrapper, this.cameraPresetScale.wrapper, flipX, flipY);
+    this.cameraPresetApplyButton = button("加入圖層", "ds-de-camera-preset-apply");
+    this.cameraPresetPanel.append(this.cameraPresetGrid, this.cameraPresetEditLabel, this.cameraPresetPreview,
+      this.cameraPresetAdjustments, this.cameraPresetApplyButton);
+    this.cameraPresetDrawer.append(this.cameraPresetToggle, this.cameraPresetPanel);
+    this.toolGroup.appendChild(this.cameraPresetDrawer);
 
     this.colorLabel = create("label", "ds-de-control-group ds-de-color-label");
     this.colorLabel.appendChild(create("span", "ds-de-label", "筆色"));
@@ -576,7 +737,7 @@
       panel.append(...groups);
       details.append(summary, panel);
       this.listen(details, "toggle", () => {
-        if (details.open) drawers.forEach(other => { if (other !== details) other.open = false; });
+        if (details.open) { this.cameraPresetDrawer.open = false; drawers.forEach(other => { if (other !== details) other.open = false; }); if (label === "圖層") this.renderLayerControls(); }
       });
       drawers.push(details);
       return details;
@@ -589,11 +750,17 @@
     );
     this.listen(document, "pointerdown", (event) => {
       if (!drawers.some(drawer => drawer.contains(event.target))) drawers.forEach(drawer => { drawer.open = false; });
+      if (!this.cameraPresetDrawer.contains(event.target)) this.cameraPresetDrawer.open = false;
     });
     this.listen(shell, "keydown", (event) => {
-      if (event.key !== "Escape" || !drawers.some(drawer => drawer.open)) return;
+      if (event.key !== "Escape" || !drawers.some(drawer => drawer.open) && !this.cameraPresetDrawer.open) return;
       event.preventDefault();
       event.stopPropagation();
+      if (this.cameraPresetDrawer.open) {
+        this.cameraPresetDrawer.open = false;
+        this.cameraPresetToggle.focus();
+        return;
+      }
       const open = drawers.find(drawer => drawer.open);
       open.open = false;
       open.querySelector("summary").focus();
@@ -798,10 +965,28 @@
         self.updateCanvasLabel();
       } else if (action === "visibility") self.runLayerState(layer.id, { visible: !layer.visible });
       else if (action === "lock") self.runLayerState(layer.id, { locked: !layer.locked });
-      else if (action === "up") self.moveLayer(layer.id, -1);
-      else if (action === "down") self.moveLayer(layer.id, 1);
+      else if (action === "up") self.moveLayer(layer.id, 1);
+      else if (action === "down") self.moveLayer(layer.id, -1);
+      else if (action === "adjustPreset") self.openCameraPresetEditorForLayer(layer.id);
       else if (action === "delete") self.deleteLayer(layer.id);
     });
+    this.listen(this.cameraPresetDrawer, "toggle", function () {
+      if (!self.cameraPresetDrawer.open) return;
+      self.controls.querySelectorAll(".ds-de-drawer[open]").forEach(function (drawer) { drawer.open = false; });
+      self.positionCameraPresetPanel();
+      self.updateCameraPresetControls();
+    });
+    this.listen(this.cameraPresetGrid, "click", function (event) {
+      const choice = event.target && event.target.closest ? event.target.closest("button[data-camera-preset]") : null;
+      if (choice && self.cameraPresetGrid.contains(choice)) self.selectCameraPreset(choice.dataset.cameraPreset);
+    });
+    [this.cameraPresetX, this.cameraPresetY, this.cameraPresetScale].forEach(function (range) {
+      self.listen(range.input, "input", function () { self.updateCameraPresetTransform(range); });
+    });
+    [this.cameraPresetFlipX, this.cameraPresetFlipY].forEach(function (checkbox) {
+      self.listen(checkbox, "change", function () { self.updateCameraPresetTransform(); });
+    });
+    this.listen(this.cameraPresetApplyButton, "click", function () { self.applyCameraPreset(); });
     this.listen(this.clearLayerButton, "click", function () { self.clearActiveLayer(); });
     this.toolButtons.forEach(function (control, tool) {
       self.listen(control, "click", function () {
@@ -870,6 +1055,7 @@
       if (self.activeStroke) self.cancelActiveStroke("畫布尺寸改變，未完成筆畫已取消。");
       self.clearTouchInteraction(false);
       self.clampViewTransform();
+      self.positionCameraPresetPanel();
       self.render();
     });
     if (this.model && typeof this.model.subscribeLifecycle === "function") {
@@ -966,7 +1152,9 @@
     this.refreshLifecycle();
     const previousLayerKind = this.activeLayer() && this.activeLayer().kind;
     const changedId = this.drawing && this.drawing.id !== drawing.id;
-    if (changedId) {
+    if (changedId && this.drawingBusy && this.pendingOperation && this.pendingOperation.kind === "createDrawing" && this.pendingOperation.initialEdit.kind === "snapshot") {
+      this.rebaseBufferedStrokes(drawing);
+    } else if (changedId) {
       if (this.activeStroke) this.cancelActiveStroke("畫布已切換，未完成筆畫已取消。");
       this.clearTouchInteraction(true);
     }
@@ -983,7 +1171,7 @@
     }
     await this.refreshBackground();
     if (this.destroyed || !this.drawingRefreshRequests.isCurrent(generation)) return;
-    if (this.pendingOperation && this.pendingOperation.committed) this.pendingOperation = null;
+    if (this.pendingOperation && this.pendingOperation.committed && !this.drawingBusy) this.pendingOperation = null;
     if (this.backgroundFailure) {
       this.setStatus("照片載入失敗；目前暫停編輯。", "error");
     } else if (this.drawingBusy) {
@@ -1128,7 +1316,7 @@
   };
 
   DrawingEditor.prototype.renderLayerControls = function () {
-    if (!this.layerControls) return;
+    if (!this.layerControls || !this.layerGroup.closest("details").open) return;
     const focus = document.activeElement;
     const focusKey = focus && this.layerControls.contains(focus)
       ? { id: focus.dataset.layerId, action: focus.dataset.layerAction }
@@ -1136,13 +1324,28 @@
     this.layerButtons.clear();
     this.layerStateButtons.clear();
     this.layerControls.replaceChildren();
-    const layers = this.drawing ? this.drawing.layers.slice().sort(function (a, b) { return a.order - b.order; }) : [];
+    const layers = this.drawing ? this.drawing.layers.slice().sort(function (a, b) { return b.order - a.order; }) : [];
     layers.forEach(function (layer, index) {
-      const row = create("div", "ds-de-layer-row");
+      const row = create("div", "ds-de-layer-row" + (layer.id === this.layerId ? " is-selected" : ""));
       const select = button(this.layerName(layer), "ds-de-layer-select");
       select.dataset.layerId = layer.id;
       select.dataset.layerAction = "select";
       select.setAttribute("aria-pressed", String(layer.id === this.layerId));
+      select.textContent = "";
+      const thumbnail = document.createElement("canvas");
+      thumbnail.width = 96; thumbnail.height = 54;
+      thumbnail.className = "ds-de-layer-thumbnail";
+      thumbnail.setAttribute("aria-hidden", "true");
+      const ctx = thumbnail.getContext("2d");
+      const fitted = fitContain(96,54,this.drawing.canvas.width,this.drawing.canvas.height);
+      ctx.translate(fitted.x,fitted.y);
+      ctx.scale(fitted.scale,fitted.scale);
+      ctx.globalAlpha = layer.opacity;
+      layer.strokes.forEach(stroke => this.drawStroke(ctx,stroke,this.drawing.canvas));
+      const copy = create("span", "ds-de-layer-copy");
+      copy.append(create("strong","",this.layerName(layer)), create("small","",
+        layer.locked ? "已鎖定" : !layer.visible ? "已隱藏" : layer.strokes.length ? layer.strokes.length + " 筆畫" : "空白圖層"));
+      select.append(thumbnail,copy);
       select.disabled = !this.drawing || Boolean(this.pendingOperation) || this.drawingBusy;
       row.appendChild(select);
       this.layerButtons.set(layer.id, select);
@@ -1155,7 +1358,7 @@
       visibility.disabled = !this.canWriteLayerState(layer.id);
       row.appendChild(visibility);
       const lock = button(layer.locked ? "解鎖" : "鎖定", "ds-de-icon-button");
-      appendIcon(lock, layer.locked ? "unlock" : "lock");
+      appendIcon(lock, layer.locked ? "lock" : "unlock");
       lock.dataset.layerId = layer.id;
       lock.dataset.layerAction = "lock";
       lock.setAttribute("aria-pressed", String(layer.locked));
@@ -1167,20 +1370,32 @@
       up.dataset.layerId = layer.id;
       up.dataset.layerAction = "up";
       up.disabled = index === 0 || !this.canReorderLayers();
-      row.appendChild(up);
+      const actions = create("div", "ds-de-layer-actions");
+      actions.hidden = layer.id !== this.layerId;
+      actions.appendChild(up);
       const down = button("下移", "ds-de-icon-button");
       appendIcon(down, "down");
       down.dataset.layerId = layer.id;
       down.dataset.layerAction = "down";
       down.disabled = index === layers.length - 1 || !this.canReorderLayers();
-      row.appendChild(down);
+      actions.appendChild(down);
       const remove = button("刪除", "ds-de-icon-button ds-de-danger-icon");
       appendIcon(remove, "trash");
       remove.dataset.layerId = layer.id;
       remove.dataset.layerAction = "delete";
       remove.disabled = layer.kind !== "custom" || !this.canDeleteLayer();
       remove.title = layer.kind === "custom" ? "刪除自訂圖層（可復原）" : "場景與人物動作為必要圖層";
-      row.appendChild(remove);
+      actions.appendChild(remove);
+      if (layer.kind === "custom" && /^運鏡\s/.test(layer.name)) {
+        const adjust = button("調整圖層", "ds-de-icon-button ds-de-layer-adjust");
+        iconOnly(adjust, "settings");
+        adjust.dataset.layerId = layer.id;
+        adjust.dataset.layerAction = "adjustPreset";
+        adjust.disabled = layer.id !== this.layerId || !this.canTransformCameraPreset(layer.id);
+        adjust.title = layer.id === this.layerId ? "移動、縮放或翻轉此圖層的全部筆畫" : "先選取此運鏡圖層，再調整全部筆畫";
+        actions.appendChild(adjust);
+      }
+      row.appendChild(actions);
       this.layerControls.appendChild(row);
       this.layerStateButtons.set(layer.id, { visibility: visibility, lock: lock });
     }, this);
@@ -1193,6 +1408,376 @@
       });
       if (restore) restore.focus({ preventScroll: true });
     }
+  };
+
+  DrawingEditor.prototype.cameraPresetDirectionLabel = function (preset, transform) {
+    let label = preset.label;
+    const settings = transform || this.cameraPresetTransform;
+    const horizontal = { "PAN L": "PAN R", "PAN R": "PAN L", "TRUCK L": "TRUCK R", "TRUCK R": "TRUCK L", "ARC L": "ARC R", "ARC R": "ARC L", "A / B": "B / A", "B / A": "A / B" };
+    const vertical = { "TILT UP": "TILT DOWN", "TILT DOWN": "TILT UP", "BOOM UP": "BOOM DOWN", "BOOM DOWN": "BOOM UP" };
+    if (settings.flipX && horizontal[label]) label = horizontal[label];
+    if (settings.flipY && vertical[label]) label = vertical[label];
+    return label;
+  };
+
+  DrawingEditor.prototype.cameraPresetBasePaths = function (preset, canvas, labelOverride) {
+    if (!preset || !canvas || !Number.isFinite(canvas.width) || !Number.isFinite(canvas.height) || canvas.width <= 0 || canvas.height <= 0) return [];
+    const scale = Math.min(canvas.width * 0.76 / 1000, canvas.height * 0.76 / 560);
+    const label = labelOverride || this.cameraPresetDirectionLabel(preset);
+    let paths = preset.paths.concat(cameraTextPaths(label));
+    if (preset.label === "A / B") {
+      const annotations = label === "B / A"
+        ? cameraTextPaths("B", 230, 270, 60, "annotation").concat(cameraTextPaths("A", 670, 270, 60, "annotation"))
+        : preset.annotations;
+      paths = paths.concat(annotations);
+    }
+    return paths.map(function (path) {
+      return { kind: path.kind, keepOrientation: path.keepOrientation, points: path.points.map(function (point) {
+        return [0.5 + (point[0] - 500) * scale / canvas.width, 0.5 + (point[1] - 280) * scale / canvas.height];
+      }) };
+    });
+  };
+
+  DrawingEditor.prototype.cameraPresetBounds = function (paths, scale, flipX, flipY) {
+    const points = [];
+    paths.forEach(function (path) {
+      path.points.forEach(function (point) {
+        const useFlipX = flipX && !path.keepOrientation;
+        const useFlipY = flipY && !path.keepOrientation;
+        points.push({
+          x: 0.5 + (point[0] - 0.5) * scale * (useFlipX ? -1 : 1),
+          y: 0.5 + (point[1] - 0.5) * scale * (useFlipY ? -1 : 1)
+        });
+      });
+    });
+    if (!points.length) return { minX: 0.5, maxX: 0.5, minY: 0.5, maxY: 0.5 };
+    return {
+      minX: Math.min.apply(null, points.map(function (point) { return point.x; })),
+      maxX: Math.max.apply(null, points.map(function (point) { return point.x; })),
+      minY: Math.min.apply(null, points.map(function (point) { return point.y; })),
+      maxY: Math.max.apply(null, points.map(function (point) { return point.y; }))
+    };
+  };
+
+  DrawingEditor.prototype.cameraPresetOffsetLimits = function (paths, scale, flipX, flipY) {
+    const bounds = this.cameraPresetBounds(paths, scale, flipX, flipY);
+    return {
+      x: { min: Math.ceil(-bounds.minX * 100), max: Math.floor((1 - bounds.maxX) * 100) },
+      y: { min: Math.ceil(-bounds.minY * 100), max: Math.floor((1 - bounds.maxY) * 100) }
+    };
+  };
+
+  DrawingEditor.prototype.cameraPresetScaleMax = function (paths, flipX, flipY, editing) {
+    const bounds = this.cameraPresetBounds(paths, 1, flipX, flipY);
+    const fit = Math.min(
+      bounds.minX < 0.5 ? 0.5 / (0.5 - bounds.minX) : 2,
+      bounds.maxX > 0.5 ? 0.5 / (bounds.maxX - 0.5) : 2,
+      bounds.minY < 0.5 ? 0.5 / (0.5 - bounds.minY) : 2,
+      bounds.maxY > 0.5 ? 0.5 / (bounds.maxY - 0.5) : 2
+    );
+    return Math.max(editing ? 25 : 50, Math.min(editing ? 200 : 150, Math.floor(fit * 100)));
+  };
+
+  DrawingEditor.prototype.cameraPresetTransformPaths = function (paths, transform) {
+    const scale = clamp(Number(transform.scale) / 100, 0.25, 2);
+    const limits = this.cameraPresetOffsetLimits(paths, scale, transform.flipX, transform.flipY);
+    const xLimits = limits.x.min <= limits.x.max ? limits.x : { min: 0, max: 0 };
+    const yLimits = limits.y.min <= limits.y.max ? limits.y : { min: 0, max: 0 };
+    const x = clamp(Number(transform.x) / 100 || 0, xLimits.min / 100, xLimits.max / 100);
+    const y = clamp(Number(transform.y) / 100 || 0, yLimits.min / 100, yLimits.max / 100);
+    return paths.map(function (path) {
+      const useFlipX = transform.flipX && !path.keepOrientation;
+      const useFlipY = transform.flipY && !path.keepOrientation;
+      return {
+        kind: path.kind,
+        points: path.points.map(function (point) {
+          return [0.5 + (point[0] - 0.5) * scale * (useFlipX ? -1 : 1) + x,
+            0.5 + (point[1] - 0.5) * scale * (useFlipY ? -1 : 1) + y];
+        })
+      };
+    });
+  };
+
+  DrawingEditor.prototype.makeCameraPresetStrokes = function (presetOrLabel, transform, canvas, color, opacity, width) {
+    const preset = typeof presetOrLabel === "string"
+      ? CAMERA_PRESETS.find(function (item) { return item.label === presetOrLabel; })
+      : presetOrLabel;
+    const targetCanvas = canvas || this.drawing && this.drawing.canvas;
+    if (!preset || !targetCanvas) return [];
+    const settings = transform || { x: 0, y: 0, scale: 100, flipX: false, flipY: false };
+    const paths = this.cameraPresetTransformPaths(this.cameraPresetBasePaths(preset, targetCanvas, this.cameraPresetDirectionLabel(preset, settings)), settings);
+    const strokeColor = rgbaWithOpacity(color || this.color, opacity === undefined ? this.opacity : opacity);
+    const baseWidth = Number.isFinite(width) && width > 0 ? width : this.baseWidth;
+    return paths.map(function (path) {
+      return {
+        kind: path.kind,
+        color: strokeColor,
+        baseWidth: baseWidth,
+        points: path.points.map(function (point, index) { return { x: point[0], y: point[1], t: index, pressure: null }; })
+      };
+    });
+  };
+
+  DrawingEditor.prototype.transformDrawingStrokes = function (strokes, transform) {
+    const paths = strokes.map(function (stroke) {
+      return { kind: stroke.kind, points: stroke.points.map(function (point) { return [point.x, point.y]; }) };
+    });
+    const points = this.cameraPresetTransformPaths(paths, transform);
+    return strokes.map(function (stroke, strokeIndex) {
+      const next = clone(stroke);
+      delete next.id;
+      next.points = stroke.points.map(function (point, pointIndex) {
+        return Object.assign({}, point, { x: points[strokeIndex].points[pointIndex][0], y: points[strokeIndex].points[pointIndex][1] });
+      });
+      return next;
+    });
+  };
+
+  DrawingEditor.prototype.drawCameraPresetThumbnail = function (canvas, preset) {
+    const context = canvas.getContext("2d");
+    if (!context) return;
+    const board = { width: 1920, height: 1080 };
+    const strokes = this.makeCameraPresetStrokes(preset, { x: 0, y: 0, scale: 100, flipX: false, flipY: false }, board, "#315b98", 1, 6);
+    context.clearRect(0, 0, canvas.width, canvas.height);
+    context.save();
+    context.scale(canvas.width / board.width, canvas.height / board.height);
+    strokes.forEach(function (stroke) { this.drawStroke(context, stroke, board); }, this);
+    context.restore();
+  };
+
+  DrawingEditor.prototype.positionCameraPresetPanel = function () {
+    if (!this.cameraPresetDrawer || !this.cameraPresetDrawer.open) return;
+    const anchor = this.cameraPresetToggle.getBoundingClientRect();
+    const panel = this.cameraPresetPanel;
+    const width = Math.min(360, Math.max(200, window.innerWidth - 24));
+    panel.style.width = width + "px";
+    const left = clamp(anchor.left, 12, Math.max(12, window.innerWidth - width - 12));
+    const top = clamp(anchor.bottom + 8, 12, Math.max(12, window.innerHeight - panel.offsetHeight - 12));
+    panel.style.left = left + "px";
+    panel.style.top = top + "px";
+  };
+
+  DrawingEditor.prototype.cameraPresetSourcePaths = function () {
+    if (this.cameraPresetEdit) {
+      return this.cameraPresetEdit.strokes.map(function (stroke) {
+        return { kind: stroke.kind, points: stroke.points.map(function (point) { return [point.x, point.y]; }) };
+      });
+    }
+    const preset = CAMERA_PRESETS.find(function (item) { return item.label === this.cameraPresetSelection; }, this);
+    return preset ? this.cameraPresetBasePaths(preset, this.drawing && this.drawing.canvas, this.cameraPresetDirectionLabel(preset)) : [];
+  };
+
+  DrawingEditor.prototype.updateCameraPresetRanges = function (paths) {
+    if (!paths.length) return;
+    const editing = Boolean(this.cameraPresetEdit);
+    const scaleMax = this.cameraPresetScaleMax(paths, this.cameraPresetTransform.flipX, this.cameraPresetTransform.flipY, editing);
+    this.cameraPresetScale.input.min = editing ? "25" : "50";
+    this.cameraPresetScale.input.max = String(scaleMax);
+    this.cameraPresetTransform.scale = clamp(Number(this.cameraPresetTransform.scale) || 100, editing ? 25 : 50, scaleMax);
+    this.cameraPresetScale.input.value = String(this.cameraPresetTransform.scale);
+    this.cameraPresetScale.output.value = this.cameraPresetTransform.scale + "%";
+    this.cameraPresetScale.output.textContent = this.cameraPresetScale.output.value;
+    const limits = this.cameraPresetOffsetLimits(paths, this.cameraPresetTransform.scale / 100,
+      this.cameraPresetTransform.flipX, this.cameraPresetTransform.flipY);
+    [[this.cameraPresetX, "x"], [this.cameraPresetY, "y"]].forEach(function (entry) {
+      const range = entry[0];
+      const axis = entry[1];
+      let min = limits[axis].min;
+      let max = limits[axis].max;
+      if (min > max) min = max = 0;
+      range.input.min = String(min);
+      range.input.max = String(max);
+      this.cameraPresetTransform[axis] = clamp(Number(this.cameraPresetTransform[axis]) || 0, min, max);
+      range.input.value = String(this.cameraPresetTransform[axis]);
+      range.output.value = this.cameraPresetTransform[axis] + "%";
+      range.output.textContent = range.output.value;
+    }, this);
+  };
+
+  DrawingEditor.prototype.renderCameraPresetPreview = function () {
+    const canvas = this.cameraPresetPreview;
+    const context = canvas && canvas.getContext("2d");
+    if (!context || !this.drawing || !this.drawing.canvas) return;
+    context.clearRect(0, 0, canvas.width, canvas.height);
+    const fitted = fitContain(canvas.width, canvas.height, this.drawing.canvas.width, this.drawing.canvas.height);
+    const strokes = this.cameraPresetEdit
+      ? this.transformDrawingStrokes(this.cameraPresetEdit.strokes, this.cameraPresetTransform)
+      : this.cameraPresetSelection && this.makeCameraPresetStrokes(this.cameraPresetSelection, this.cameraPresetTransform);
+    context.save();
+    context.translate(fitted.x, fitted.y);
+    context.scale(fitted.scale, fitted.scale);
+    (strokes || []).forEach(function (stroke) { this.drawStroke(context, stroke, this.drawing.canvas); }, this);
+    context.restore();
+    const layer = this.cameraPresetEdit && this.findLayerById(this.cameraPresetEdit.layerId);
+    const preset = CAMERA_PRESETS.find(function (item) { return item.label === this.cameraPresetSelection; }, this);
+    this.cameraPresetPreview.setAttribute("aria-label", this.cameraPresetEdit
+      ? "調整「" + (layer && layer.name || "運鏡圖層") + "」全部筆畫的預覽"
+      : "「" + (preset ? this.cameraPresetDirectionLabel(preset) : "鏡頭運動") + "」預設預覽");
+  };
+
+  DrawingEditor.prototype.canAddCameraPreset = function () {
+    return Boolean(this.canAddLayer() && (this.isDraft || this.isPlaceholder ||
+      this.model && typeof this.model.addDrawingLayerWithStrokes === "function"));
+  };
+
+  DrawingEditor.prototype.canTransformCameraPreset = function (layerId) {
+    const layer = this.findLayerById(layerId);
+    if (!layer || layer.kind !== "custom" || !/^運鏡\s/.test(layer.name) || !layer.visible || layer.locked || !layer.strokes.length ||
+        !this.writable || !this.canQueueCommand() || this.activeStroke || this.pendingOperation || this.drawingBusy || !this.backgroundReady || this.backgroundFailure ||
+        !Number.isInteger(this.currentProjectRevision())) return false;
+    return Boolean(this.isDraft || this.isPlaceholder || this.model && typeof this.model.replaceDrawingLayerStrokes === "function");
+  };
+
+  DrawingEditor.prototype.updateCameraPresetControls = function () {
+    if (!this.cameraPresetPanel) return;
+    const editing = Boolean(this.cameraPresetEdit);
+    const selected = CAMERA_PRESETS.find(function (preset) { return preset.label === this.cameraPresetSelection; }, this);
+    const label = selected && this.cameraPresetDirectionLabel(selected);
+    const paths = this.cameraPresetSourcePaths();
+    this.cameraPresetGrid.hidden = editing;
+    this.cameraPresetEditLabel.hidden = !editing && !selected;
+    this.cameraPresetEditLabel.textContent = editing
+      ? "調整「" + (this.findLayerById(this.cameraPresetEdit.layerId) || {}).name + "」全部筆畫"
+      : selected ? "預覽「" + label + "」" : "";
+    this.cameraPresetPreview.hidden = !editing && !selected;
+    this.cameraPresetAdjustments.hidden = !editing && !selected;
+    this.cameraPresetApplyButton.hidden = !editing && !selected;
+    if (paths.length) this.updateCameraPresetRanges(paths);
+    const unavailable = editing ? !this.canTransformCameraPreset(this.cameraPresetEdit.layerId) : !selected || !this.canAddCameraPreset();
+    this.cameraPresetApplyButton.disabled = unavailable;
+    this.cameraPresetApplyButton.textContent = editing ? "更新圖層" : selected ? "加入「" + label + "」圖層" : "選擇預設";
+    this.cameraPresetApplyButton.title = editing
+      ? "以預覽內容更新此圖層的全部筆畫；可用復原還原"
+      : !this.canAddCameraPreset() ? "目前無法新增運鏡圖層，請確認畫布可編輯且尚未達 12 個圖層" : "新增透明的獨立運鏡圖層";
+    const disabled = !editing && !selected;
+    [this.cameraPresetX.input, this.cameraPresetY.input, this.cameraPresetScale.input].forEach(function (input) { input.disabled = disabled; });
+    this.cameraPresetFlipX.disabled = this.cameraPresetFlipY.disabled = disabled || editing;
+    this.cameraPresetX.output.value = this.cameraPresetX.input.value + "%";
+    this.cameraPresetX.output.textContent = this.cameraPresetX.output.value;
+    this.cameraPresetY.output.value = this.cameraPresetY.input.value + "%";
+    this.cameraPresetY.output.textContent = this.cameraPresetY.output.value;
+    this.cameraPresetFlipX.checked = Boolean(this.cameraPresetTransform.flipX);
+    this.cameraPresetFlipY.checked = Boolean(this.cameraPresetTransform.flipY);
+    this.cameraPresetGrid.querySelectorAll("button[data-camera-preset]").forEach(function (choice) {
+      const active = choice.dataset.cameraPreset === this.cameraPresetSelection;
+      choice.classList.toggle("is-selected", active);
+      choice.setAttribute("aria-pressed", String(active));
+    }, this);
+    this.renderCameraPresetPreview();
+    this.positionCameraPresetPanel();
+  };
+
+  DrawingEditor.prototype.selectCameraPreset = function (label) {
+    if (!CAMERA_PRESETS.some(function (preset) { return preset.label === label; })) return false;
+    this.cameraPresetEdit = null;
+    this.cameraPresetSelection = label;
+    this.cameraPresetTransform = { x: 0, y: 0, scale: 100, flipX: false, flipY: false };
+    this.updateCameraPresetControls();
+    return true;
+  };
+
+  DrawingEditor.prototype.updateCameraPresetTransform = function (range) {
+    if (range === this.cameraPresetX) this.cameraPresetTransform.x = Number(range.input.value);
+    if (range === this.cameraPresetY) this.cameraPresetTransform.y = Number(range.input.value);
+    if (range === this.cameraPresetScale) this.cameraPresetTransform.scale = Number(range.input.value);
+    this.cameraPresetTransform.flipX = this.cameraPresetFlipX.checked;
+    this.cameraPresetTransform.flipY = this.cameraPresetFlipY.checked;
+    this.updateCameraPresetControls();
+  };
+
+  DrawingEditor.prototype.uniqueCameraPresetLayerName = function (label) {
+    const names = new Set(this.drawing.layers.filter(function (layer) { return layer.kind === "custom"; }).map(function (layer) { return layer.name; }));
+    const base = "運鏡 " + label;
+    if (!names.has(base)) return base;
+    let suffix = 2;
+    while (names.has(base + " " + suffix)) suffix += 1;
+    return base + " " + suffix;
+  };
+
+  DrawingEditor.prototype.createLocalCameraPresetLayer = function (drawing, name, strokeDrafts) {
+    let suffix = 1;
+    let id = drawing.id + ":preset:" + suffix;
+    while (drawing.layers.some(function (layer) { return layer.id === id; })) id = drawing.id + ":preset:" + (++suffix);
+    const layer = { projectId: this.capturedProjectId, drawingId: drawing.id, id: id, kind: "custom", name: name,
+      visible: true, locked: false, opacity: 1, order: drawing.layers.length, strokes: [] };
+    layer.strokes = strokeDrafts.map(function (stroke, index) {
+      return Object.assign({ id: id + ":stroke:" + (index + 1) }, clone(stroke));
+    });
+    drawing.schemaVersion = 3;
+    drawing.layers.push(layer);
+    this.layerId = layer.id;
+  };
+
+  DrawingEditor.prototype.openCameraPresetEditorForLayer = function (layerId) {
+    const layer = this.findLayerById(layerId);
+    if (layerId !== this.layerId || !this.canTransformCameraPreset(layerId)) return false;
+    this.cameraPresetSelection = null;
+    this.cameraPresetEdit = { layerId: layer.id, drawingId: this.drawing.id, drawingRevision: this.drawing.revision, strokes: clone(layer.strokes) };
+    this.cameraPresetTransform = { x: 0, y: 0, scale: 100, flipX: false, flipY: false };
+    this.cameraPresetDrawer.open = true;
+    this.updateCameraPresetControls();
+    return true;
+  };
+
+  DrawingEditor.prototype.applyCameraPreset = function () {
+    if (this.cameraPresetEdit) {
+      const edit = this.cameraPresetEdit;
+      const layer = this.findLayerById(edit.layerId);
+      if (!layer || this.drawing.id !== edit.drawingId || this.drawing.revision !== edit.drawingRevision || JSON.stringify(layer.strokes) !== JSON.stringify(edit.strokes)) {
+        this.setStatus("圖層內容已更新；沒有套用舊預覽，請重新開啟調整。", "error");
+        return false;
+      }
+      if (!this.canTransformCameraPreset(layer.id)) return false;
+      const strokes = this.transformDrawingStrokes(edit.strokes, this.cameraPresetTransform);
+      this.cameraPresetEdit = null;
+      this.cameraPresetDrawer.open = false;
+      if (this.isPlaceholder) {
+        this.recordPlaceholderEdit(function (drawing) {
+          const target = drawing.layers.find(function (item) { return item.id === edit.layerId; });
+          if (target) target.strokes = strokes.map(function (stroke, index) {
+            return Object.assign({ id: edit.strokes[index] && edit.strokes[index].id || edit.layerId + ":stroke:" + (index + 1) }, stroke);
+          });
+        });
+        return true;
+      }
+      if (this.isDraft) {
+        layer.strokes = strokes.map(function (stroke, index) {
+          return Object.assign({ id: edit.strokes[index] && edit.strokes[index].id || "draft:" + edit.layerId + ":" + (index + 1) }, stroke);
+        });
+        const snapshot = drawingSnapshotForShotCreate(this.drawing);
+        snapshot.backgroundAssetId = null;
+        snapshot.backgroundCrop = null;
+        return this.createFromDraft(snapshot);
+      }
+      this.pendingOperation = { kind: "replaceLayerStrokes", projectId: this.capturedProjectId, shotId: this.capturedShotId,
+        baseRevision: this.currentProjectRevision(), drawingRevision: this.drawing.revision, drawingId: this.drawing.id,
+        layerId: layer.id, strokeDrafts: strokes, originalStrokeIds: this.collectStrokeIds() };
+      return this.submitPending();
+    }
+
+    const preset = CAMERA_PRESETS.find(function (item) { return item.label === this.cameraPresetSelection; }, this);
+    if (!preset || !this.canAddCameraPreset()) return false;
+    const strokes = this.makeCameraPresetStrokes(preset, this.cameraPresetTransform);
+    if (!strokes.length) return false;
+    const name = this.uniqueCameraPresetLayerName(this.cameraPresetDirectionLabel(preset));
+    this.cameraPresetDrawer.open = false;
+    if (this.isPlaceholder) {
+      return this.recordPlaceholderEdit(function (drawing) { this.createLocalCameraPresetLayer(drawing, name, strokes); }.bind(this));
+    }
+    if (this.isDraft) {
+      this.createLocalCameraPresetLayer(this.drawing, name, strokes);
+      const snapshot = drawingSnapshotForShotCreate(this.drawing);
+      snapshot.backgroundAssetId = null;
+      snapshot.backgroundCrop = null;
+      this.updateControls();
+      this.render();
+      return this.createFromDraft(snapshot);
+    }
+    this.pendingOperation = { kind: "addPresetLayer", projectId: this.capturedProjectId, shotId: this.capturedShotId,
+      baseRevision: this.currentProjectRevision(), drawingRevision: this.drawing.revision, drawingId: this.drawing.id,
+      layerName: name, strokeDrafts: strokes, originalStrokeIds: this.collectStrokeIds() };
+    this.updateControls();
+    return this.submitPending();
   };
 
   DrawingEditor.prototype.activeLayer = function () {
@@ -1294,6 +1879,43 @@
       catch (_) { /* host observation must not affect a committed Model command */ }
     }
     return committed.drawing;
+  };
+
+  DrawingEditor.prototype.canBufferStroke = function () {
+    const pending = this.pendingOperation;
+    const layer = this.activeLayer();
+    return Boolean(this.writable && this.tool !== "eraser" && this.backgroundReady && !this.backgroundFailure &&
+      layer && layer.visible && !layer.locked && pending && !pending.error &&
+      (pending.kind === "append" || pending.kind === "createDrawing" && pending.initialEdit.kind === "snapshot"));
+  };
+
+  DrawingEditor.prototype.rebaseBufferedStrokes = function (drawing) {
+    const oldId = this.drawing && this.drawing.id;
+    if (oldId === drawing.id) return;
+    const remap = entry => {
+      if (entry.drawingId !== oldId) return;
+      const previous = this.drawing.layers.find(layer => layer.id === entry.layerId);
+      const layer = previous && drawing.layers.find(layer => layer.kind === previous.kind && layer.order === previous.order);
+      if (!layer) return;
+      entry.drawingId = drawing.id; entry.layerId = layer.id;
+    };
+    this.strokeQueue.forEach(remap);
+    if (this.activeStroke && this.activeStroke.buffered) remap(this.activeStroke);
+  };
+
+  DrawingEditor.prototype.drainStrokeQueue = function () {
+    if (this.destroyed || this.pendingOperation || this.drawingBusy || !this.strokeQueue.length || !this.writable || !this.canQueueCommand()) return;
+    const entry = this.strokeQueue[0];
+    const layer = this.drawing.layers.find(layer => layer.id === entry.layerId);
+    if (entry.projectId !== this.capturedProjectId || entry.drawingId !== this.drawing.id || !layer || !layer.visible || layer.locked) {
+      this.setStatus("後續筆畫尚未保存，目標圖層已變更。請保留此畫面並恢復圖層後重試。", "error");
+      return;
+    }
+    this.strokeQueue.shift();
+    this.pendingOperation = { kind: "append", projectId: this.capturedProjectId, shotId: this.capturedShotId,
+      baseRevision: this.currentProjectRevision(), drawingRevision: this.drawing.revision,
+      drawingId: this.drawing.id, layerId: layer.id, strokeDraft: entry.strokeDraft, originalStrokeIds: this.collectStrokeIds() };
+    void this.submitPending();
   };
 
   DrawingEditor.prototype.isEditable = function () {
@@ -1777,6 +2399,7 @@
 
   DrawingEditor.prototype.openSceneReusePreview = function () {
     this.updateSceneReuseControls();
+    this.updateCameraPresetControls();
     if (this.sceneReuseButton.disabled || !this.sceneReuseSelect.value) return;
     const project = this.getCurrentProjectSnapshot();
     const numbering = this.resolveSceneReuseNumbering(project);
@@ -2021,6 +2644,7 @@
     if (typeof window === "undefined" || typeof window.confirm !== "function" || !window.confirm("確定取消" + label + "？已保存的內容不會改變。")) return;
     if (!this.canDiscardFailedCandidate() || this.pendingOperation !== operation) return;
     this.pendingOperation = null;
+    this.strokeQueue = [];
     if (operation.kind === "background" || operation.kind === "createDrawing" && operation.initialEdit.kind === "background") this.closeBackgroundChangeDialog();
     if (operation.kind === "createDrawing" && operation.initialEdit.kind === "reuseScene") this.closeSceneReusePreview();
     this.setStatus("已取消尚未保存的操作；已保存內容未變。", "info");
@@ -2413,7 +3037,7 @@
         return;
       }
     }
-    if (!this.isEditable() || !event.isPrimary || this.activeStroke) return;
+    if ((!this.isEditable() && !this.canBufferStroke()) || !event.isPrimary || this.activeStroke) return;
     if (!this.acceptsPointer(event)) {
       this.setStatus("筆優先模式已停用手指繪圖；可在「輸入方式」切換。", "info");
       return;
@@ -2445,6 +3069,7 @@
     }
     const capture = {
       pointerId: event.pointerId,
+      buffered: this.canBufferStroke(),
       drawingId: this.drawing.id,
       projectId: this.capturedProjectId,
       projectRevision: projectRevision,
@@ -2497,14 +3122,14 @@
         if (!this.isCurrentTouchEraserCandidate(this.touchEraserCandidate)) {
           this.touchEraserCandidate = null;
           this.eraserPointer = null;
-          this.render();
+          this.requestRender();
           return;
         }
         const point = this.pointerPoint(event);
         if (point) this.touchEraserCandidate.point = point;
         const bounds = this.stage.getBoundingClientRect();
         this.eraserPointer = { x: event.clientX - bounds.left, y: event.clientY - bounds.top, pointerType: event.pointerType };
-        this.render();
+        this.requestRender();
         return;
       }
     }
@@ -2513,7 +3138,7 @@
       if (this.tool === "eraser" && this.acceptsPointer(event)) {
         const bounds = this.stage.getBoundingClientRect();
         this.eraserPointer = { x: event.clientX - bounds.left, y: event.clientY - bounds.top, pointerType: event.pointerType };
-        this.render();
+        this.requestRender();
       }
       return;
     }
@@ -2524,7 +3149,7 @@
     const last = active.points[active.points.length - 1];
     if (last.x === point.x && last.y === point.y && last.t === time) return;
     active.points.push(this.makePoint(point, time));
-    this.render();
+    this.requestRender();
     event.preventDefault();
   };
 
@@ -2568,9 +3193,15 @@
       points: shapeStrokePoints(active.tool, active.points[0], active.points[active.points.length - 1]) || active.points
     };
     const currentLayer = this.activeLayer();
-    if (active.drawingId !== (this.drawing && this.drawing.id) || active.projectId !== this.capturedProjectId || active.layerId !== this.layerId || active.projectRevision !== this.currentProjectRevision() || active.drawingRevision !== (this.drawing && this.drawing.revision) || !currentLayer || !currentLayer.visible || currentLayer.locked || !this.writable) {
+    if (active.drawingId !== (this.drawing && this.drawing.id) || active.projectId !== this.capturedProjectId || active.layerId !== this.layerId || (!active.buffered && (active.projectRevision !== this.currentProjectRevision() || active.drawingRevision !== (this.drawing && this.drawing.revision))) || !currentLayer || !currentLayer.visible || currentLayer.locked || !this.writable) {
       this.setStatus("目標已改變，未完成筆畫已取消。", "info");
       this.render();
+      return;
+    }
+    if (active.buffered) {
+      this.strokeQueue.push({ projectId: active.projectId, drawingId: active.drawingId, layerId: active.layerId, strokeDraft: clone(draft) });
+      this.render();
+      this.drainStrokeQueue();
       return;
     }
     if (this.isDraft) {
@@ -2859,6 +3490,7 @@
     if (!fresh) throw new Error("Drawing 已建立，但目前無法重新讀取；請重新載入確認，避免重複保存。");
     if (!this.didCommitPending(pending, fresh)) throw new Error("Drawing 初始編輯已送出，但目前無法確認結果；請重新載入，避免重複操作。");
     const activeKind = this.activeLayer() && this.activeLayer().kind || pending.initialEdit.layerKind || "scene";
+    this.rebaseBufferedStrokes(fresh);
     this.isDraft = false;
     this.drawing = fresh;
     this.layerId = (fresh.layers.find(function (layer) { return layer.kind === activeKind; }) || fresh.layers[0] || {}).id || null;
@@ -2910,6 +3542,7 @@
       this.drawingBusy = false;
       this.updateControls();
       this.render();
+      this.drainStrokeQueue();
     }
   };
 
@@ -2924,6 +3557,8 @@
       layerState: "setDrawingLayerState",
       reuseScene: "reuseSceneLayer",
       addLayer: "addDrawingLayer",
+      addPresetLayer: "addDrawingLayerWithStrokes",
+      replaceLayerStrokes: "replaceDrawingLayerStrokes",
       deleteLayer: "deleteDrawingLayer",
       reorderLayers: "reorderDrawingLayers",
       background: "setDrawingBackground"
@@ -2960,6 +3595,8 @@
       else if (pending.kind === "clear") await this.model.clearDrawingLayer(pending.drawingId, pending.layerId);
       else if (pending.kind === "layerState") await this.model.setDrawingLayerState(pending.drawingId, pending.layerId, clone(pending.layerPatch));
       else if (pending.kind === "addLayer") pending.addedLayerId = await this.model.addDrawingLayer(pending.drawingId, pending.layerName);
+      else if (pending.kind === "addPresetLayer") pending.addedLayerId = await this.model.addDrawingLayerWithStrokes(pending.drawingId, pending.layerName, clone(pending.strokeDrafts));
+      else if (pending.kind === "replaceLayerStrokes") await this.model.replaceDrawingLayerStrokes(pending.drawingId, pending.layerId, clone(pending.strokeDrafts));
       else if (pending.kind === "deleteLayer") await this.model.deleteDrawingLayer(pending.drawingId, pending.layerId);
       else if (pending.kind === "reorderLayers") await this.model.reorderDrawingLayers(pending.drawingId, pending.layerIds);
       else if (pending.kind === "reuseScene") await this.model.reuseSceneLayer(pending.sourceDrawingId, pending.drawingId);
@@ -2971,10 +3608,11 @@
         fresh = await this.readCurrentDrawing();
         if (!this.didCommitPending(pending, fresh)) throw new Error("操作已送出，但目前無法確認結果；請重新載入內容，避免重複操作。");
         this.drawing = fresh;
-        if (pending.kind === "addLayer") this.layerId = pending.addedLayerId;
+        if (pending.kind === "addLayer" || pending.kind === "addPresetLayer") this.layerId = pending.addedLayerId;
         if (!this.activeLayer()) this.layerId = this.findLayer("scene").id;
       }
       this.pendingOperation = null;
+      if (pending.kind === "replaceLayerStrokes") this.cameraPresetEdit = null;
       if (pending.kind === "background" || pending.kind === "createDrawing" && pending.initialEdit.kind === "background") this.closeBackgroundChangeDialog();
       if (pending.kind === "createDrawing" && pending.initialEdit.kind === "reuseScene") this.closeSceneReusePreview();
       this.setStatus("已保存", "saved");
@@ -2998,6 +3636,7 @@
       this.drawingBusy = false;
       this.updateControls();
       this.render();
+      this.drainStrokeQueue();
     }
   };
 
@@ -3115,7 +3754,7 @@
       error.code = "DRAWING_TARGET_REVISION_CHANGED";
       throw error;
     }
-    if (["addLayer", "reorderLayers"].includes(pending.kind)) return;
+    if (["addLayer", "addPresetLayer", "reorderLayers"].includes(pending.kind)) return;
     const layer = latest.layers.find(function (item) { return item.id === pending.layerId; });
     if (!layer) {
       const error = new Error("找不到原作用圖層；此操作尚未送出，請重新載入後再試。");
@@ -3145,7 +3784,7 @@
         throw error;
       }
     }
-    if (["append", "erase", "clear", "reuseScene"].includes(pending.kind) && (!layer.visible || layer.locked || (pending.kind === "reuseScene" && layer.kind !== "scene"))) {
+    if (["append", "erase", "clear", "reuseScene", "replaceLayerStrokes"].includes(pending.kind) && (!layer.visible || layer.locked || (pending.kind === "reuseScene" && layer.kind !== "scene"))) {
       const error = new Error("作用圖層已隱藏或鎖定；本筆尚未送出。");
       error.code = "DRAWING_LAYER_NOT_EDITABLE";
       throw error;
@@ -3197,6 +3836,12 @@
     }
     if (!drawing || drawing.id !== pending.drawingId) return false;
     if (pending.kind === "addLayer") return drawing.layers.some(function (layer) { return layer.id === pending.addedLayerId && layer.name === pending.layerName; });
+    if (pending.kind === "addPresetLayer") {
+      const layer = drawing.layers.find(function (item) { return item.id === pending.addedLayerId && item.name === pending.layerName; });
+      if (!layer) return false;
+      const withoutIds = function (strokes) { return strokes.map(function (stroke) { const copy = clone(stroke); delete copy.id; return copy; }); };
+      return JSON.stringify(withoutIds(layer.strokes)) === JSON.stringify(pending.strokeDrafts);
+    }
     if (pending.kind === "deleteLayer") return !drawing.layers.some(function (layer) { return layer.id === pending.layerId; });
     if (pending.kind === "reorderLayers") return JSON.stringify(drawing.layers.slice().sort(function (a,b) { return a.order-b.order; }).map(function (layer) { return layer.id; })) === JSON.stringify(pending.layerIds);
     const layer = drawing.layers.find(function (item) { return item.id === pending.layerId; });
@@ -3212,6 +3857,10 @@
     }
     if (pending.kind === "erase") return !layer.strokes.some(function (stroke) { return stroke.id === pending.strokeId; });
     if (pending.kind === "clear") return layer.strokes.length === 0;
+    if (pending.kind === "replaceLayerStrokes") {
+      const withoutIds = function (strokes) { return strokes.map(function (stroke) { const copy = clone(stroke); delete copy.id; return copy; }); };
+      return JSON.stringify(withoutIds(layer.strokes)) === JSON.stringify(pending.strokeDrafts);
+    }
     if (pending.kind === "layerState") return Object.keys(pending.layerPatch || {}).every(function (key) {
       return ["visible", "locked"].includes(key) && layer[key] === pending.layerPatch[key];
     });
@@ -3331,6 +3980,7 @@
       this.drawingBusy = false;
       this.updateControls();
       this.render();
+      this.drainStrokeQueue();
     }
   };
 
@@ -3428,10 +4078,20 @@
       this.drawingBusy = false;
       this.updateControls();
       this.render();
+      this.drainStrokeQueue();
     }
   };
 
+  DrawingEditor.prototype.requestRender = function () {
+    if (this.destroyed || this.renderFrame !== null) return;
+    this.renderFrame = window.requestAnimationFrame(() => {
+      this.renderFrame = null;
+      if (!this.destroyed) this.render();
+    });
+  };
+
   DrawingEditor.prototype.render = function () {
+    if (this.renderFrame !== null) { window.cancelAnimationFrame(this.renderFrame); this.renderFrame = null; }
     if (!this.ctx || !this.canvas) return;
     const bounds = this.stage.getBoundingClientRect();
     if (!bounds.width || !bounds.height) return;
@@ -3482,7 +4142,8 @@
         points: shapeStrokePoints(this.activeStroke.tool, this.activeStroke.points[0], this.activeStroke.points[this.activeStroke.points.length - 1]) || this.activeStroke.points
       }, canvas, true);
     }
-    if (this.pendingOperation && this.pendingOperation.kind === "append" && !this.pendingOperation.committed) this.drawStroke(ctx, this.pendingOperation.strokeDraft, canvas, true);
+    if (this.pendingOperation && this.pendingOperation.kind === "append" && !this.didCommitPending(this.pendingOperation, this.drawing)) this.drawStroke(ctx, this.pendingOperation.strokeDraft, canvas, true);
+    this.strokeQueue.forEach(entry => this.drawStroke(ctx, entry.strokeDraft, canvas, true));
     ctx.restore();
     if (this.pendingOperation && this.pendingOperation.kind === "erase" && !this.pendingOperation.committed) {
       const layer = this.drawing.layers.find(function (item) { return item.id === this.pendingOperation.layerId; }, this);
@@ -3516,6 +4177,7 @@
 
   DrawingEditor.prototype.destroy = function () {
     this.destroyed = true;
+    if (this.renderFrame !== null) window.cancelAnimationFrame(this.renderFrame);
     this.backgroundRequests.invalidate();
     this.backgroundPreviewRequests.invalidate();
     this.drawingRefreshRequests.invalidate();

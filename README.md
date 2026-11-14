@@ -6,6 +6,12 @@ KINO Storyboard 是分鏡創作、拍攝安排與文件交付工具。程式碼�
 
 網站：[KINO Storyboard](https://storyboard.kinostudio.tw/)
 
+產品規範：[PRD v1.7](docs/PRD.md)。連續分鏡的 A／B／C 屬於同一鏡：共用鏡次、標題與秒數，分別保存畫面描述、VO、SUPER、照片與手繪。拍攝安排引用主鏡一次；輸出展開分鏡畫面，每頁張數按畫面計算，片長仍按主鏡加總。空白子畫面佔位符不保存、不列入輸出。
+
+相容性方向為新版開啟舊專案；含連續分鏡的新 ZIP 請使用本版或更新版本開啟，舊網站未支援子畫面結構。
+
+手繪運鏡預設使用透明自訂圖層及一般向量筆跡；ZOOM、DOLLY、PAN、TILT 等短標籤也保存在圖像內，隨完整 ZIP 與文件輸出保留。套用時可調整位置、大小及方向，並沿用圖層的隱藏、鎖定與排序操作。
+
 ## 部署與 Google Drive 規劃
 
 靜態網站的部署設定位於 `wrangler.jsonc`，網站資產位於 `dist/`；Cloudflare Workers Builds 連接 GitHub 的 `main` 分支，透過 `node tools/deploy-after-ci.cjs` 等待同一 commit 的 CI 通過後部署。Google OAuth 已切換正式環境，僅使用 `drive.file`。2026-11-11 已在正式網域以品牌帳號完成真實 ZIP 上傳、回讀、另存副本及照片完整性檢查；品牌驗證仍待 Google 更新網域所有權結果。操作與驗收紀錄見 [Google Drive ZIP 規劃](docs/google-drive-zip-plan.md)。
