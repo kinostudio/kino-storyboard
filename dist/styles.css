@@ -1476,3 +1476,17 @@ body.is-read-only #shot-list .shot-card.is-gallery .shot-card-text-preview:focus
   .shot-placeholder-card .shot-placeholder-actions { align-items: flex-start; flex-direction: column; }
   .shot-placeholder-extra-fields { grid-template-columns: minmax(0, 1fr); }
 }
+
+/* Two text lines need room for padding and borders as well as line-height. */
+#shot-list .shot-card .shot-preview-text {
+  display: block;
+  -webkit-line-clamp: unset;
+}
+#shot-list .shot-card .shot-card-text-preview textarea {
+  height: calc(2.8em + 4px);
+  min-height: calc(2.8em + 4px);
+  max-height: none;
+}
+#shot-list .shot-card .shot-card-text-preview textarea:focus {
+  height: calc(7em + 4px);
+}

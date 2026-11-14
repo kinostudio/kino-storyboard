@@ -591,7 +591,7 @@
     const previousAssetId = text(args[1], "$.args[1]", false);
     const shot = findById(project.shots, shotId, "SHOT_NOT_FOUND", "分鏡");
     assertShotHasPhotoOnlyReferences(project, shot);
-    if (shot.assetIds.length > 1) fail("LEGACY_MULTIPLE_SHOT_PHOTOS", "此舊鏡次有多張照片；請先在照片管理中保留一張，再替換。", "$.shots." + shot.id + ".assetIds");
+
     const previousIndex = shot.assetIds.indexOf(previousAssetId);
     if (previousIndex < 0) fail("SHOT_ASSET_NOT_FOUND", "此分鏡目前沒有要替換的照片。", "$.args[1]");
     const previousAsset = findById(project.assets, previousAssetId, "ASSET_NOT_FOUND", "照片 Asset");
@@ -602,7 +602,9 @@
       fail("ASSET_MISSING", "相同原圖的既有 Asset 尚未確認可讀，不能建立第二筆相同 hash。", "$.args[2]");
     }
     if (previousAsset.sha256 === metadata.sha256) {
-      return { assetId: previousAsset.id, replacedAssetId: previousAsset.id, reused: true, noOp: true };
+      const changed = shot.assetIds.length !== 1;
+      shot.assetIds = [previousAsset.id];
+      return { assetId: previousAsset.id, replacedAssetId: previousAsset.id, reused: true, noOp: !changed };
     }
 
     let replacementAsset;
@@ -617,9 +619,7 @@
       replacementAsset = metadata;
     }
 
-    const nextIds = shot.assetIds.slice();
-    nextIds[previousIndex] = replacementAsset.id;
-    shot.assetIds = nextIds.filter(function (assetId, index) { return nextIds.indexOf(assetId) === index; });
+    shot.assetIds = [replacementAsset.id];
     if (replacementAsset.id !== previousAssetId) clearShotPhotoCrop(shot, previousAssetId);
     return {
       assetId: replacementAsset.id,

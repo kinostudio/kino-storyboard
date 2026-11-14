@@ -989,6 +989,17 @@
     document.documentElement.dataset.aspectRatio = ratio;
     const control = $("#project-aspect-ratio"); if (control && control.value !== ratio) control.value = ratio;
   }
+  function resizeShotText(field) {
+    field.style.height = "auto";
+    field.style.height = field.scrollHeight + 2 + "px";
+  }
+  function resizeShotTextFields() {
+    $$("#shot-list .shot-inline-script, #shot-list .shot-inline-super").forEach(resizeShotText);
+  }
+  document.addEventListener("input", (event) => {
+    if (event.target.matches("#shot-list .shot-inline-script, #shot-list .shot-inline-super")) resizeShotText(event.target);
+  });
+  window.addEventListener("resize", resizeShotTextFields);
   function resizeShotVisual(field, expanded) {
     if (!field) return;
     field.style.height = "auto";
@@ -1306,9 +1317,8 @@
     const reload = assetId && shotPhotoReadErrors.has(photoReadKey(state && state.projectId, shot.id, assetId))
       ? '<button type="button" class="shot-photo-action" data-shot-photo-action="reload" data-shot-id="' + escapeHtml(shot.id) + '" data-asset-id="' + escapeHtml(assetId) + '" aria-label="重新載入' + escapeHtml(shotName) + '的照片">重新載入</button>'
       : '';
-    const manager = renderShotPhotoManager(shot);
     const readonlyNote = '<span class="shot-photo-readonly-note">' + READ_ONLY_HELP + '</span>';
-    return '<div class="shot-photo-actions">' + reload + manager + readonlyNote + '</div><span class="shot-photo-card-status" data-photo-status-shot="' + escapeHtml(shot.id) + '" hidden></span>';
+    return '<div class="shot-photo-actions">' + reload + readonlyNote + '</div><span class="shot-photo-card-status" data-photo-status-shot="' + escapeHtml(shot.id) + '" hidden></span>';
   }
   function shotPhotoManagerKey(projectId, shotId) {
     return String(projectId || "") + "\u0000" + String(shotId || "");
@@ -2943,6 +2953,7 @@
       if (field.matches(".shot-inline-visual")) visualFields.push(field);
     });
     if (shotView === "gallery") resizeShotVisualBatch(visualFields);
+    resizeShotTextFields();
     applyReadonlyControls(); updateReorderSelectionUi();
     if (focusSnapshot || shotPlaceholderFocusTransfer) {
       const focusTransfer = shotPlaceholderFocusTransfer && (!focusSnapshot || focusSnapshot.placeholder) ? shotPlaceholderFocusTransfer : null;
@@ -5740,6 +5751,7 @@
       }
     });
     if (shotView === "gallery") resizeShotVisualBatch(committedVisualFields);
+    resizeShotTextFields();
     const selectedShot = byId(selectedShotId); const inspectorNumber = $("#inspector .inspector-number");
     if (selectedShot && inspectorNumber) {
       inspectorNumber.innerHTML = shotLabel(selectedShot) + '<span style="color:#a8adb2;font-weight:400"> · ' + ((shotIndex.globalPositionsById.get(selectedShot.id) || 0) + 1) + ' / ' + state.shots.length + '</span>';
@@ -7402,6 +7414,7 @@
   function reorderInteractiveTarget(target) {
     const element = target && target.nodeType === 1 ? target : target && target.parentElement;
     if (!element || !element.closest) return null;
+    if (element.closest(".shot-thumb") && !element.closest("button,[data-drawing-action]")) return null;
     // Exclude actual controls; broad field/preview containers contain usable blank drag surfaces.
     return element.closest("input,textarea,select,button,a,label,summary,[contenteditable='true'],[data-shot-field],[data-entry-field],[data-shot-photo-action],[data-drawing-action],.shot-thumb,.entry-copy button,.entry-time");
   }
@@ -7486,6 +7499,13 @@
       if (!item || !list.contains(item) || reorderInteractiveTarget(target)) return;
       event.preventDefault();
     };
+    list.addEventListener("click", (event) => {
+      const item = event.target.closest(selector);
+      if (item && consumeSuppressedReorderClick(type, type === "shots" ? item.dataset.shot : item.dataset.entry)) {
+        event.preventDefault();
+        event.stopImmediatePropagation();
+      }
+    }, true);
     list.addEventListener("pointerdown", (event) => beginReorderGesture(list, type, event));
     list.addEventListener("pointermove", (event) => moveReorderGesture(list, type, event));
     list.addEventListener("pointerup", (event) => { void finishReorderGesture(list, type, event); });
