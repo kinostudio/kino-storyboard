@@ -410,7 +410,7 @@
     this.mode = "focus";
     this.activeStroke = null;
     this.cameraPresetSelection = null;
-    this.cameraPresetTransform = { x: 0, y: 0, scale: 100, flipX: false, flipY: false };
+    this.cameraPresetTransform = { x: 0, y: 0, scale: 100, rotation: 0, flipX: false, flipY: false };
     this.cameraPresetEdit = null;
     this.strokeQueue = [];
     this.renderFrame = null;
@@ -627,6 +627,7 @@
     };
     this.cameraPresetX = makePresetRange("水平", -20, 20, 0, "運鏡圖層水平位置");
     this.cameraPresetY = makePresetRange("垂直", -20, 20, 0, "運鏡圖層垂直位置");
+    this.cameraPresetRotation = makePresetRange("旋轉", -180, 180, 0, "圖層旋轉角度");
     this.cameraPresetScale = makePresetRange("縮放", 50, 150, 100, "運鏡圖層大小");
     this.cameraPresetFlipX = document.createElement("input");
     this.cameraPresetFlipX.type = "checkbox";
@@ -640,7 +641,7 @@
     flipY.prepend(this.cameraPresetFlipY);
     this.cameraPresetEditLabel = create("strong", "ds-de-camera-preset-edit-label", "先選擇一個預設");
     this.cameraPresetAdjustments = create("div", "ds-de-camera-preset-adjustments");
-    this.cameraPresetAdjustments.append(this.cameraPresetX.wrapper, this.cameraPresetY.wrapper, this.cameraPresetScale.wrapper, flipX, flipY);
+    this.cameraPresetAdjustments.append(this.cameraPresetX.wrapper, this.cameraPresetY.wrapper, this.cameraPresetScale.wrapper, this.cameraPresetRotation.wrapper, flipX, flipY);
     this.cameraPresetApplyButton = button("加入圖層", "ds-de-camera-preset-apply");
     this.cameraPresetPanel.append(this.cameraPresetGrid, this.cameraPresetEditLabel, this.cameraPresetPreview,
       this.cameraPresetAdjustments, this.cameraPresetApplyButton);
@@ -980,7 +981,7 @@
       const choice = event.target && event.target.closest ? event.target.closest("button[data-camera-preset]") : null;
       if (choice && self.cameraPresetGrid.contains(choice)) self.selectCameraPreset(choice.dataset.cameraPreset);
     });
-    [this.cameraPresetX, this.cameraPresetY, this.cameraPresetScale].forEach(function (range) {
+    [this.cameraPresetX, this.cameraPresetY, this.cameraPresetScale, this.cameraPresetRotation].forEach(function (range) {
       self.listen(range.input, "input", function () { self.updateCameraPresetTransform(range); });
     });
     [this.cameraPresetFlipX, this.cameraPresetFlipY].forEach(function (checkbox) {
@@ -1386,13 +1387,13 @@
       remove.disabled = layer.kind !== "custom" || !this.canDeleteLayer();
       remove.title = layer.kind === "custom" ? "刪除自訂圖層（可復原）" : "場景與人物動作為必要圖層";
       actions.appendChild(remove);
-      if (layer.kind === "custom" && /^運鏡\s/.test(layer.name)) {
+      if (layer.strokes.length > 0) {
         const adjust = button("調整圖層", "ds-de-icon-button ds-de-layer-adjust");
         iconOnly(adjust, "settings");
         adjust.dataset.layerId = layer.id;
         adjust.dataset.layerAction = "adjustPreset";
         adjust.disabled = layer.id !== this.layerId || !this.canTransformCameraPreset(layer.id);
-        adjust.title = layer.id === this.layerId ? "移動、縮放或翻轉此圖層的全部筆畫" : "先選取此運鏡圖層，再調整全部筆畫";
+        adjust.title = layer.id === this.layerId ? "移動、縮放或旋轉此圖層的全部筆畫" : "先選取此圖層，再調整全部筆畫";
         actions.appendChild(adjust);
       }
       row.appendChild(actions);
@@ -1504,7 +1505,7 @@
       : presetOrLabel;
     const targetCanvas = canvas || this.drawing && this.drawing.canvas;
     if (!preset || !targetCanvas) return [];
-    const settings = transform || { x: 0, y: 0, scale: 100, flipX: false, flipY: false };
+    const settings = transform || { x: 0, y: 0, scale: 100, rotation: 0, flipX: false, flipY: false };
     const paths = this.cameraPresetTransformPaths(this.cameraPresetBasePaths(preset, targetCanvas, this.cameraPresetDirectionLabel(preset, settings)), settings);
     const strokeColor = rgbaWithOpacity(color || this.color, opacity === undefined ? this.opacity : opacity);
     const baseWidth = Number.isFinite(width) && width > 0 ? width : this.baseWidth;
@@ -1522,7 +1523,22 @@
     const paths = strokes.map(function (stroke) {
       return { kind: stroke.kind, points: stroke.points.map(function (point) { return [point.x, point.y]; }) };
     });
-    const points = this.cameraPresetTransformPaths(paths, transform);
+    const angle = (Number(transform.rotation) || 0) * Math.PI / 180;
+    if (angle) {
+      const width = this.drawing.canvas.width, height = this.drawing.canvas.height;
+      let extent = 1;
+      paths.forEach(path => path.points.forEach(point => {
+        const x = (point[0] - .5) * width, y = (point[1] - .5) * height;
+        point[0] = (x * Math.cos(angle) - y * Math.sin(angle)) / width;
+        point[1] = (x * Math.sin(angle) + y * Math.cos(angle)) / height;
+        extent = Math.max(extent, Math.abs(point[0]) * 2, Math.abs(point[1]) * 2);
+      }));
+      paths.forEach(path => path.points.forEach(point => {
+        point[0] = .5 + point[0] / extent; point[1] = .5 + point[1] / extent;
+      }));
+    }
+    const maxScale = this.cameraPresetScaleMax(paths, transform.flipX, transform.flipY, true);
+    const points = this.cameraPresetTransformPaths(paths, Object.assign({}, transform, {scale: Math.min(transform.scale, maxScale)}));
     return strokes.map(function (stroke, strokeIndex) {
       const next = clone(stroke);
       delete next.id;
@@ -1537,7 +1553,7 @@
     const context = canvas.getContext("2d");
     if (!context) return;
     const board = { width: 1920, height: 1080 };
-    const strokes = this.makeCameraPresetStrokes(preset, { x: 0, y: 0, scale: 100, flipX: false, flipY: false }, board, "#315b98", 1, 6);
+    const strokes = this.makeCameraPresetStrokes(preset, { x: 0, y: 0, scale: 100, rotation: 0, flipX: false, flipY: false }, board, "#315b98", 1, 6);
     context.clearRect(0, 0, canvas.width, canvas.height);
     context.save();
     context.scale(canvas.width / board.width, canvas.height / board.height);
@@ -1622,7 +1638,7 @@
 
   DrawingEditor.prototype.canTransformCameraPreset = function (layerId) {
     const layer = this.findLayerById(layerId);
-    if (!layer || layer.kind !== "custom" || !/^運鏡\s/.test(layer.name) || !layer.visible || layer.locked || !layer.strokes.length ||
+    if (!layer || !layer.visible || layer.locked || !layer.strokes.length ||
         !this.writable || !this.canQueueCommand() || this.activeStroke || this.pendingOperation || this.drawingBusy || !this.backgroundReady || this.backgroundFailure ||
         !Number.isInteger(this.currentProjectRevision())) return false;
     return Boolean(this.isDraft || this.isPlaceholder || this.model && typeof this.model.replaceDrawingLayerStrokes === "function");
@@ -1649,6 +1665,9 @@
     this.cameraPresetApplyButton.title = editing
       ? "以預覽內容更新此圖層的全部筆畫；可用復原還原"
       : !this.canAddCameraPreset() ? "目前無法新增運鏡圖層，請確認畫布可編輯且尚未達 12 個圖層" : "新增透明的獨立運鏡圖層";
+    this.cameraPresetRotation.wrapper.hidden = !editing;
+    this.cameraPresetRotation.input.value = String(this.cameraPresetTransform.rotation || 0);
+    this.cameraPresetRotation.output.textContent = (this.cameraPresetTransform.rotation || 0) + "°";
     const disabled = !editing && !selected;
     [this.cameraPresetX.input, this.cameraPresetY.input, this.cameraPresetScale.input].forEach(function (input) { input.disabled = disabled; });
     this.cameraPresetFlipX.disabled = this.cameraPresetFlipY.disabled = disabled || editing;
@@ -1671,7 +1690,7 @@
     if (!CAMERA_PRESETS.some(function (preset) { return preset.label === label; })) return false;
     this.cameraPresetEdit = null;
     this.cameraPresetSelection = label;
-    this.cameraPresetTransform = { x: 0, y: 0, scale: 100, flipX: false, flipY: false };
+    this.cameraPresetTransform = { x: 0, y: 0, scale: 100, rotation: 0, flipX: false, flipY: false };
     this.updateCameraPresetControls();
     return true;
   };
@@ -1679,6 +1698,7 @@
   DrawingEditor.prototype.updateCameraPresetTransform = function (range) {
     if (range === this.cameraPresetX) this.cameraPresetTransform.x = Number(range.input.value);
     if (range === this.cameraPresetY) this.cameraPresetTransform.y = Number(range.input.value);
+    if (range === this.cameraPresetRotation) this.cameraPresetTransform.rotation = Number(range.input.value);
     if (range === this.cameraPresetScale) this.cameraPresetTransform.scale = Number(range.input.value);
     this.cameraPresetTransform.flipX = this.cameraPresetFlipX.checked;
     this.cameraPresetTransform.flipY = this.cameraPresetFlipY.checked;
@@ -1713,7 +1733,7 @@
     if (layerId !== this.layerId || !this.canTransformCameraPreset(layerId)) return false;
     this.cameraPresetSelection = null;
     this.cameraPresetEdit = { layerId: layer.id, drawingId: this.drawing.id, drawingRevision: this.drawing.revision, strokes: clone(layer.strokes) };
-    this.cameraPresetTransform = { x: 0, y: 0, scale: 100, flipX: false, flipY: false };
+    this.cameraPresetTransform = { x: 0, y: 0, scale: 100, rotation: 0, flipX: false, flipY: false };
     this.cameraPresetDrawer.open = true;
     this.updateCameraPresetControls();
     return true;
@@ -3102,8 +3122,7 @@
       const target = 0.3 + 0.7 * (1 - clamp(speed / 2, 0, 1));
       pressure = last ? last.pressure + (target - last.pressure) * 0.12 : 0.65;
     }
-    return { x: pressure !== null && last ? last.x + (point.x-last.x) * 0.45 : point.x,
-      y: pressure !== null && last ? last.y + (point.y-last.y) * 0.45 : point.y, t: Math.max(0, time), pressure: pressure };
+    return { x: point.x, y: point.y, t: Math.max(0, time), pressure: pressure };
   };
 
   DrawingEditor.prototype.pointerMove = function (event) {
@@ -3125,11 +3144,15 @@
           this.requestRender();
           return;
         }
-        const point = this.pointerPoint(event);
-        if (point) this.touchEraserCandidate.point = point;
-        const bounds = this.stage.getBoundingClientRect();
-        this.eraserPointer = { x: event.clientX - bounds.left, y: event.clientY - bounds.top, pointerType: event.pointerType };
-        this.requestRender();
+        const samples = typeof event.getCoalescedEvents === "function" ? event.getCoalescedEvents() : [];
+    (samples.length ? samples : [event]).forEach(sample => {
+      const point = this.pointerPoint(sample);
+      if (!point) return;
+      const last = active.points[active.points.length - 1];
+      const time = Math.max(last.t, (Number.isFinite(sample.timeStamp) ? sample.timeStamp : Date.now()) - active.startedAt);
+      if (last.x !== point.x || last.y !== point.y || last.t !== time) active.points.push(this.makePoint(point, time));
+    });
+    this.requestRender();
         return;
       }
     }

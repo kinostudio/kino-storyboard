@@ -285,3 +285,14 @@
 .ds-drawing-editor .ds-de-camera-preset-apply { background: #315b98; border-color: #315b98; color: #fff; font-weight: 650; min-height: 40px; width: 100%; }
 .ds-drawing-editor .ds-de-camera-preset-apply:hover:not(:disabled) { background: #254b83; }
 .ds-de-layer-adjust { font-size: 12px !important; }
+
+.ds-de-drawer-panel { width: min(420px,calc(100vw - 32px)); max-width: calc(100vw - 32px); min-width: 0; overflow-x: hidden; overflow-y: auto; box-sizing: border-box; }
+.ds-de-drawer-panel .ds-de-control-group,.ds-de-layers,.ds-de-layer-list,.ds-de-layer-row { min-width: 0; max-width: 100%; box-sizing: border-box; }
+.ds-de-layer-actions { flex-wrap: wrap; }
+.ds-de-layer-select,.ds-de-layer-copy { overflow: hidden; }
+@media(max-width:500px) { .ds-de-layer-thumbnail { width: 48px; height: 27px; } }
+.ds-de-drawer-panel .ds-de-layers { display: flex; flex-direction: column; align-items: stretch; width: 100%; }
+.ds-de-drawer-panel .ds-de-layer-list { width: 100%; }
+.ds-de-drawer-panel .ds-de-layer-header { width: 100%; flex: none; }
+.ds-de-drawer-panel .ds-de-layers,.ds-de-drawer-panel .ds-de-layer-list { flex-wrap: nowrap; height: auto; }
+.ds-de-drawer-panel .ds-de-layer-row { flex: none; width: 100%; }
