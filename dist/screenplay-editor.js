@@ -240,7 +240,7 @@
 
   function blockMarkup(block, hideEmpty) {
     if (hideEmpty && !block.text && !block.character) return "";
-    return '<span class="se-script-run is-' + escapeHtml(block.type) + '" data-screenplay-run="true" data-screenplay-run-id="' + escapeHtml(block.id) + '" data-screenplay-run-type="' + escapeHtml(block.type) + '" data-screenplay-run-character="' + escapeHtml(block.character || "") + '">' + escapeHtml(blockDisplay(block)) + '</span>';
+    return '<span class="se-script-run is-' + escapeHtml(block.type) + '" data-screenplay-run="true" data-screenplay-run-id="' + escapeHtml(block.id) + '" data-screenplay-run-type="' + escapeHtml(block.type) + '" data-screenplay-run-character="' + escapeHtml(block.character || "") + '">' + (block.type === "dialogue" && block.character ? '<strong class="se-role-name">' + escapeHtml(block.character) + ': </strong>' + escapeHtml(block.text) : escapeHtml(block.text)) + '</span>' ;
   }
 
   function firstColon(value) {
@@ -425,7 +425,7 @@
     if (start === end) {
       const blocks = scene.blocks;
       let cursor = 0;
-      const target = blocks.find((block, index) => { if (index) cursor += 1; const length = blockDisplay(block).length; const match = start >= cursor && start <= cursor + length; cursor += length; return match; });
+      const target = blocks.find((block, index) => {  const length = blockDisplay(block).length; const match = start >= cursor && start <= cursor + length; cursor += length; return match; });
       if (!target) return false;
       Object.assign(target, blockFromVisible(target.id, type, target.character, blockDisplay(target)));
       markDirty(entry);
@@ -446,7 +446,7 @@
       collection.push(blockFromVisible(id, block.type, block.character, visible));
     }
     scene.blocks.forEach((block, index) => {
-      if (index) cursor += 1;
+
       const visible = blockDisplay(block);
       const blockStart = cursor;
       const blockEnd = blockStart + visible.length;
@@ -463,8 +463,13 @@
     const selectionText = content.slice(start, end);
     const wholeCandidate = intersected.find((part) => start <= part.start && end >= part.end);
     const selectedId = wholeCandidate && !seen.has(wholeCandidate.block.id) ? wholeCandidate.block.id : makeId("script-block");
-    const selected = type === "dialogue" ? selectedDialogueBlock(selectionText, selectedId) : { id: selectedId, type: type, character: "", text: selectionText };
-    scene.blocks = before.concat([selected], after);
+    const selected = type === "dialogue" ? selectedDialogueBlock(selectionText, selectedId) : { id: selectedId, type: type, character: "", text: type === "action" ? selectionText.replace(/^(?:△\s*)+/, "") : selectionText };
+    scene.blocks = before.concat([selected], after).reduce((blocks, block) => {
+      const previous = blocks[blocks.length - 1];
+      if (previous && previous.type === block.type && previous.character === block.character && block.type !== "dialogue") previous.text += block.text;
+      else blocks.push(block);
+      return blocks;
+    }, []);
     markDirty(entry);
     render();
     focusSurface(scene.id, start, end);
@@ -537,26 +542,20 @@
   function sceneMarkup(scene, index, screenplay, project, entry) {
     const editable = canEdit();
     const linked = scene.sceneId && Array.isArray(project && project.scenes) && project.scenes.some((item) => item.id === scene.sceneId);
-    const title = "場次" + sceneNumeral(index + 1);
+    const title = screenplay.format === "us" ? "Scene " + (index + 1) : "場次" + sceneNumeral(index + 1);
     const sceneLine = scene.interiorExterior ? scene.interiorExterior + " / " + scene.location : scene.location;
-    const blocks = scene.blocks.map((block, blockIndex) => blockMarkup(block, scene.blocks.length === 1 && blockIndex === 0)).join('<br data-screenplay-separator="true">');
+    const blocks = scene.blocks.map((block, blockIndex) => blockMarkup(block, scene.blocks.length === 1 && blockIndex === 0)).join("");
     const emptyId = scene.blocks.find((block) => !blockDisplay(block))?.id || "";
-    const linkOptions = sceneOptions(project, scene.sceneId, scene.id, screenplay).map((item) => '<option value="' + escapeHtml(item.value) + '"' + (scene.sceneId === item.value ? " selected" : "") + '>' + escapeHtml(item.label) + '</option>').join("");
-    const canCreate = editable && model && typeof model.addScene === "function" && !scene.sceneId;
     const disabled = editable ? "" : " disabled";
     const editAttr = ' data-screenplay-edit-control="true"';
-    const runButtons = ["action", "dialogue", "text"].map((type) => '<button type="button" class="se-tag-button"' + editAttr + ' data-screenplay-action="tag-selection" data-screenplay-scene-id="' + escapeHtml(scene.id) + '" data-tag-type="' + type + '" aria-label="標記選取文字為' + (type === "text" ? "一般文字" : type === "action" ? "動作" : "對白") + '" title="' + (type === "text" ? "一般文字" : type === "action" ? "動作" : "對白") + '"' + disabled + '>' + iconMarkup(type) + '</button>').join("");
     return '<section class="se-scene-card" data-screenplay-scene-card="' + escapeHtml(scene.id) + '">' +
       '<header class="se-scene-card-head"><div class="se-scene-title-wrap"><h3 data-screenplay-scene-title="' + escapeHtml(scene.id) + '">' + escapeHtml(title) + '</h3></div>' +
       '<div class="se-scene-tools"><button type="button" class="se-icon-button"' + editAttr + ' data-screenplay-action="move-scene-up" data-screenplay-scene-id="' + escapeHtml(scene.id) + '"' + (index === 0 ? ' data-screenplay-fixed-disabled="true"' : "") + ' aria-label="場次上移" title="上移"' + (index === 0 || !editable ? " disabled" : "") + '>↑</button>' +
       '<button type="button" class="se-icon-button"' + editAttr + ' data-screenplay-action="move-scene-down" data-screenplay-scene-id="' + escapeHtml(scene.id) + '"' + (index === screenplay.scenes.length - 1 ? ' data-screenplay-fixed-disabled="true"' : "") + ' aria-label="場次下移" title="下移"' + (index === screenplay.scenes.length - 1 || !editable ? " disabled" : "") + '>↓</button>' +
       '<button type="button" class="se-icon-button is-danger"' + editAttr + ' data-screenplay-action="remove-scene" data-screenplay-scene-id="' + escapeHtml(scene.id) + '" aria-label="刪除劇本場次" title="刪除劇本場次"' + disabled + '>×</button></div></header>' +
-      '<div class="se-manuscript-meta">' + [["location","場景",sceneLine,"內 / 地點"],["time","時",scene.time,""],["people","人",scene.people,""]].map(([field,label,value,hint]) =>
+      '<div class="se-manuscript-meta">' + [["location",screenplay.format === "us" ? "Scene" : "場景",screenplay.format === "us" ? sceneLine.replace(/^(內|IN) \/ /i,"INT. / ").replace(/^(外|OUT) \/ /i,"EXT. / ") : sceneLine,"內 / 地點"],["time",screenplay.format === "us" ? "Time" : "時",scene.time,""],["people",screenplay.format === "us" ? "Cast" : "人",scene.people,""]].map(([field,label,value,hint]) =>
         '<label><span>' + label + '</span><input data-screenplay-meta data-screenplay-edit-control data-screenplay-field="' + field + '" data-screenplay-scene-id="' + escapeHtml(scene.id) + '" data-focus-key="' + escapeHtml(focusKey([field,scene.id])) + '" value="' + escapeHtml(value) + '" placeholder="' + hint + '"' + disabled + '></label>'
-      ).join("") + '</div><div class="se-scene-meta-row">' +
-      '<select class="se-scene-link-select" data-screenplay-field="sceneId" data-screenplay-edit-control="true" data-focus-key="' + escapeHtml(focusKey(["sceneId", scene.id])) + '" data-screenplay-scene-id="' + escapeHtml(scene.id) + '" aria-label="連結分鏡場次"' + disabled + '>' + linkOptions + '</select>' +
-      (linked ? '<span class="se-link-state">已連結</span>' : canCreate ? '<button type="button" class="se-secondary-button"' + editAttr + ' data-screenplay-action="create-board-scene" data-screenplay-scene-id="' + escapeHtml(scene.id) + '"' + (entry.busyScenes.has(scene.id) ? ' data-screenplay-fixed-disabled="true" disabled' : "") + '>建立分鏡場次</button>' : '<span class="se-link-state">未連結</span>') + '</div>' +
-      '<div class="se-writing-tools"><div class="se-tag-group" role="group" aria-label="標記選取文字">' + runButtons + '</div><span class="se-writing-hint">選取文字後可標記；Enter 換行，Ctrl/⌘+Enter 下一場</span><button type="button" class="se-next-scene-button"' + editAttr + ' data-screenplay-action="next-scene" data-screenplay-scene-id="' + escapeHtml(scene.id) + '" aria-label="新增下一場" title="新增下一場（Ctrl/⌘+Enter）"' + disabled + '><svg viewBox="0 0 20 20" aria-hidden="true" focusable="false"><path d="M3 10h12M10 5l5 5-5 5"/></svg></button></div>' +
+      ).join("") + '</div>' +
       '<div class="se-writing-surface" contenteditable="' + (editable ? "true" : "false") + '" role="textbox" aria-multiline="true" aria-label="劇本內容，場次 ' + (index + 1) + '" data-screenplay-edit-control="true" data-screenplay-writing-surface="true" data-screenplay-field="body" data-focus-key="' + escapeHtml(focusKey(["body", scene.id])) + '" data-screenplay-scene-id="' + escapeHtml(scene.id) + '" data-screenplay-empty-block-id="' + escapeHtml(emptyId) + '" data-placeholder="在這裡連續書寫或貼上內容…">' + blocks + '</div>' +
       '</section>';
   }
@@ -648,7 +647,10 @@
       '<details class="se-overview"' + (state.overviewOpen ? " open" : "") + '><summary class="se-overview-summary"><div><span class="se-eyebrow">PROJECT NOTES</span><h3>主旨與大綱</h3></div><span class="se-overview-chevron" aria-hidden="true">⌄</span></summary><div class="se-overview-grid">' +
       labelField("主旨", "subject", screenplay.subject, "", { multiline: true, rows: 5, placeholder: "一句話描述故事核心" }) +
       labelField("故事大綱", "outline", screenplay.outline, "", { multiline: true, rows: 5, placeholder: "整理故事起承轉合…" }) + '</div></details>' +
-      '<section class="se-scene-section"><div class="se-section-heading"><div><span class="se-eyebrow">SCENE OUTLINE</span><h3>場次與內容</h3><p>可建立場次並選擇連結分鏡。可直接貼上並保留換行；開頭輸入 /a 加空格或 △ 會標記為動作。</p></div><button type="button" class="se-primary-button" data-screenplay-edit-control="true" data-screenplay-action="add-scene" aria-label="新增劇本場次"' + (!editable ? " disabled" : "") + '>＋ 新增劇本場次</button></div>' +
+      '<section class="se-scene-section"><div class="se-section-heading"><div><span class="se-eyebrow">SCENE OUTLINE</span><h3>場次與內容</h3><p>Ctrl／⌘ + Shift + 1 動作 · 2 對白 · 3 一般文字</p></div><button type="button" class="se-primary-button" data-screenplay-edit-control="true" data-screenplay-action="add-scene" aria-label="新增劇本場次"' + (!editable ? " disabled" : "") + '>＋ 新增劇本場次</button></div>' +
+      '<div class="se-writing-tools" role="toolbar" aria-label="腳本標記">' +
+      ["action","dialogue","text"].map((type,index) => '<button type="button" class="se-tag-button" data-screenplay-action="tag-selection" data-tag-type="' + type + '" aria-label="' + ["動作","對白","一般文字"][index] + '" title="' + ["動作","對白","一般文字"][index] + ' Ctrl/⌘+Shift+' + (index+1) + '">' + iconMarkup(type) + '</button>').join("") +
+      '<button type="button" class="se-next-scene-button" data-screenplay-action="next-scene" aria-label="新增下一場" title="新增下一場 Ctrl/⌘+Enter">＋</button></div>' +
       (sceneCards || '<div class="se-empty-scenes"><span>＋</span><strong>還沒有劇本場次</strong><p>新增一場，從場景設定或劇本內容開始。</p></div>') + '</section></div>';
     if (compareHost) compareMarkup(project, screenplay);
     bindHost(host);
@@ -760,7 +762,7 @@
     const scene = surface && findScene(entry, surface.dataset.screenplaySceneId);
     if (!entry || !scene) return;
     if (state.composing === 0) applyActionShortcut(surface);
-    ensureRunSeparators(surface);
+
     scene.blocks = blocksFromSurface(surface, scene);
     rememberSurfaceSelection(surface);
     markDirty(entry);
@@ -769,10 +771,11 @@
   function findScene(entry, id) { return entry && entry.value.scenes.find((scene) => scene.id === id); }
 
   function focusAfterRender(key, caretAtEnd) {
+    const previousFocus = root.document.activeElement;
     root.setTimeout(() => {
       const host = $("#view-screenplay");
       const target = host && Array.from(host.querySelectorAll("[data-focus-key]")).find((element) => element.dataset.focusKey === key);
-      if (!target) return;
+      if (!target || (root.document.activeElement !== previousFocus && root.document.activeElement !== root.document.body)) return;
       target.focus();
       if (target.matches("[data-screenplay-writing-surface]") && caretAtEnd) setSurfaceSelection(target, surfaceText(target).length);
       else if (typeof target.setSelectionRange === "function") target.setSelectionRange(target.value.length, target.value.length);
@@ -786,7 +789,7 @@
     else entry.value.scenes.splice(index + 1, 0, added);
     markDirty(entry);
     render();
-    focusAfterRender(focusKey(["body", added.id]), true);
+    focusAfterRender(focusKey(["location", added.id]), false);
     return added;
   }
 
@@ -831,7 +834,7 @@
     const entry = getEntry(state.projectId);
     if (!entry || state.composing > 0) return;
     const actionName = button.dataset.screenplayAction;
-    const sceneId = button.dataset.screenplaySceneId || "";
+    const sceneId = button.dataset.screenplaySceneId || state.activeSurface?.dataset.screenplaySceneId || entry.value.scenes[entry.value.scenes.length - 1]?.id || "";
     const scene = findScene(entry, sceneId);
     if (actionName === "compare-toggle") {
       state.compareOpen = !state.compareOpen;
@@ -857,7 +860,7 @@
     if (actionName === "create-board-scene") { createBoardScene(entry, scene); return; }
     if (!canEdit()) return;
     if (actionName === "add-scene") {
-      const added = emptyScene(); entry.value.scenes.push(added); markDirty(entry); render(); focusAfterRender(focusKey(["body", added.id]), true); return;
+      const added = emptyScene(); entry.value.scenes.push(added); markDirty(entry); render(); focusAfterRender(focusKey(["location", added.id]), false); return;
     }
     if (actionName === "remove-scene" && scene) {
       entry.value.scenes = entry.value.scenes.filter((item) => item.id !== scene.id); markDirty(entry); render(); return;
@@ -897,6 +900,17 @@
     });
     host.addEventListener("keydown", (event) => {
       if (event.isComposing || event.keyCode === 229) return;
+          if ((event.ctrlKey || event.metaKey) && event.shiftKey && ["Digit1","Digit2","Digit3"].includes(event.code)) {
+        const type = {Digit1:"action",Digit2:"dialogue",Digit3:"text"}[event.code];
+        const surface = state.activeSurface;
+        if (surface?.isConnected) {
+          event.preventDefault();
+          const entry = getEntry(state.projectId);
+          updateBodyFromElement(surface);
+          tagRange(entry, findScene(entry,surface.dataset.screenplaySceneId), surface, type);
+        }
+        return;
+      }
       const meta = event.target.closest("[data-screenplay-meta]");
       if (meta && (event.key === "Enter" || event.key === "ArrowDown") && !event.shiftKey && !event.altKey) {
         if (event.ctrlKey || event.metaKey) {
