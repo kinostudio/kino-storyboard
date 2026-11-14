@@ -65,7 +65,7 @@
 
   function ensureHost(host) {
     if (boundHosts.has(host)) return;
-    host.innerHTML = '<details class="se-markdown-tools" data-screenplay-markdown-tools><summary class="se-secondary-button">腳本工具</summary>' +
+    host.innerHTML = '<details class="se-markdown-tools" data-screenplay-markdown-tools><summary class="se-secondary-button"><svg viewBox="0 0 20 20" aria-hidden="true"><path d="M6 2v11m-3-3 3 3 3-3M14 18V7m-3 3 3-3 3 3"/></svg>腳本轉換</summary>' +
       '<div class="se-markdown-actions">' +
       '<button type="button" class="se-secondary-button" data-screenplay-action="export-markdown">下載 Markdown</button>' +
       '<button type="button" class="se-secondary-button" data-screenplay-action="import-markdown">匯入 Markdown</button>' +

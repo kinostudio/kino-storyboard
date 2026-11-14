@@ -102,7 +102,7 @@ async function main() {
       selection.addRange(range);
     }, selectedText);
     await selectBodyText(secondBody, "李：你好\n再見");
-    await page.keyboard.press("Control+Shift+2");
+    await page.keyboard.press("F2");
     await page.waitForFunction(() => {
       const blocks = StoryModel.getScreenplay()?.scenes[1]?.blocks || [];
       return blocks.some(block => block.type === "dialogue" && block.character === "李" && block.text === "你好\n再見");
@@ -157,6 +157,37 @@ async function main() {
     const text = await page.locator("#print-document").innerText();
     assert.equal(text.split("還原後繼續撰寫").length - 1, 1);
     await page.screenshot({path:path.join(root, "tmp", "screenplay-qa", "restored-output.png")});
+    await navigate("screenplay");
+    for (const format of ["tw","us"]) {
+      await page.locator("button[data-screenplay-format=" + format + "]").click();
+      await page.locator("[data-screenplay-action=add-scene]").click();
+      const dialogueBody=page.locator("[data-screenplay-writing-surface]").last();
+      await dialogueBody.fill("甲：你好");
+      await dialogueBody.evaluate(element => {
+        element.focus();
+        const range=document.createRange(); range.selectNodeContents(element);
+        const selection=getSelection(); selection.removeAllRanges(); selection.addRange(range);
+      });
+      await dialogueBody.press("F2");
+      await dialogueBody.press("Control+End");
+      await dialogueBody.press("Enter");
+      await dialogueBody.pressSequentially("第二句");
+      await page.evaluate(() => ScreenplayEditor.flush());
+      assert.ok(await page.evaluate(() => StoryModel.getScreenplay().scenes.at(-1).blocks.some(block => block.type === "dialogue" && block.text.includes("你好\n第二句"))));
+      await dialogueBody.press("Enter");
+      await dialogueBody.press("Enter");
+      await page.keyboard.type("一般文字");
+      await page.evaluate(() => ScreenplayEditor.flush());
+      assert.ok(await page.evaluate(() => StoryModel.getScreenplay().scenes.at(-1).blocks.some(block => block.type === "text" && block.text.includes("一般文字"))));
+    }
+    const role = page.locator(".se-role-separator").first();
+    assert.equal(await role.evaluate(e=>getComputedStyle(e).display),"none");
+    const toolbar=page.locator(".se-writing-tools");
+    await page.evaluate(() => window.scrollTo(0,document.body.scrollHeight));
+    await page.waitForFunction(()=>document.querySelector(".se-writing-tools").classList.contains("is-pinned"));
+    const toolbarBox=await toolbar.boundingBox();
+    assert.ok(toolbarBox.y>=0 && toolbarBox.y<200);
+    await page.screenshot({path:path.join(root,"tmp","screenplay-qa","pinned-toolbar-us.png")});
     await require("./screenplay-md-ui.cjs")(page);
     assert.deepEqual(errors, []);
     console.log("PASS default storyboard, screenplay writing, format switch, ZIP restore, editing and output.");
