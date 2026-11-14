@@ -116,3 +116,36 @@
   .se-compare-grid { grid-template-columns: minmax(0, 1fr); }
   .se-compare-panel { margin: 0; padding: 14px 11px 16px; }
 }
+/* One manuscript surface per scene; only the manuscript scrolls as it grows. */
+.se-field textarea:is([data-screenplay-field="subject"],[data-screenplay-field="outline"]) { height: 6rem; min-height: 6rem; box-sizing: border-box; }
+.se-scene-meta-row { display: flex; flex-wrap: wrap; align-items: baseline; gap: .35rem .65rem; margin: .8rem 0; }
+.se-meta-label { user-select: none; -webkit-user-select: none; font-size: .8rem; font-weight: 650; color: #56657a; }
+.se-scene-meta-row :is(input,select) { min-width: 0; border: 0; border-radius: 0; background: transparent; color: inherit; font: inherit; padding: .35rem .15rem; }
+.se-scene-meta-row input { width: 8ch; flex: 1 1 8ch; }
+.se-scene-meta-row [data-screenplay-field="location"] { flex-grow: 2; }
+.se-scene-meta-row .se-scene-link-select { max-width: 15rem; color: #526392; font-size: .8rem; }
+.se-scene-meta-row .se-secondary-button { min-height: 32px; }
+.se-writing-tools,.se-tag-group { display: flex; align-items: center; gap: .25rem; }
+.se-writing-tools { padding: .4rem 0; border-block: 1px solid #e8e9e4; }
+.se-tag-button,.se-next-scene-button { display: grid; place-items: center; width: 38px; height: 38px; border: 0; border-radius: 6px; color: #435679; background: transparent; cursor: pointer; }
+.se-writing-tools button:is(:hover,:focus-visible) { background: #e9edf4; }
+.se-writing-tools svg,.se-empty-scenes svg { width: 19px; height: 19px; fill: none; stroke: currentColor; stroke-width: 1.65; stroke-linecap: round; stroke-linejoin: round; }
+.se-next-scene-button { margin-inline-start: auto; }
+.se-writing-hint { color: #697688; font-size: .78rem; margin-inline: .4rem; }
+.se-writing-surface { min-height: 9em; padding: 1rem .35rem; line-height: 1.85; font-size: 1rem; color: #253349; white-space: pre-wrap; overflow-wrap: anywhere; caret-color: #365b9b; }
+.se-writing-surface:focus { outline: none; }
+.se-writing-surface:focus-visible { box-shadow: inset 2px 0 #ccd5e5; }
+.se-writing-surface:empty::before { content: attr(data-placeholder); color: #818b98; pointer-events: none; }
+.se-script-run.is-dialogue { color: #365887; }
+.se-editor-shell[data-screenplay-format="tw"] .se-script-run.is-action::before { content: "△ "; color: #917846; }
+@media (pointer: coarse) { .se-writing-tools button { min-width: 44px; min-height: 44px; } }
+@media (max-width: 600px) { .se-writing-hint { display: none; } .se-scene-meta-row { gap: .25rem .45rem; } }
+.se-editor-actions { display: grid; justify-items: end; gap: .65rem; min-width: 0; }
+.se-markdown-actions { display: flex; flex-wrap: wrap; gap: .35rem; }
+.se-markdown-status:empty { display: none; }
+.se-markdown-status,.se-markdown-preview { max-width: 44ch; font-size: .82rem; }
+.se-markdown-preview { margin-top: .65rem; padding: .8rem; background: #fffefa; border: 1px solid #d8dce5; border-radius: 8px; }
+.se-markdown-preview pre { max-height: 10rem; overflow: auto; white-space: pre-wrap; overflow-wrap: anywhere; }
+@media (max-width: 680px) { .se-editor-actions { justify-items: start; } }
+.se-script-run { display: block; }
+.se-writing-surface br[data-screenplay-separator] { display: none; }

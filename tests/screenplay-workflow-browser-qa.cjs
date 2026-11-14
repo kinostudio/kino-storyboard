@@ -39,9 +39,9 @@ async function main() {
     const subject = page.locator("[data-screenplay-field=subject]");
     await subject.fill("泳池開場主旨");
     await page.locator("[data-screenplay-action=add-scene]").click();
-    const body = page.locator("[data-screenplay-block-text]").first();
-    if (!await body.count()) await page.locator("[data-screenplay-action=add-block][data-block-type=action]").first().click();
+    const body = page.locator("[data-screenplay-writing-surface]").first();
     await body.fill("/a 小安停在池邊");
+    await page.waitForFunction(() => StoryModel.getScreenplay()?.scenes[0]?.blocks[0]?.type === "action" && StoryModel.getScreenplay().scenes[0].blocks[0].text === "小安停在池邊");
     const sceneId = await page.evaluate(() => StoryModel.getProject().scenes[0].id);
     await page.locator("select[data-screenplay-field=sceneId]").first().selectOption(sceneId);
     await page.locator("button[data-screenplay-format=us]").click();
@@ -69,6 +69,7 @@ async function main() {
     const text = await page.locator("#print-document").innerText();
     assert.equal(text.split("還原後繼續撰寫").length - 1, 1);
     await page.screenshot({path:path.join(root, "tmp", "screenplay-qa", "restored-output.png")});
+    await require("./screenplay-md-ui.cjs")(page);
     assert.deepEqual(errors, []);
     console.log("PASS default storyboard, screenplay writing, format switch, ZIP restore, editing and output.");
   } finally {

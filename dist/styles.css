@@ -1560,3 +1560,56 @@ body.is-read-only #shot-list .shot-card.is-gallery .shot-card-text-preview:focus
 @media (max-width: 780px), (orientation: portrait) and (max-width: 1100px) {
   #screenplay-compare-host:not([hidden]) { inset: auto 0 0; width: 100%; max-height: 48dvh; padding-bottom: env(safe-area-inset-bottom); }
 }
+
+/* Keep storyboard actions aligned; icon controls stay compact without losing their touch targets. */
+.storyboard-panel > .panel-heading .panel-actions { align-items: center; gap: 6px; }
+.storyboard-panel .panel-actions > .outline-button,
+.storyboard-panel .panel-actions > .icon-button,
+.storyboard-panel .panel-actions > .view-switch.shot-view-switch {
+  height: 48px; min-height: 48px; box-sizing: border-box; flex: none;
+}
+.storyboard-panel .panel-actions > .icon-button,
+.storyboard-panel .panel-actions > .outline-button.storyboard-icon-action {
+  width: 48px; min-width: 48px; padding: 0; display: grid; place-items: center;
+}
+.storyboard-panel .panel-actions > .icon-button { border-color: #e1e4e7; background: #fffefa; color: #66758d; }
+.storyboard-panel .panel-actions > .icon-button:hover:not(:disabled) { border-color: #bfc8d5; background: #f7f8f7; color: #344a70; }
+.storyboard-panel .panel-actions > .icon-button svg,
+.storyboard-panel .panel-actions > .outline-button.storyboard-icon-action svg { width: 18px; height: 18px; }
+.storyboard-panel .panel-actions > .outline-button.reorder-mode-toggle { min-width: 48px; padding: 0; }
+.storyboard-panel .panel-actions > .outline-button.reorder-mode-toggle.is-active { border-color: #8799bb; background: #edf1f7; color: #344a70; }
+.storyboard-panel .panel-actions > .view-switch.shot-view-switch { min-height: 48px; padding: 2px; }
+.storyboard-panel .panel-actions > .view-switch.shot-view-switch > button { height: 44px; min-height: 44px; }
+.storyboard-panel .panel-actions > .voiceover-toggle { margin: 0; max-width: none; }
+.storyboard-visually-hidden { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; border: 0; }
+.storyboard-icon-action:focus-visible { outline: 2px solid #496bac; outline-offset: 2px; }
+
+/* Selection stays quiet until hover/focus; coarse pointers always get a usable target. */
+.shot-select-toggle {
+  top: 17px; left: 17px; width: 25px; height: 25px; padding: 0;
+  border: 1px solid rgba(76, 94, 124, .62); border-radius: 6px;
+  background: rgba(255, 255, 255, .68); color: #405a83; font-size: 14px;
+  line-height: 1; opacity: 0; pointer-events: none;
+  backdrop-filter: blur(5px); transition: opacity .14s ease, background-color .14s ease;
+}
+.shot-card:hover .shot-select-toggle,
+.shot-card:focus-within .shot-select-toggle { opacity: .78; pointer-events: auto; }
+.shot-select-toggle[aria-checked="true"],
+.shot-card:hover .shot-select-toggle[aria-checked="true"],
+.shot-card:focus-within .shot-select-toggle[aria-checked="true"],
+.shot-list.is-multi-select .shot-select-toggle[aria-checked="true"] {
+  opacity: 1; border-color: #526b99; background: #526b99; color: #fff;
+}
+.shot-select-toggle:focus-visible { opacity: 1; outline: 3px solid #e7cc91; outline-offset: 2px; }
+
+/* Reveal drawing only with its image; keyboard focus and touch retain direct access. */
+#shot-list .shot-card .shot-drawing-entry { opacity: 0; pointer-events: none; transition: opacity .14s ease; }
+#shot-list .shot-card .shot-art-wrap:hover .shot-drawing-entry,
+#shot-list .shot-card .shot-art-wrap:focus-within .shot-drawing-entry { opacity: 1; pointer-events: auto; }
+@media (hover: none), (pointer: coarse) {
+  .shot-select-toggle { width: 44px; height: 44px; opacity: .78; pointer-events: auto; }
+  #shot-list .shot-card .shot-drawing-entry { opacity: 1; pointer-events: auto; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .shot-select-toggle, #shot-list .shot-card .shot-drawing-entry { transition: none; }
+}
