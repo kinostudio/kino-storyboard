@@ -180,6 +180,14 @@ async function main() {
       await page.evaluate(() => ScreenplayEditor.flush());
       assert.ok(await page.evaluate(() => StoryModel.getScreenplay().scenes.at(-1).blocks.some(block => block.type === "text" && block.text.includes("一般文字"))));
     }
+    const role = page.locator(".se-role-separator").first();
+    assert.equal(await role.evaluate(e=>getComputedStyle(e).display),"none");
+    const toolbar=page.locator(".se-writing-tools");
+    await page.evaluate(() => window.scrollTo(0,document.body.scrollHeight));
+    await page.waitForFunction(()=>document.querySelector(".se-writing-tools").classList.contains("is-pinned"));
+    const toolbarBox=await toolbar.boundingBox();
+    assert.ok(toolbarBox.y>=0 && toolbarBox.y<200);
+    await page.screenshot({path:path.join(root,"tmp","screenplay-qa","pinned-toolbar-us.png")});
     await require("./screenplay-md-ui.cjs")(page);
     assert.deepEqual(errors, []);
     console.log("PASS default storyboard, screenplay writing, format switch, ZIP restore, editing and output.");

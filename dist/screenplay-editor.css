@@ -174,3 +174,13 @@
 .se-markdown-tools > summary::-webkit-details-marker { display: none; }
 .se-markdown-tools > summary::after { content: "⌄"; margin-left: .6rem; }
 .se-markdown-tools[open] > summary { margin-bottom: .5rem; }
+
+.se-scene-card-head { border: 0; padding: 0; }
+.se-scene-card .se-scene-title-wrap h3 { font-size: 1rem; margin: 0; }
+.se-manuscript-meta { margin-top: .35rem; }
+.se-editor-shell[data-screenplay-format="us"] .se-script-run.is-dialogue { text-align: left; }
+.se-editor-shell[data-screenplay-format="us"] .se-role-separator { display: none; }
+
+.se-writing-tools-anchor .se-writing-tools { background: #fffefa; box-sizing: border-box; }
+.se-writing-tools-anchor .se-writing-tools.is-pinned { position: fixed; z-index: 30; box-shadow: 0 3px 8px #1b273d12; }
+.se-scene-card { border-bottom: 0; }
