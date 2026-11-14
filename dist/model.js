@@ -1274,7 +1274,7 @@
       "updateProjectMetadata", "addScene", "updateScene", "addShot", "addShotWithPhoto", "addShotWithDrawing", "updateShot", "duplicateShot", "deleteShot", "moveShot",
       "reorderShots", "setShotNumberLocked", "renumberShots", "scheduleShot", "removeEntry", "moveEntry", "reorderScheduleEntries", "updateEntry",
       "addBreak", "addDay", "updateDay", "addProductionTask", "updateProductionTask", "moveProductionTask",
-      "reorderProductionTasks", "reorderProductionTimeline", "deleteProductionTask", "setAspectRatio"
+      "reorderProductionTasks", "reorderProductionTimeline", "deleteProductionTask", "setAspectRatio", "saveScreenplay"
     ]);
 
     function backfillHistoryFromReceipts(project, receipts) {
@@ -1627,7 +1627,17 @@
         return item.prepared;
       }
 
-      const raw = deps.bridge.applyCommand(before, item.type, item.args, { newId: newIdFactory(before) });
+      let raw;
+      if (item.type === "saveScreenplay") {
+        if (!Array.isArray(item.args) || item.args.length !== 1) throw makeError("INVALID_ARGUMENT", "保存 screenplay 需要一份完整資料。");
+        const candidate = cloneJson(before);
+        if (item.args[0] === null) delete candidate.screenplay;
+        else candidate.screenplay = item.args[0];
+        const project = deps.schema.validateProject(candidate);
+        raw = { project: project, changed: stableStringify(project) !== stableStringify(before) };
+      } else {
+        raw = deps.bridge.applyCommand(before, item.type, item.args, { newId: newIdFactory(before) });
+      }
       return prepareBridgeCommand(item, before, raw);
     }
 
@@ -2999,6 +3009,12 @@
 
     function getProject() { return currentProject ? cloneJson(currentProject) : null; }
 
+    function getScreenplay() {
+      return currentProject && Object.prototype.hasOwnProperty.call(currentProject, "screenplay")
+        ? cloneJson(currentProject.screenplay)
+        : null;
+    }
+
     function resolveShotNumbers() {
       requireProject();
       return deps.bridge.resolveShotNumbers(deps.schema.validateProject(currentProject));
@@ -3750,6 +3766,8 @@
       release: release,
       close: close,
       updateProjectMetadata: function (metadata) { return queueCommand("updateProjectMetadata", [metadata]); },
+      getScreenplay: getScreenplay,
+      saveScreenplay: function (screenplay) { return queueCommand("saveScreenplay", [screenplay]); },
       addScene: function (title) { return queueCommand("addScene", [title]); },
       updateScene: function (id, patch) { return queueCommand("updateScene", [id, patch]); },
       getSequenceFrames: getSequenceFrames,

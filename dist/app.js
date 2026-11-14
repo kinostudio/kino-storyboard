@@ -195,6 +195,7 @@
   let shotDrawingUrlEpoch = 0;
   const READ_ONLY_HELP = "唯讀瀏覽；重新取得編輯權後才能修改並保存。";
   const READ_ONLY_CONTROL_SELECTOR = [
+    "#view-screenplay input", "#view-screenplay textarea", "#view-screenplay select",
     ".scene-add-button", "#add-shot", ".empty-add", ".scene-edit-button", "#add-break", "#day-create",
     "#shot-pool [data-action='schedule-shot']", "#shot-list [data-shot-field]", "#inspector input", "#inspector textarea", "#inspector select", "#inspector button:not([data-action='preview-shot-number-renumber'])",
     "#schedule-inspector input", "#schedule-inspector textarea", "#schedule-inspector select", "#schedule-inspector button",
@@ -317,7 +318,7 @@
   function hasProductionTimelineDrafts(projectId) { return productionTimelineDraftsForProject(projectId).length > 0; }
   function hasUncommittedWorkForUnload() {
     const currentLifecycle = lifecycle || {};
-    return fieldDrafts.size > 0 || !!pendingPreferencePatch || hasProductionTimelineDrafts(state && state.projectId) ||
+    return window.ScreenplayEditor?.hasPending() || fieldDrafts.size > 0 || !!pendingPreferencePatch || hasProductionTimelineDrafts(state && state.projectId) ||
       pendingMutationPromises.size > 0 || uiPending > 0 || Number(currentLifecycle.pendingCount || 0) > 0 ||
       currentLifecycle.phase === "saving" || currentLifecycle.phase === "save_failed";
   }
@@ -3011,6 +3012,7 @@
   }
   function renderInspector() {
     const shot = byId(selectedShotId);
+    window.ScreenplayEditor.compare(activeChapterId === "all" ? shot?.chapterId : activeChapterId);
     const container = $("#inspector");
     if (!shot) { container.dataset.shotId = ""; container.innerHTML = '<div class="empty-state"><div class="empty-icon">' + icon("info", 16) + '</div><strong>尚未選取鏡頭</strong><p>從分鏡清單選擇一個鏡頭，即可在這裡編輯。</p></div>'; applyReadonlyControls(); return; }
     const shotIndex = currentShotIndex(); const globalIndex = shotIndex.globalPositionsById.get(shot.id); const group = shotIndex.shotsByChapter.get(shot.chapterId) || []; const groupIndex = shotIndex.shotPositionsById.get(shot.id) - 1; const linked = state.entries.filter((entry) => entry.type === "shot" && entry.shotId === shot.id);
@@ -3737,7 +3739,8 @@
   let outputPrintPreparation = null;
   let callsheetDrag = null;
   let callsheetRowSequence = 0;
-  function activeOutputMode() { return outputTemplate === "contact" ? "images" : "details"; }
+  function outputTemplateForType() { return outputType === "screenplay" || outputType === "combined" ? "worksheet" : outputTemplate; }
+  function activeOutputMode() { return outputTemplateForType() === "contact" ? "images" : "details"; }
   function outputPreferenceSnapshot() {
     const base = state && state.outputPreferences || {};
     return {
@@ -3977,6 +3980,7 @@
   }
   function ensureOutputSettings(scheduleMode) {
     const estimatedWrapToggle = ensureEstimatedWrapControl();
+    const effectiveTemplate = outputTemplateForType();
     const slider = $("#output-items-per-page");
     if (!slider) return;
     if (!slider.dataset.bound) {
@@ -3985,9 +3989,11 @@
         outputItemsPerPage = Math.max(1,Math.min(limit,Math.round(Number(value) || 1)));
         const mode = activeOutputMode();
         outputDensityByMode[mode] = outputItemsPerPage;
-        outputDensityByTemplate[outputTemplate] = outputItemsPerPage;
+        const template = outputTemplateForType();
+        outputDensityByTemplate[template] = outputItemsPerPage;
         ensureOutputSettings(outputType === "schedule");
-        const patch = { template:outputTemplate, mode:mode, density:outputItemsPerPage, densityByMode:{ [mode]:outputItemsPerPage }, densityByTemplate:{ [outputTemplate]:outputItemsPerPage } };
+        const patch = { mode:mode, density:outputItemsPerPage, densityByMode:{ [mode]:outputItemsPerPage }, densityByTemplate:{ [template]:outputItemsPerPage } };
+        if (outputType !== "screenplay" && outputType !== "combined") patch.template = outputTemplate;
         stageOutputPreference(patch);
         const scheduleMode = outputType === "schedule";
         const previewContext = scheduleMode ? (renderOutput(),null) : scheduleOutputDensityPreview(mode,!!persist);
@@ -4084,38 +4090,40 @@
     const resolved = resolveOutputOrientation(currentMode,state && state.aspectRatio,selectedOutputFields(currentMode),scheduleMode);
     const limit = 12;
     slider.min = "1"; slider.max = "12";
-    const requestedDensity = Math.max(1,Math.min(12,Number(outputDensityByTemplate[outputTemplate]) || outputItemsPerPage || OUTPUT_TEMPLATE_DEFAULT_DENSITY[outputTemplate] || 4));
+    const requestedDensity = Math.max(1,Math.min(12,Number(outputDensityByTemplate[effectiveTemplate]) || outputItemsPerPage || OUTPUT_TEMPLATE_DEFAULT_DENSITY[effectiveTemplate] || 4));
     outputItemsPerPage = requestedDensity;
     outputDensityByMode[currentMode] = outputItemsPerPage;
-    outputDensityByTemplate[outputTemplate] = outputItemsPerPage;
-    const densityUnit = scheduleMode ? "項目／頁" : outputTemplate === "vo" ? "段／頁" : "張／頁";
+    outputDensityByTemplate[effectiveTemplate] = outputItemsPerPage;
+    const screenplayMode = outputType === "screenplay" || outputType === "combined";
+    const densityUnit = scheduleMode || screenplayMode ? "項目／頁" : effectiveTemplate === "vo" ? "段／頁" : "張／頁";
     const note = $("#output-density-limit-note");
     if (note) note.textContent = "可選 1–12 " + densityUnit + "；若長文超出單頁，會依原序續頁，不裁切內容。";
     slider.value = String(outputItemsPerPage);
     const densityText = outputItemsPerPage + " " + densityUnit;
     $("#output-density-value").textContent = densityText;
     slider.setAttribute("aria-valuetext",densityText);
-    $("#output-density-less").setAttribute("aria-label","每頁減少一" + (scheduleMode ? "項" : outputTemplate === "vo" ? "段" : "張"));
-    $("#output-density-more").setAttribute("aria-label","每頁增加一" + (scheduleMode ? "項" : outputTemplate === "vo" ? "段" : "張"));
+    $("#output-density-less").setAttribute("aria-label","每頁減少一" + (scheduleMode || screenplayMode ? "項" : effectiveTemplate === "vo" ? "段" : "張"));
+    $("#output-density-more").setAttribute("aria-label","每頁增加一" + (scheduleMode || screenplayMode ? "項" : effectiveTemplate === "vo" ? "段" : "張"));
     $("#output-density-less").disabled = outputItemsPerPage === 1;
     $("#output-density-more").disabled = outputItemsPerPage === limit;
     $("#output-density-limit-value").textContent = String(limit);
-    $("#output-template-group").hidden = scheduleMode;
+    $("#output-template-group").hidden = scheduleMode || screenplayMode;
     $("#output-template").value = outputTemplate;
-    $("#output-content-settings").hidden = scheduleMode || outputTemplate === "vo";
+    $("#output-content-settings").hidden = scheduleMode || outputType === "screenplay" || effectiveTemplate === "vo";
     const modeToggle = $("#output-include-details").closest(".output-toggle-row");
-    if (modeToggle) modeToggle.hidden = !["worksheet","contact"].includes(outputTemplate);
-    $("#output-field-options").hidden = !outputIncludeDetails;
-    $("#output-image-field-options").hidden = outputIncludeDetails;
+    if (modeToggle) modeToggle.hidden = screenplayMode || !["worksheet","contact"].includes(effectiveTemplate);
+    const showDetails = outputType === "combined" || outputIncludeDetails;
+    $("#output-field-options").hidden = !showDetails;
+    $("#output-image-field-options").hidden = showDetails;
     $("#output-day-scope").value = outputDayScope;
     $("#output-selected-day-group").hidden = outputDayScope === "all";
     $("#output-selected-field-count").textContent = outputFieldCount("details") + " 項";
     $("#output-image-field-count").textContent = outputFieldCount("images") + " 項";
     slider.setAttribute("aria-label",scheduleMode ? "每頁拍攝項目" : outputTemplate === "vo" ? "每頁旁白段數" : "每頁分鏡張數");
     $("#output-density-hint").textContent = "可設定每頁 1–12 項；若完整內容超出單頁，會依原序接續下一頁，最後頁仍依所選容量配置。";
-    $("#output-layout-hint").textContent = scheduleMode ? "拍攝安排按拍攝日分組，保留現場順序與時段資訊。" : (({worksheet:"圖片與細項左右排列。",proposal:"雙欄卡片呈現分鏡圖與提案文字。",production:"縮圖、鏡次、畫面與聲音資料緊湊對齊。",av:"畫面、視覺描述與聲音分欄比較。",contact:"圖像索引；可附鏡次、標題、VO、SUPER、秒數。",vo:"只輸出台詞／旁白；空白台詞的鏡頭會略過。"})[outputTemplate] || "");
+    $("#output-layout-hint").textContent = scheduleMode ? "拍攝安排按拍攝日分組，保留現場順序與時段資訊。" : outputType === "screenplay" ? "依主旨、大綱與劇本場次順序輸出；未連結的場次也會保留。" : outputType === "combined" ? "主旨與大綱各列一次，逐場交錯呈現劇本與完整分鏡。" : (({worksheet:"圖片與細項左右排列。",proposal:"雙欄卡片呈現分鏡圖與提案文字。",production:"縮圖、鏡次、畫面與聲音資料緊湊對齊。",av:"畫面、視覺描述與聲音分欄比較。",contact:"圖像索引；可附鏡次、標題、VO、SUPER、秒數。",vo:"只輸出台詞／旁白；空白台詞的鏡頭會略過。"})[effectiveTemplate] || "");
     const label = $("#output-page-density-label");
-    if (label) label.textContent = scheduleMode ? "每頁拍攝項目" : outputTemplate === "vo" ? "每頁旁白段數" : "每頁分鏡張數";
+    if (label) label.textContent = scheduleMode ? "每頁拍攝項目" : screenplayMode ? "每頁內容項目" : effectiveTemplate === "vo" ? "每頁旁白段數" : "每頁分鏡張數";
   }
   function outputShotLabel(shot) {
     return typeof shotLabel === "function" ? shotLabel(shot) : escapeHtml(shotNumber(shot));
@@ -4236,6 +4244,19 @@
         Object.assign({},record,{imageFields:split[1],originalImageFieldLabels:originalImageFieldLabels,continuation:true,densityItem:false,art:"",showArt:false})
       ];
     }
+    if (record.kind === "screenplay-scene-heading") {
+      for (const field of ["heading","sceneLink","people"]) {
+        const value = String(record[field] || "");
+        if (value.length <= 1) continue;
+        const chunks = outputTextChunks(value,Math.max(1,Math.ceil(value.length / 2)));
+        if (chunks.length < 2) continue;
+        const remainder = chunks.slice(1).join("");
+        const continuation = Object.assign({},record,{heading:"",sceneLink:"",people:"",continuation:true,densityItem:false,continuationField:field});
+        continuation[field] = remainder;
+        return [Object.assign({},record,{[field]:chunks[0]}),continuation];
+      }
+      return null;
+    }
     const text = String(record.text || "");
     if (text.length > 1) {
       const chunks = outputTextChunks(text,Math.max(1,Math.floor(text.length / 2)));
@@ -4248,6 +4269,19 @@
     return null;
   }
   function outputRecordHtml(record) {
+    if (record.kind === "screenplay-frontmatter") return '<div class="output-record-wrap output-screenplay-record" data-output-record="' + escapeHtml(record.key || "") + '"><article class="output-screenplay-frontmatter"><h2>' + escapeHtml(record.label || "") + (record.continuation ? '（續）' : '') + '</h2><div>' + outputTextHtml(record.text || "") + '</div></article></div>';
+    if (record.kind === "screenplay-scene-heading") {
+      if (record.continuation) {
+        const labels = {heading:"場景標題",sceneLink:"分鏡場次",people:"人物"};
+        return '<div class="output-record-wrap output-screenplay-record" data-output-record="' + escapeHtml(record.key || "") + '"><div class="output-screenplay-continuation"><small>' + (labels[record.continuationField] || "場次資訊") + '（續）</small><span>' + outputTextHtml(record[record.continuationField] || "") + '</span></div></div>';
+      }
+      return '<div class="output-record-wrap output-screenplay-record" data-output-record="' + escapeHtml(record.key || "") + '"><header class="output-screenplay-scene-heading"><strong>' + outputTextHtml(record.heading || "") + '</strong><span>' + outputTextHtml(record.sceneLink || "") + '</span>' + (record.people ? '<small>人物｜' + outputTextHtml(record.people) + '</small>' : '') + '</header></div>';
+    }
+    if (record.kind === "screenplay-block") {
+      const type = ["action","dialogue","text"].includes(record.type) ? record.type : "text";
+      const character = !record.continuation && String(record.character || "").trim() ? '<strong class="output-screenplay-character">' + outputTextHtml(record.character) + '</strong>' : "";
+      return '<div class="output-record-wrap output-screenplay-record" data-output-record="' + escapeHtml(record.key || "") + '"><div class="output-screenplay-block is-' + type + ' is-' + (record.format === "us" ? "us" : "tw") + (record.continuation ? ' is-continuation' : '') + '">' + character + '<div>' + outputTextHtml(record.text || "") + '</div></div></div>';
+    }
     if (record.kind === "day-heading") {
       return '<div class="output-day-heading" data-density-item="false"><div class="output-day-heading-copy"><strong>' + escapeHtml(record.projectTitle || record.title || "拍攝日") + '</strong><span>' + escapeHtml(record.title || "拍攝日") + ' · ' + escapeHtml(record.date || "") + ' · 集合 ' + escapeHtml(record.start || "") + '</span></div></div>';
     }
@@ -4347,19 +4381,36 @@
     return wrapStart + '<article class="output-worksheet-row"><div class="output-card-art output-worksheet-art">' + art + '</div><div class="output-worksheet-main">' + identity + '<div class="output-worksheet-content">' + allFields + '</div></div></article>' + wrapEnd;
   }
   function outputPageHtml(context, records, pageIndex, pageCount) {
-    const body = records.length ? records.map((record) => outputRecordHtml(record,context)).join("") : '<div class="output-page-empty">' + escapeHtml(context.template === "vo" ? "此範圍沒有台詞或旁白；空白台詞的鏡頭已略過。" : "此輸出範圍目前沒有項目。") + '</div>';
-    const section = records.map((record) => record && record.section).find(Boolean) || context.activeSection || "timeline";
+    const body = records.length ? records.map((record) => outputRecordHtml(record,context)).join("") : '<div class="output-page-empty">' + escapeHtml(context.outputType === "screenplay" ? "此專案尚無劇本主旨、大綱或場次內容。" : context.outputType === "combined" ? "此專案目前尚無劇本或分鏡內容。" : context.template === "vo" ? "此範圍沒有台詞或旁白；空白台詞的鏡頭已略過。" : "此輸出範圍目前沒有項目。") + '</div>';
+    const section = records.map((record) => record && record.section).find(Boolean) || context.activeSection || (context.outputType === "screenplay" ? "screenplay" : "timeline");
     const pageDayIds = Array.from(new Set(records.map((record) => record.dayId).filter(Boolean)));
     const pageDay = pageDayIds.length === 1 && context.dayMeta ? context.dayMeta[pageDayIds[0]] : null;
-    const pageSubtitle = context.kind === "schedule" ? scheduleSectionLabel(section) + "　·　" + (context.subtitle || "") : pageDay ? (context.subtitle || "") + "　·　" + formatDate(pageDay.date,true) + "　·　" + pageDay.title : context.subtitle || "";
+    const pageSubtitle = context.outputType === "combined" ? context.subtitle || "" : section === "screenplay" ? (context.subtitle || "") : context.kind === "schedule" ? scheduleSectionLabel(section) + "　·　" + (context.subtitle || "") : pageDay ? (context.subtitle || "") + "　·　" + formatDate(pageDay.date,true) + "　·　" + pageDay.title : context.subtitle || "";
     const pageFooter = pageDay ? (pageDay.title || "拍攝日") + " · " + pageDay.date : context.footer || context.projectTitle || state.title;
-    const layout = context.kind === "schedule" ? (section === "timeline" ? "schedule-timeline" : section === "storyboard" ? "images" : "schedule") : context.template || "worksheet";
+    const layout = context.outputType === "combined" ? context.template || "worksheet" : section === "screenplay" ? "screenplay" : context.kind === "schedule" ? (section === "timeline" ? "schedule-timeline" : section === "storyboard" ? "images" : "schedule") : context.template || "worksheet";
     return '<section class="output-page ' + (context.orientation === "portrait" ? "is-portrait" : "is-landscape") + '" data-section="' + escapeHtml(section) + '" data-layout="' + layout + '"' + (context.template ? ' data-template="' + escapeHtml(context.template) + '"' : "") + ' data-density="' + context.density + '"><header class="output-page-header"><div class="output-page-heading"><div class="output-page-brand">KINO STORYBOARD　·　' + escapeHtml(context.brand || "OUTPUT") + '</div><h1>' + escapeHtml(context.projectTitle || state.title) + '</h1><p>' + escapeHtml(pageSubtitle) + '</p></div><div class="output-page-summary"><strong>' + escapeHtml(context.scope || "") + '</strong><span>' + escapeHtml(context.summary || "") + '</span></div></header><div class="output-page-body">' + body + '</div><footer class="output-page-footer"><span>' + escapeHtml(pageFooter) + ' · Project revision ' + escapeHtml(context.projectRevision == null ? "—" : context.projectRevision) + ' · Preference revision ' + escapeHtml(context.preferenceRevision == null ? "—" : context.preferenceRevision) + '</span><span>第 ' + (pageIndex + 1) + ' 頁／共 ' + pageCount + ' 頁</span></footer></section>';
   }
   function paginateOutputRecords(records, pageSize) {
     const pages = [];
     for (let i = 0; i < records.length; i += pageSize) pages.push(records.slice(i,i + pageSize));
     return pages.length ? pages : [[]];
+  }
+  function paginateOutputRecordsBySection(records, pageSize) {
+    const groups = [];
+    (records || []).forEach((record) => {
+      const section = record && record.section || "";
+      let group = groups[groups.length - 1];
+      if (!group || group.section !== section) groups.push(group = {section:section,records:[]});
+      group.records.push(record);
+    });
+    return groups.length ? groups.flatMap((group) => paginateOutputRecords(group.records,pageSize)) : [[]];
+  }
+  function insertOutputCarryPage(pages, sourceIndex, records) {
+    const sourceSection = (pages[sourceIndex] || []).find((record) => record && record.section);
+    const nextPage = pages[sourceIndex + 1];
+    const nextSection = (nextPage || []).find((record) => record && record.section);
+    if (!nextPage || sourceSection && nextSection && sourceSection.section !== nextSection.section) pages.splice(sourceIndex + 1,0,records);
+    else nextPage.unshift(...records);
   }
   function schedulePageHeading(page) {
     return (page || []).find((record) => record && record.kind === "day-heading") || null;
@@ -4402,7 +4453,7 @@
       if (schedulePages) insertScheduleCarryPage(pages,i,carry[0]);
       else {
         if (!pages[i + 1]) pages.splice(i + 1,0,[]);
-        pages[i + 1].unshift(...carry);
+        insertOutputCarryPage(pages,i,carry);
       }
     }
     for (let i = pages.length - 1; i > 0; i -= 1) if (!pages[i].length) pages.splice(i,1);
@@ -4473,7 +4524,7 @@
     const note = $("#scope-note");
     const hasImageFieldContinuations = context.mode === "images" && context.pages.some((page) => page.some((record) => record && record.kind === "shot" && record.continuation));
     const imageContinuationNote = hasImageFieldContinuations ? "；純圖欄位已依原序續頁，原每頁鏡數偏好保留。" : "";
-    if (note) note.textContent = context.kind === "schedule" ? context.noteBase + "；目前預覽「" + scheduleSectionLabel(activeSection) + "」" + pageCount + " 頁，列印會依序包含三區共 " + context.pages.length + " 頁。" : context.noteBase + "；依每頁 " + context.density + " " + (context.kind === "schedule" ? "項目" : "鏡") + " 上限分頁，共 " + pageCount + " 頁。" + imageContinuationNote;
+    if (note) note.textContent = context.kind === "schedule" ? context.noteBase + "；目前預覽「" + scheduleSectionLabel(activeSection) + "」" + pageCount + " 頁，列印會依序包含三區共 " + context.pages.length + " 頁。" : context.noteBase + "；依每頁 " + context.density + " " + (context.outputType === "screenplay" || context.outputType === "combined" ? "項目" : "鏡") + " 上限分頁，共 " + pageCount + " 頁。" + imageContinuationNote;
   }
   function renderOutputPages(context) {
     context.doc.innerHTML = context.pages.map((records,index) => outputPageHtml(context,records,index,context.pages.length)).join("");
@@ -4502,6 +4553,7 @@
         const body = page.querySelector(".output-page-body");
         if (!body) return;
         const pageRecords = context.pages[index] || [];
+        if (page.dataset.layout === "screenplay") return;
         const capacity = Math.max(Number(context.worksheetLayoutCapacity || context.density) || 1,pageRecords.length);
         page.dataset.effectiveDensity = String(capacity);
         let columns = context.template === "proposal" ? 2 : 1;
@@ -4696,7 +4748,7 @@
     context.layoutBlocked = false;
     if (context.kind === "storyboard" && context.template === "worksheet") {
       context.worksheetLayoutCapacity = Math.max(1,Number(context.density) || 1);
-      context.pages = paginateOutputRecords(context.records,context.worksheetLayoutCapacity);
+      context.pages = context.outputType === "combined" ? paginateOutputRecords(context.records,context.worksheetLayoutCapacity) : paginateOutputRecordsBySection(context.records,context.worksheetLayoutCapacity);
       renderOutputPages(context);
     }
     updateOutputPrintAvailability(context);
@@ -4829,9 +4881,9 @@
     // Fixed-capacity worksheet tracks do not grow when a record is carried.
     // Retry untouched records at a lower shared capacity before splitting text;
     // otherwise each page collapses to one tiny row and unnecessary continuations.
-    if (context.kind === "storyboard" && context.template === "worksheet" && context.worksheetLayoutCapacity > 1) {
+    if (context.kind === "storyboard" && context.template === "worksheet" && context.worksheetLayoutCapacity > 1 && (!pages[overflowIndex] || pages[overflowIndex].dataset.layout !== "screenplay")) {
       context.worksheetLayoutCapacity -= 1;
-      context.pages = paginateOutputRecords(context.records,context.worksheetLayoutCapacity);
+      context.pages = context.outputType === "combined" ? paginateOutputRecords(context.records,context.worksheetLayoutCapacity) : paginateOutputRecordsBySection(context.records,context.worksheetLayoutCapacity);
       renderOutputPages(context);
       requestAnimationFrame(() => balanceOutputPages(context,version,pass + 1));
       return;
@@ -4846,7 +4898,7 @@
       if (scheduleMode) insertScheduleCarryPage(context.pages,overflowIndex,moved);
       else {
         if (!context.pages[overflowIndex + 1]) context.pages.splice(overflowIndex + 1,0,[]);
-        context.pages[overflowIndex + 1].unshift(moved);
+        insertOutputCarryPage(context.pages,overflowIndex,[moved]);
       }
     } else if (scheduleMode && callsheetIndexes.length && (densityIndexes.length > 0 || callsheetIndexes.length > 1)) {
       carryLastCallsheetRecord(context.pages,overflowIndex);
@@ -4964,6 +5016,7 @@
   }
   function storyboardFrameKey(shot) { return shot._frameId ? shot.id + "/" + shot._frameId : shot.id; }
   function snapshotOutputShots(snapshot) {
+    if (outputType === "combined") return snapshot.ui.shots.slice();
     if (outputScope === "selected") return snapshot.ui.shots.filter((shot) => shot.id === selectedShotId);
     if (outputScope === "chapter") {
       const selected = snapshot.ui.shots.find((shot) => shot.id === selectedShotId);
@@ -5095,19 +5148,20 @@
   }
   function snapshotOutputContext(captured, version) {
     const prefs = normalizeOutputPreferences(pendingPreferencePatch || captured.project.outputPreferences);
-    prefs.mode = activeOutputMode(); prefs.template = outputTemplate; prefs.orientation = orientation; prefs.density = outputItemsPerPage;
+    const effectiveTemplate = outputTemplateForType();
+    prefs.mode = activeOutputMode(); prefs.template = effectiveTemplate; prefs.orientation = orientation; prefs.density = outputItemsPerPage;
     prefs.densityByMode = Object.assign({},prefs.densityByMode,{[prefs.mode]:outputItemsPerPage});
-    prefs.densityByTemplate = Object.assign({},prefs.densityByTemplate,{[prefs.template]:outputItemsPerPage});
+    prefs.densityByTemplate = Object.assign({},prefs.densityByTemplate,{[effectiveTemplate]:outputItemsPerPage});
     prefs.fields = {images:Object.assign({},outputFields.images),details:Object.assign({},outputFields.details)};
     prefs.schedule = Object.assign({},prefs.schedule,{dayScope:outputDayScope,selectedDayId:outputDayId || null,showEstimatedWrap:outputShowEstimatedWrap},outputScheduleFields);
     const scheduleMode = outputType === "schedule";
     const resolvedOrientation = orientation === "auto" ? resolveOutputOrientation(prefs.mode,captured.project.aspectRatio,prefs.fields[prefs.mode],scheduleMode,captured.ui) : orientation;
     applyOutputPageOrientation(resolvedOrientation);
     const density = Math.max(1,Math.min(12,Number(outputItemsPerPage) || 1));
-    return {doc:$("#print-document"),kind:scheduleMode ? "schedule" : "storyboard",project:captured.project,ui:captured.ui,
+    return {doc:$("#print-document"),kind:scheduleMode ? "schedule" : "storyboard",outputType:outputType,project:captured.project,ui:captured.ui,
       projectId:captured.project.projectId,projectRevision:captured.project.revision,preferenceRevision:Number(captured.project.outputPreferences && captured.project.outputPreferences.revision) || 0,
-      preferences:prefs,mode:prefs.mode,template:scheduleMode ? null : prefs.template,orientation:resolvedOrientation,density:density,aspectRatio:captured.project.aspectRatio,imageFieldCount:scheduleMode ? Number(prefs.schedule.storyboardShotNumber) + Number(prefs.schedule.storyboardTitle) : outputFieldCount("images"),
-      projectTitle:captured.project.title,brand:scheduleMode ? "SHOOTING PLAN" : "STORYBOARD",records:[],pages:null,objectUrls:new Set(),imageSources:[],captureBlockers:[],capturePending:true,version:version,
+      preferences:prefs,mode:prefs.mode,template:scheduleMode ? null : effectiveTemplate,orientation:resolvedOrientation,density:density,aspectRatio:captured.project.aspectRatio,imageFieldCount:scheduleMode ? Number(prefs.schedule.storyboardShotNumber) + Number(prefs.schedule.storyboardTitle) : outputFieldCount("images"),
+      projectTitle:captured.project.title,brand:scheduleMode ? "SHOOTING PLAN" : outputType === "screenplay" ? "SCREENPLAY" : outputType === "combined" ? "SCREENPLAY + STORYBOARD" : "STORYBOARD",records:[],pages:null,objectUrls:new Set(),imageSources:[],captureBlockers:[],capturePending:true,version:version,
       dayMeta:Object.create(null),selectedDayId:outputDayId,itemCount:0,itemLabel:scheduleMode ? "拍攝項目" : "鏡頭",noteBase:"",subtitle:"",scope:"",summary:"",footer:""};
   }
   function appendOutputBlocker(context, shot, source, error) {
@@ -5162,9 +5216,9 @@
         context.imageSources.push({shotId:item.shot.id,type:null,id:null,requiresSelection:true});
       } else if (!item.source.source) context.imageSources.push({shotId:item.shot.id,type:null,id:null});
     }
-    const chapterId = outputScope === "all" ? null : outputScope === "chapter" ? (activeChapterId !== "all" ? activeChapterId : shots[0] && shots[0].chapterId) : shots[0] && shots[0].chapterId;
+    const chapterId = context.outputType === "combined" || outputScope === "all" ? null : outputScope === "chapter" ? (activeChapterId !== "all" ? activeChapterId : shots[0] && shots[0].chapterId) : shots[0] && shots[0].chapterId;
     const chapter = context.ui.chapters.find((item) => item.id === chapterId);
-    const scopeText = outputScope === "all" ? "全部分鏡" : outputScope === "chapter" ? (chapter ? "場次：" + (context.ui.chapters.findIndex((item) => item.id === chapter.id) + 1) + "／" + chapter.title : "目前場次") : (shots[0] ? "單鏡：" + snapshotShotNumber(context,shots[0]) : "目前選取鏡頭");
+    const scopeText = context.outputType === "combined" || outputScope === "all" ? "全部分鏡" : outputScope === "chapter" ? (chapter ? "場次：" + (context.ui.chapters.findIndex((item) => item.id === chapter.id) + 1) + "／" + chapter.title : "目前場次") : (shots[0] ? "單鏡：" + snapshotShotNumber(context,shots[0]) : "目前選取鏡頭");
     const records = [];
     for (const item of selected) {
       const shot = item.shot; const art = template === "vo" ? "" : await prepareShotArt(context,shot,item.source);
@@ -5178,6 +5232,104 @@
     context.subtitle = (context.project.projectType || "分鏡文件") + "　·　" + scopeText;
     context.summary = template === "vo" ? records.length + " 段台詞／旁白" : formatStoryboardOutputSummary(scopedShots) + (frames.length !== scopedShots.length ? " · " + frames.length + " 張分鏡" : "");
     context.footer = context.projectTitle + " · " + scopeText;
+  }
+  function screenplayOutputRecords(context) {
+    const screenplay = context.project.screenplay && typeof context.project.screenplay === "object" ? context.project.screenplay : {};
+    const us = screenplay.format === "us";
+    const records = [];
+    const addFrontMatter = (key,label,value) => {
+      const text = String(value == null ? "" : value);
+      if (text.trim()) records.push({kind:"screenplay-frontmatter",key:"screenplay/" + key,section:"screenplay",label:us ? label.toUpperCase() : label,text:text,densityItem:true});
+    };
+    addFrontMatter("subject",us ? "Subject" : "主旨",screenplay.subject);
+    addFrontMatter("outline",us ? "Outline" : "大綱",screenplay.outline);
+    const chapters = new Map((context.ui.chapters || []).map((scene,index) => [scene.id,{scene:scene,index:index}]));
+    (Array.isArray(screenplay.scenes) ? screenplay.scenes : []).forEach((scene,index) => {
+      if (!scene || typeof scene !== "object") return;
+      const linked = scene.sceneId && chapters.get(scene.sceneId);
+      const locationParts = [scene.interiorExterior,scene.location].map((value) => String(value || "").trim()).filter(Boolean);
+      const time = String(scene.time || "").trim();
+      let heading = locationParts.join(us ? " " : "｜");
+      if (time) heading += (heading ? (us ? " - " : "｜") : "") + time;
+      if (us) heading = heading.toLocaleUpperCase();
+      if (!heading) heading = linked ? String(linked.scene.title || "") : (us ? "UNTITLED SCENE" : "未命名場次");
+      const order = index + 1;
+      records.push({kind:"screenplay-scene-heading",key:"screenplay/scene/" + String(scene.id || order),section:"screenplay",draftSceneId:scene.id || "",sceneId:scene.sceneId || null,heading:(us ? String(order).padStart(2,"0") + ". " : "第 " + order + " 場｜") + heading,
+        sceneLink:linked ? "分鏡場次 " + (linked.index + 1) + (linked.scene.title ? " · " + linked.scene.title : "") : "未連結分鏡場次",
+        people:String(scene.people || ""),densityItem:false});
+      (Array.isArray(scene.blocks) ? scene.blocks : []).forEach((block,blockIndex) => {
+        if (!block || typeof block !== "object" || typeof block.text !== "string" || !block.text.length) return;
+        const type = ["action","dialogue","text"].includes(block.type) ? block.type : "text";
+        records.push({kind:"screenplay-block",key:"screenplay/block/" + String(block.id || scene.id || order) + "/" + blockIndex,section:"screenplay",draftSceneId:scene.id || "",sceneId:scene.sceneId || null,format:us ? "us" : "tw",type:type,character:String(block.character || ""),text:block.text,densityItem:true});
+      });
+    });
+    return records;
+  }
+  async function buildScreenplayOutputContext(context) {
+    const records = screenplayOutputRecords(context);
+    context.records = records;
+    context.pages = paginateOutputRecordsBySection(records,context.density);
+    context.itemCount = records.filter((record) => record.densityItem !== false).length;
+    context.itemLabel = "項";
+    context.scope = "全片劇本";
+    context.subtitle = context.project.screenplay && context.project.screenplay.format === "us" ? "Screenplay · Subject, Outline and Scenes" : "劇本 · 主旨、大綱與場次";
+    context.summary = (context.project.screenplay && context.project.screenplay.format === "us" ? "Subject/Outline " : "主旨／大綱 ") + records.filter((record) => record.kind === "screenplay-frontmatter").length + " 項 · " + (Array.isArray(context.project.screenplay && context.project.screenplay.scenes) ? context.project.screenplay.scenes.length : 0) + " 場";
+    context.footer = context.projectTitle + " · 全片劇本";
+    context.noteBase = "已填寫的主旨與大綱各輸出一次，依已保存順序輸出每個劇本場次；未連結分鏡場次的劇本內容也會保留。";
+    renderOutputSourceChoices(context,[]);
+  }
+  async function buildCombinedOutputContext(context) {
+    await buildStoryboardOutputContext(context);
+    const screenplayRecords = screenplayOutputRecords(context);
+    const storyboardRecords = context.records.map((record) => Object.assign({},record,{section:"storyboard"}));
+    const frontMatter = screenplayRecords.filter((record) => record.kind === "screenplay-frontmatter");
+    const chapterIds = new Set((context.ui.chapters || []).map((scene) => scene.id));
+    const scriptByScene = new Map(); const unlinkedScriptScenes = []; const unlinkedScriptById = new Map();
+    screenplayRecords.filter((record) => record.draftSceneId).forEach((record) => {
+      const sceneId = record.sceneId && chapterIds.has(record.sceneId) ? record.sceneId : null;
+      if (sceneId) {
+        if (!scriptByScene.has(sceneId)) scriptByScene.set(sceneId,[]);
+        scriptByScene.get(sceneId).push(record);
+      } else {
+        let group = unlinkedScriptById.get(record.draftSceneId);
+        if (!group) { unlinkedScriptScenes.push(group = {id:record.draftSceneId,records:[]}); unlinkedScriptById.set(record.draftSceneId,group); }
+        group.records.push(record);
+      }
+    });
+    const storyboardByShot = new Map();
+    storyboardRecords.forEach((record) => {
+      if (!record.shotId) return;
+      if (!storyboardByShot.has(record.shotId)) storyboardByShot.set(record.shotId,[]);
+      storyboardByShot.get(record.shotId).push(record);
+    });
+    const shotsByScene = new Map(); const linkedSceneIds = new Set((context.ui.chapters || []).map((scene) => scene.id));
+    context.ui.shots.forEach((shot) => {
+      if (!linkedSceneIds.has(shot.chapterId)) return;
+      if (!shotsByScene.has(shot.chapterId)) shotsByScene.set(shot.chapterId,[]);
+      shotsByScene.get(shot.chapterId).push(shot);
+    });
+    const records = frontMatter.slice(); const usedShotIds = new Set();
+    (context.ui.chapters || []).forEach((scene) => {
+      records.push(...(scriptByScene.get(scene.id) || []));
+      (shotsByScene.get(scene.id) || []).forEach((shot) => {
+        records.push(...(storyboardByShot.get(shot.id) || []));
+        usedShotIds.add(shot.id);
+      });
+    });
+    unlinkedScriptScenes.forEach((scene) => records.push(...scene.records));
+    context.ui.shots.forEach((shot) => {
+      if (usedShotIds.has(shot.id)) return;
+      records.push(...(storyboardByShot.get(shot.id) || []));
+    });
+    context.records = records;
+    context.pages = paginateOutputRecords(context.records,context.density);
+    context.itemCount = context.records.filter((record) => record.densityItem !== false).length;
+    context.itemLabel = "項";
+    context.scope = "全片劇本與分鏡";
+    context.subtitle = "劇本場次後接全片分鏡";
+    context.summary = frontMatter.length + " 項主旨／大綱 · " + (Array.isArray(context.project.screenplay && context.project.screenplay.scenes) ? context.project.screenplay.scenes.length : 0) + " 場劇本 · " + context.records.filter((record) => record.kind === "shot").length + " 張分鏡";
+    context.footer = context.projectTitle + " · 全片劇本與分鏡";
+    context.noteBase = "先輸出有內容的主旨與大綱各一次、每個劇本場次一次，再依場次交錯輸出鏡頭與 A／B／C 等連續分鏡；未連結場次與鏡頭也會保留。";
   }
   function scheduleOutputDays(context) {
     if (!context.ui.days.some((day) => day.id === outputDayId)) outputDayId = context.ui.days[0] ? context.ui.days[0].id : null;
@@ -5284,15 +5436,15 @@
     if (outputDensityPreviewFrame) { cancelAnimationFrame(outputDensityPreviewFrame); outputDensityPreviewFrame = 0; }
     if (outputPrintPreparation && outputPrintPreparation.context) cancelOutputPrintPreparation();
     if (!state || !model || typeof model.getProject !== "function") return Promise.resolve(null);
-    outputType=$("#output-type").value || outputType; const scheduleMode=outputType === "schedule"; ensureOutputSettings(scheduleMode);
+    outputType=$("#output-type").value || outputType; const scheduleMode=outputType === "schedule"; const screenplayMode=outputType === "screenplay" || outputType === "combined"; ensureOutputSettings(scheduleMode);
     const previewMode = activeOutputMode();
     const previewOrientation = orientation === "auto" ? resolveOutputOrientation(previewMode,state.aspectRatio,selectedOutputFields(previewMode),scheduleMode) : orientation;
     applyOutputPageOrientation(previewOrientation);
-    $("#storyboard-scope-group").hidden=scheduleMode; $("#schedule-scope-group").hidden=!scheduleMode;
+    $("#storyboard-scope-group").hidden=scheduleMode || screenplayMode; $("#schedule-scope-group").hidden=!scheduleMode;
     $("#schedule-output-tabs").hidden=!scheduleMode;
     if (scheduleMode) setOutputScheduleSection(outputScheduleSection,false);
     else $("#print-document").removeAttribute("data-active-section");
-    $("#preview-title").textContent=scheduleMode ? "拍攝安排文件" : (({worksheet:"導演工作表",proposal:"影像提案",production:"製片執行表",av:"視聽對照",contact:"全片索引",vo:"VO／台詞稿"})[outputTemplate] || "分鏡文件");
+    $("#preview-title").textContent=scheduleMode ? "拍攝安排文件" : outputType === "screenplay" ? "劇本文件" : outputType === "combined" ? "劇本與分鏡文件" : (({worksheet:"導演工作表",proposal:"影像提案",production:"製片執行表",av:"視聽對照",contact:"全片索引",vo:"VO／台詞稿"})[outputTemplate] || "分鏡文件");
     let captured;
     try { captured=captureOutputSnapshot(); }
     catch (error) { outputCaptureStatus(null,error); $("#print-output").disabled=true; return Promise.resolve(null); }
@@ -5304,7 +5456,10 @@
     const context=snapshotOutputContext(captured,version); outputCaptureStatus(context,null);
     outputCapturePromise=(async()=>{
       try {
-        if (context.kind === "schedule") await buildScheduleOutputContext(context); else await buildStoryboardOutputContext(context);
+        if (context.kind === "schedule") await buildScheduleOutputContext(context);
+        else if (context.outputType === "screenplay") await buildScreenplayOutputContext(context);
+        else if (context.outputType === "combined") await buildCombinedOutputContext(context);
+        else await buildStoryboardOutputContext(context);
         if (version!==outputCaptureVersion) { releaseOutputObjectUrls(context.objectUrls); return null; }
         adoptLatestOutputDensity(context,context.mode);
         context.capturePending=false; assertOutputCaptureCurrent(context);
@@ -5798,7 +5953,7 @@
     catch (error) { route.status = "error"; route.error = error; renderDrawingRouteStatus(); }
   }
   function setView(view, options) {
-    if (!["storyboard", "schedule", "output", "drawing", "voiceover"].includes(view)) return false;
+    if (!["screenplay", "storyboard", "schedule", "output", "drawing", "voiceover"].includes(view)) return false;
     const previousView = currentView;
     if (currentView === "storyboard" && view !== "storyboard" && shotPlaceholderAutoPromotionTimer !== null && !(view === "drawing" && drawingRoute && drawingRoute.placeholder)) {
       flushShotPlaceholderAutoPromotion();
@@ -5815,7 +5970,7 @@
     const navView = view === "voiceover" || view === "drawing" ? "storyboard" : view;
     $$('[data-view]').forEach((button) => button.classList.toggle("is-active", button.dataset.view === navView));
     const backgroundView = view === "drawing" ? "storyboard" : view;
-    ["storyboard","schedule","output","drawing","voiceover"].forEach((key) => {
+    ["screenplay","storyboard","schedule","output","drawing","voiceover"].forEach((key) => {
       const section = $("#view-" + key);
       const visible = key === view || view === "drawing" && key === backgroundView;
       section.hidden = !visible;
@@ -5831,6 +5986,7 @@
       }
     }
     if (view !== previousView || options && options.force) {
+      if (view === "screenplay") window.ScreenplayEditor.render();
       if (view === "storyboard") renderStoryboard();
       if (view === "schedule") renderSchedule();
       if (view === "output") renderOutput();
@@ -5840,6 +5996,7 @@
     return true;
   }
   function renderAll(status) {
+    if (currentView === "screenplay") window.ScreenplayEditor.render();
     if (currentView === "storyboard") renderStoryboard();
     else if (currentView === "schedule") renderSchedule();
     else if (currentView === "output") renderOutput();
@@ -6109,6 +6266,7 @@
     }
     activeProjectId = snapshot.projectId || activeProjectId;
     state = snapshot;
+    if (previousState && previousState.projectId !== snapshot.projectId && currentView === "screenplay") setView("storyboard");
     refreshShotNumberResolution(true);
     syncShotNumberPreviewAfterProjectChange(snapshot);
     $$("#shot-list [data-shot-photo-action='crop']").forEach((button) => {
@@ -6413,6 +6571,7 @@
     }
   }
   async function commitAllDrafts() {
+    await window.ScreenplayEditor.flush();
     if (hasProductionTimelineDrafts(state && state.projectId)) throw fieldFailure("PRODUCTION_TIMELINE_DRAFTS_REMAIN", "製作時程有未保存草稿；請先展開時程並保存或明確放棄，再切換專案。草稿會保留在目前專案。 ");
     if (Array.from(fieldDrafts.values()).some((draft) => draft.composing)) throw fieldFailure("IME_COMPOSING", "請先完成正在輸入的文字，再切換專案。");
     if (pendingMutationPromises.size) await Promise.allSettled(Array.from(pendingMutationPromises));
@@ -6807,6 +6966,7 @@
     } finally { endGoogleDriveOperation(); }
   }
   async function exportCompletePackageToGoogleDrive() {
+    if (window.ScreenplayEditor.hasPending()) await window.ScreenplayEditor.flush();
     const capability = kinoDriveCapability();
     if (!capability.available) { setGoogleDriveStatus(capability.message, { kind: "error" }); return; }
     const blocker = completePackageExportBlockReason();
@@ -7151,6 +7311,7 @@
     if (action === "confirm") await confirmCompletePackageImport();
   }
   async function downloadCompletePackage() {
+    await window.ScreenplayEditor.flush();
     const blocker = completePackageExportBlockReason();
     if (blocker) { message(blocker, true); return; }
     completePackageExportBusy = true;
@@ -8372,7 +8533,13 @@
       const statusButton = event.target.closest("[data-status-action]");
       if (statusButton) { await safely(() => handleStatusAction(statusButton.dataset.statusAction)); return; }
       const viewButton = event.target.closest("[data-view]");
-      if (viewButton && (viewButton.classList.contains("rail-button") || viewButton.classList.contains("workspace-tab"))) { setView(viewButton.dataset.view); return; }
+      if (viewButton && (viewButton.classList.contains("rail-button") || viewButton.classList.contains("workspace-tab"))) {
+        await safely(async () => {
+          if (currentView === "screenplay") await window.ScreenplayEditor.flush();
+          setView(viewButton.dataset.view);
+        });
+        return;
+      }
       const actionButton = event.target.closest("[data-action]");
       if (actionButton && isReadOnly() && READ_ONLY_ACTIONS.has(actionButton.dataset.action)) { event.preventDefault(); message("目前為唯讀瀏覽；請重新取得編輯權後再修改。", true); return; }
       if (actionButton) { await safely(() => handleAction(actionButton.dataset.action, actionButton)); return; }
