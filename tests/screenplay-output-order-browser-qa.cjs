@@ -66,6 +66,7 @@ async function main() {
     assert.equal(text.split("SUBJECT-ONCE").length - 1, 1);
     assert.equal(text.split("OUTLINE-ONCE").length - 1, 1);
     assert.equal(text.split("LONG-SCRIPT-END").length - 1, 1, "long script text should survive overflow splitting once");
+    assert.ok(!text.includes("未連結分鏡場次"));
     assert.ok(!text.includes("SHOT-1-A"), "screenplay-only output must not contain storyboard shots");
     const twMarker = await page.locator(".output-screenplay-block.is-tw.is-action").first().evaluate(element => getComputedStyle(element.querySelector("div"), "::before").content);
     assert.equal(twMarker, '"△ "', "Taiwan screenplay action should print its marker");

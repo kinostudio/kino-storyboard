@@ -6,6 +6,9 @@ module.exports = async function checkMarkdown(page) {
   const subject = page.locator("[data-screenplay-field=subject]");
   const original = await subject.inputValue();
   assert.ok(original);
+  await page.locator("[data-screenplay-markdown-tools] summary").click();
+  await page.locator('[data-screenplay-action="preview-ai-prompt"]').click();
+  assert.ok((await page.locator("[data-screenplay-prompt-content]").innerText()).includes("KINO Storyboard"));
   const action = name => page.locator('[data-screenplay-action="' + name + '"]');
   const downloadEvent = page.waitForEvent("download");
   await action("export-markdown").click();

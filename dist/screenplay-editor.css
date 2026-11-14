@@ -169,3 +169,8 @@
 .se-role-name { font-weight: 650; }
 .se-editor-shell[data-screenplay-format="us"] .se-role-name { display: block; text-align: center; }
 .se-editor-shell[data-screenplay-format="us"] .se-manuscript-meta label span { flex-basis: 3em; }
+
+.se-markdown-tools > summary { cursor: pointer; list-style: none; }
+.se-markdown-tools > summary::-webkit-details-marker { display: none; }
+.se-markdown-tools > summary::after { content: "⌄"; margin-left: .6rem; }
+.se-markdown-tools[open] > summary { margin-bottom: .5rem; }
