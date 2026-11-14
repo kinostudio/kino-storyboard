@@ -821,6 +821,33 @@
     this.canvasInstructions = create("span", "ds-de-sr-only", this.canvas.getAttribute("aria-label"));
     this.stageBadge = create("span", "ds-de-stage-badge", "鎖定照片底圖");
     this.stage.append(this.canvas, this.stageBadge);
+    this.transformBox = create("div","ds-de-transform-box");
+    this.transformBox.hidden = true;
+    this.transformBox.setAttribute("aria-label","拖曳移動圖層");
+    ["nw","ne","se","sw","rotate"].forEach(handle=>{
+      const control=button(handle==="rotate"?"旋轉圖層":"等比縮放圖層","ds-de-transform-handle");
+      control.dataset.transformHandle=handle;
+      control.setAttribute("aria-label",handle==="rotate"?"旋轉圖層":handle+" 等比縮放圖層");
+      this.transformBox.appendChild(control);
+    });
+    this.stage.appendChild(this.transformBox);
+    this.transformActions=create("div","ds-de-transform-actions");
+    const hidePanel=button("隱藏面板","ds-de-utility");
+    const applyTransform=button("套用變形","ds-de-utility");
+    const cancelTransform=button("取消","ds-de-utility");
+    this.transformPanelButton=hidePanel;
+    this.transformActions.append(hidePanel,applyTransform,cancelTransform);
+    this.transformActions.hidden=true;
+    this.stage.appendChild(this.transformActions);
+    this.listen(hidePanel,"click",()=>{this.cameraPresetDrawer.open=false;this.requestRender();});
+    this.listen(applyTransform,"click",()=>this.applyCameraPreset());
+    this.listen(cancelTransform,"click",()=>{this.cameraPresetEdit=null;this.cameraPresetDrawer.open=false;this.requestRender();});
+    this.listen(this.transformBox,"pointerdown",event=>this.startLayerGesture(event));
+    this.listen(this.transformBox,"pointermove",event=>this.moveLayerGesture(event));
+    const endGesture=()=>{this.layerGesture=null;};
+    this.listen(this.transformBox,"pointerup",endGesture);
+    this.listen(this.transformBox,"pointercancel",endGesture);
+    this.listen(this.transformBox,"lostpointercapture",endGesture);
     this.reference = create("aside", "ds-de-reference");
     this.referenceTitle = create("h3", "", "鎖定照片底圖");
     this.referenceMessage = create("p", "", "正在載入照片…");
@@ -1523,30 +1550,29 @@
   };
 
   DrawingEditor.prototype.transformDrawingStrokes = function (strokes, transform) {
-    const paths = strokes.map(function (stroke) {
-      return { kind: stroke.kind, points: stroke.points.map(function (point) { return [point.x, point.y]; }) };
+    const points = strokes.flatMap(stroke => stroke.points);
+    if (!points.length) return clone(strokes);
+    let minX=1,maxX=0,minY=1,maxY=0;
+    points.forEach(p=>{minX=Math.min(minX,p.x);maxX=Math.max(maxX,p.x);minY=Math.min(minY,p.y);maxY=Math.max(maxY,p.y);});
+    const cx = (minX+maxX)/2, cy = (minY+maxY)/2;
+    const {width,height} = this.drawing.canvas;
+    const angle = (Number(transform.rotation)||0)*Math.PI/180;
+    const scale = clamp((Number(transform.scale)||100)/100,.25,4);
+    const rotated = points.map(point => {
+      const x=(point.x-cx)*width*scale, y=(point.y-cy)*height*scale;
+      return {x:(x*Math.cos(angle)-y*Math.sin(angle))/width,y:(x*Math.sin(angle)+y*Math.cos(angle))/height};
     });
-    const angle = (Number(transform.rotation) || 0) * Math.PI / 180;
-    if (angle) {
-      const width = this.drawing.canvas.width, height = this.drawing.canvas.height;
-      let extent = 1;
-      paths.forEach(path => path.points.forEach(point => {
-        const x = (point[0] - .5) * width, y = (point[1] - .5) * height;
-        point[0] = (x * Math.cos(angle) - y * Math.sin(angle)) / width;
-        point[1] = (x * Math.sin(angle) + y * Math.cos(angle)) / height;
-        extent = Math.max(extent, Math.abs(point[0]) * 2, Math.abs(point[1]) * 2);
-      }));
-      paths.forEach(path => path.points.forEach(point => {
-        point[0] = .5 + point[0] / extent; point[1] = .5 + point[1] / extent;
-      }));
-    }
-    const maxScale = this.cameraPresetScaleMax(paths, transform.flipX, transform.flipY, true);
-    const points = this.cameraPresetTransformPaths(paths, Object.assign({}, transform, {scale: Math.min(transform.scale, maxScale)}));
-    return strokes.map(function (stroke, strokeIndex) {
-      const next = clone(stroke);
-      delete next.id;
-      next.points = stroke.points.map(function (point, pointIndex) {
-        return Object.assign({}, point, { x: points[strokeIndex].points[pointIndex][0], y: points[strokeIndex].points[pointIndex][1] });
+    let left=Infinity,right=-Infinity,top=Infinity,bottom=-Infinity;
+    rotated.forEach(p=>{left=Math.min(left,p.x);right=Math.max(right,p.x);top=Math.min(top,p.y);bottom=Math.max(bottom,p.y);});
+    const fit=Math.min(1,1/Math.max(right-left,.0001),1/Math.max(bottom-top,.0001));
+    const centerX=clamp(cx+(Number(transform.x)||0)/100,-left*fit,1-right*fit);
+    const centerY=clamp(cy+(Number(transform.y)||0)/100,-top*fit,1-bottom*fit);
+    let index=0;
+    return strokes.map(stroke=>{
+      const next=clone(stroke); delete next.id;
+      next.points=stroke.points.map(point=>{
+        const position=rotated[index++];
+        return Object.assign({},point,{x:clamp(centerX+position.x*fit,0,1),y:clamp(centerY+position.y*fit,0,1)});
       });
       return next;
     });
@@ -1589,6 +1615,14 @@
   DrawingEditor.prototype.updateCameraPresetRanges = function (paths) {
     if (!paths.length) return;
     const editing = Boolean(this.cameraPresetEdit);
+    if (editing) {
+      [[this.cameraPresetX,"x",-100,100,"%"],[this.cameraPresetY,"y",-100,100,"%"],[this.cameraPresetScale,"scale",25,400,"%"]].forEach(([range,key,min,max,unit])=>{
+        range.input.min=String(min);range.input.max=String(max);
+        range.input.value=String(this.cameraPresetTransform[key]);
+        range.output.textContent=this.cameraPresetTransform[key]+unit;
+      });
+      return;
+    }
     const scaleMax = this.cameraPresetScaleMax(paths, this.cameraPresetTransform.flipX, this.cameraPresetTransform.flipY, editing);
     this.cameraPresetScale.input.min = editing ? "25" : "50";
     this.cameraPresetScale.input.max = String(scaleMax);
@@ -3066,6 +3100,7 @@
   };
 
   DrawingEditor.prototype.pointerDown = function (event) {
+    if (this.cameraPresetEdit) return;
     if (this.destroyed) return;
     if (event.pointerType === "touch") {
       if (this.activeStroke && this.activeStroke.pointerType !== "touch") return;
@@ -4154,6 +4189,7 @@
     ctx.clearRect(0, 0, bounds.width, bounds.height);
     if (!this.drawing) return;
     const fitted = this.displayRect(bounds);
+    this.renderLayerTransformBox();
     const canvas = this.drawing.canvas;
     ctx.save();
     ctx.translate(fitted.x, fitted.y);
@@ -4176,7 +4212,7 @@
       if (!layer.visible) return;
       ctx.save();
       ctx.globalAlpha = layer.opacity;
-      const visibleStrokes = this.cameraPresetDrawer.open && this.cameraPresetEdit?.layerId === layer.id
+      const visibleStrokes = this.cameraPresetEdit?.layerId === layer.id
         ? this.transformDrawingStrokes(this.cameraPresetEdit.strokes,this.cameraPresetTransform) : layer.strokes;
       visibleStrokes.forEach(function (stroke) { this.drawStroke(ctx, stroke, canvas); }, this);
       ctx.restore();
@@ -4216,6 +4252,50 @@
       ctx.stroke();
       ctx.restore();
     }
+  };
+
+  DrawingEditor.prototype.renderLayerTransformBox = function () {
+    const edit=this.cameraPresetEdit;
+    this.transformBox.hidden=!edit;
+    this.transformActions.hidden=!edit;
+
+    if(this.transformBox.hidden) return;
+    const strokes=this.transformDrawingStrokes(edit.strokes,this.cameraPresetTransform);
+    const points=strokes.flatMap(stroke=>stroke.points);
+    if(!points.length) {this.transformBox.hidden=true;return;}
+    const fitted=this.displayRect(this.stage.getBoundingClientRect());
+    let x1=1,y1=1,x2=0,y2=0;
+    points.forEach(point=>{x1=Math.min(x1,point.x);y1=Math.min(y1,point.y);x2=Math.max(x2,point.x);y2=Math.max(y2,point.y);});
+    this.layerBox={x:fitted.x+x1*fitted.width,y:fitted.y+y1*fitted.height,width:Math.max(8,(x2-x1)*fitted.width),height:Math.max(8,(y2-y1)*fitted.height)};
+    Object.assign(this.transformBox.style,{left:this.layerBox.x+"px",top:this.layerBox.y+"px",width:this.layerBox.width+"px",height:this.layerBox.height+"px"});
+  };
+
+  DrawingEditor.prototype.startLayerGesture = function (event) {
+    if(event.button!==0 || !this.cameraPresetEdit || !this.canTransformCameraPreset(this.layerId)) return;
+    event.preventDefault(); event.stopPropagation();
+    const box=this.layerBox, bounds=this.stage.getBoundingClientRect();
+    const center={x:bounds.left+box.x+box.width/2,y:bounds.top+box.y+box.height/2};
+    this.layerGesture={pointerId:event.pointerId,handle:event.target.dataset.transformHandle||"move",x:event.clientX,y:event.clientY,center:center,box:Object.assign({},box),transform:Object.assign({},this.cameraPresetTransform)};
+    this.transformBox.setPointerCapture(event.pointerId);
+  };
+
+  DrawingEditor.prototype.moveLayerGesture = function (event) {
+    const gesture=this.layerGesture;
+    if(!gesture || gesture.pointerId!==event.pointerId) return;
+    event.preventDefault(); event.stopPropagation();
+    const fitted=this.displayRect(this.stage.getBoundingClientRect()), original=gesture.transform;
+    const dx=event.clientX-gesture.x,dy=event.clientY-gesture.y;
+    const next=Object.assign({},original);
+    if(gesture.handle==="move") {next.x=original.x+dx/fitted.width*100;next.y=original.y+dy/fitted.height*100;}
+    else if(gesture.handle==="rotate") {
+      const angle=Math.atan2(event.clientY-gesture.center.y,event.clientX-gesture.center.x)-Math.atan2(gesture.y-gesture.center.y,gesture.x-gesture.center.x);
+      next.rotation=((original.rotation||0)+angle*180/Math.PI+540)%360-180;
+    } else {
+      const start=Math.hypot(gesture.x-gesture.center.x,gesture.y-gesture.center.y);
+      next.scale=clamp(original.scale*Math.hypot(event.clientX-gesture.center.x,event.clientY-gesture.center.y)/Math.max(1,start),25,400);
+    }
+    this.cameraPresetTransform=next;
+    this.updateCameraPresetControls();
   };
 
   DrawingEditor.prototype.drawStroke = function (ctx, stroke, canvas) {
