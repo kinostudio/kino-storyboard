@@ -184,3 +184,9 @@
 .se-writing-tools-anchor .se-writing-tools { background: #fffefa; box-sizing: border-box; }
 .se-writing-tools-anchor .se-writing-tools.is-pinned { position: fixed; z-index: 30; box-shadow: 0 3px 8px #1b273d12; }
 .se-scene-card { border-bottom: 0; }
+
+.se-editor-actions { display: flex; flex-wrap: wrap; align-items: flex-start; justify-content: flex-end; }
+.se-markdown-tools { position: relative; }
+.se-markdown-tools > summary svg { width: 18px; height: 18px; fill: none; stroke: currentColor; stroke-width: 1.5; stroke-linecap: round; stroke-linejoin: round; }
+.se-markdown-tools[open] { width: min(100%, 420px); }
+@media (max-width:680px) { .se-editor-actions { justify-content: flex-start; } }
