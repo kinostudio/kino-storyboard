@@ -211,6 +211,17 @@
       releasePreviews(state);
       return;
     }
+    const project = projectSnapshot(state);
+    const current = project && Array.isArray(project.shots) &&
+      project.shots.some(function (shot) { return shot.id === state.shotId; });
+    if (!current) {
+      state.projectBlocked = true;
+      host.querySelectorAll("[data-sequence-field]").forEach(function (field) { field.disabled = true; });
+      host.querySelectorAll("[data-sequence-action]").forEach(function (button) { button.disabled = true; });
+      releasePreviews(state);
+      return;
+    }
+    state.projectBlocked = false;
     const canEdit = writable(state);
     const frames = sequenceFrames(state);
     host.querySelectorAll("[data-sequence-field]").forEach(function (field) { field.disabled = !canEdit; });

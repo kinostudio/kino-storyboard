@@ -188,9 +188,26 @@ async function main() {
     assert.equal(final.count, 3, "Deleting one child leaves the remaining frames.");
     assert.equal(final.duration, 8, "Child editing keeps the main Shot duration shared.");
     assert.equal(final.scheduleRows, 0, "The frame editor does not create schedule entries.");
+
+    await page.locator('[data-view="output"]').first().click();
+    const copyProjectId = await page.evaluate(async () => {
+      const archive = await StoryModel.exportCompletePackage();
+      const imported = await StoryModel.importCompletePackage(archive.archiveBytes, { mode: "copy" });
+      return imported.projectId;
+    });
+    await page.evaluate((projectId) => StoryModel.selectProject(projectId), copyProjectId);
+    await page.waitForFunction((projectId) => StoryModel.getProject().projectId === projectId, copyProjectId);
+    await page.waitForTimeout(250);
+    const projectSwitch = await page.evaluate(() => ({
+      errors: Array.from(document.querySelectorAll(".toast.is-error")).map((toast) => toast.textContent.trim()),
+      missingFrameToasts: Array.from(document.querySelectorAll(".toast.is-error")).filter((toast) => toast.textContent.includes("分鏡不存在")).length
+    }));
+    assert.deepEqual(projectSwitch.errors, [], "Switching to a ZIP copy does not query the old frame ID or show an error toast.");
+    assert.equal(projectSwitch.missingFrameToasts, 0, "The old sequence state cannot show ‘frame not found’ after project switch.");
     assert.deepEqual(pageErrors, [], "The browser reports no uncaught page errors.");
     await context.close();
     console.log("PASS sequence editor UI: transient placeholder, multiline fields, canceled photo/drawing, atomic first stroke, crop confirmation and previews, frame reorder/delete");
+    console.log("PASS ZIP-copy project switch: 0 application error toasts");
     console.log("SCREENSHOT tmp/sequence-ui-qa.png");
   } finally {
     if (browser) await browser.close();
