@@ -777,7 +777,7 @@ body.is-read-only .shot-photo-readonly-note{display:block}
 /* Compact three-column shot cards: artwork, editable story text, and duration. */
 @container storyboard-panel (min-width: 721px) {
   .shot-card.is-list {
-    grid-template-columns: minmax(132px, min(28%, 230px)) max-content minmax(0, 1fr) minmax(54px, 68px);
+    grid-template-columns: minmax(132px, min(28%, 230px)) max-content minmax(0, 1fr) 102px;
     grid-template-areas:
       "art number title duration"
       "art visual visual duration"
@@ -793,7 +793,7 @@ body.is-read-only .shot-photo-readonly-note{display:block}
 
 @container storyboard-panel (max-width: 720px) {
   .shot-card.is-list {
-    grid-template-columns: minmax(100px, 28%) minmax(0, 1fr) minmax(52px, 62px);
+    grid-template-columns: minmax(100px, 28%) minmax(0, 1fr) 102px;
     grid-template-areas:
       "art number duration"
       "art title duration"
@@ -810,7 +810,7 @@ body.is-read-only .shot-photo-readonly-note{display:block}
 
 @container storyboard-panel (max-width: 430px) {
   .shot-card.is-list {
-    grid-template-columns: minmax(76px, 24%) minmax(0, 1fr) minmax(48px, 56px);
+    grid-template-columns: minmax(76px, 24%) minmax(0, 1fr) 102px;
     gap: 3px 7px;
     padding: 8px;
   }
@@ -1509,28 +1509,13 @@ body.is-read-only #shot-list .shot-card.is-gallery .shot-card-text-preview:focus
  #view-storyboard > .storyboard-panel, #view-storyboard > .inspector, #view-storyboard > .chapter-sidebar { min-height:0; height:100%; overflow-y:auto; overscroll-behavior-y:contain; scrollbar-gutter:stable; }
  #view-storyboard .shot-list { flex:none; overflow:visible; }
 }
-.duration-wheel-open { border:0; background:transparent; color:#687b9a; width:30px; height:30px; display:inline-grid; place-items:center; cursor:pointer; }
 .duration-input-wrap, .shot-duration-control { position:relative; }
-.duration-input-wrap .duration-wheel-open, .shot-duration-control .duration-wheel-open { position:absolute; left:1px; top:50%; transform:translateY(-50%); }
 .duration-input-wrap input, .shot-duration-control input { padding-left:32px!important; }
-.duration-wheel-dialog { border:1px solid #dce2ea; border-radius:18px; padding:20px; width:min(340px,calc(100vw - 24px)); color:#253650; box-shadow:0 20px 70px #15203133; background:#fffefa; }
-.duration-wheel-dialog::backdrop { background:#18243b55; }
-.duration-wheel-dialog h3 { margin:0 0 12px; font-size:16px; }
-.duration-wheels { display:flex; justify-content:center; gap:12px; position:relative; }
-.duration-wheel { width:104px; height:220px; overflow-y:auto; overscroll-behavior:contain; scroll-snap-type:y mandatory; scrollbar-width:none; padding:88px 0; background:linear-gradient(#eff2f700 88px,#edf1f8 88px,#edf1f8 132px,#eff2f700 132px); background-attachment:local; border-radius:10px; }
-.duration-wheel::-webkit-scrollbar { display:none; }
-.duration-wheel [role="option"] { height:44px; display:grid; place-items:center; scroll-snap-align:center; color:#9aa4b1; font-size:22px; font-variant-numeric:tabular-nums; }
-.duration-wheel [aria-selected="true"] { color:#233957; font-size:28px; font-weight:650; }
-.duration-wheel-dialog p { text-align:center; margin:8px 0 16px; color:#69768a; font-size:12px; }
-.duration-wheel-actions { display:flex; justify-content:flex-end; gap:12px; }
-.duration-wheel-actions button { min-height:44px; padding:0 18px; }
 
 .shot-select-toggle { position:absolute; top:14px; left:14px; width:30px; height:30px; display:grid; place-items:center; border:2px solid #8997ac; border-radius:7px; background:#fff; color:#fff; font-size:20px; z-index:3; cursor:pointer; box-shadow:0 1px 5px #18243b22; }
 .shot-select-toggle[aria-checked="true"] { border-color:#526b99; background:#526b99; }
 .shot-select-toggle[hidden] { display:none; }
 @media(pointer:coarse) { .shot-select-toggle { width:44px; height:44px; } }
-.duration-wheel { background:none; }
-.duration-wheel [aria-selected="true"] { background:#edf1f8; border-radius:8px; }
 
 /* Continuous frames belong to the parent shot; only the parent is scheduled. */
 .shot-card .sequence-host { grid-column:1 / -1; min-width:0; }
@@ -1615,3 +1600,15 @@ body.is-read-only #shot-list .shot-card.is-gallery .shot-card-text-preview:focus
 }
 
 @media (max-width: 1000px) { .app-shell > .app-rail { position: relative; top: auto; inset-block-start: auto; } }
+
+.duration-input-wrap .duration-scrub-handle,.shot-duration-control .duration-scrub-handle { position:absolute; left:0; top:50%; transform:translateY(-50%); width:32px; height:44px; padding:7px; border:0; background:transparent; color:#8191a8; touch-action:none; cursor:ew-resize; display:grid; place-items:center; }
+.duration-scrub-handle svg { width:16px; height:16px; fill:none; stroke:currentColor; stroke-width:1.5; stroke-linecap:round; stroke-linejoin:round; }
+.duration-scrubbable { touch-action:none; cursor:ew-resize; font-variant-numeric:tabular-nums; }
+.duration-scrubbable:focus { cursor:text; }
+.duration-scrubbable.is-duration-scrubbing { cursor:ew-resize; color:#365e95!important; background:#eaf0f855!important; caret-color:transparent; user-select:none; }
+.duration-scrub-hud { position:fixed; z-index:10000; display:flex; gap:3px; align-items:center; padding:4px; width:124px; height:34px; background:#fffefa; border:1px solid #dce2ea; border-radius:8px; box-shadow:0 4px 15px #15203116; pointer-events:none; color:#8a96a7; font:12px/1 system-ui,sans-serif; }
+.duration-scrub-hud[hidden] { display:none; }
+.duration-scrub-hud span { flex:1; text-align:center; padding:6px 2px; border-radius:4px; }
+.duration-scrub-hud span.is-active { color:#365e95; background:#eaf0f8; font-weight:600; }
+
+.shot-card .shot-duration-control .shot-inline-duration { min-height:44px; height:44px; font-size:14px; padding-right:25px; }
