@@ -40,6 +40,22 @@ async function main() {
     await subject.fill("泳池開場主旨");
     await page.locator("[data-screenplay-action=add-scene]").click();
     const body = page.locator("[data-screenplay-writing-surface]").first();
+    const meta = page.locator("[data-screenplay-meta]");
+    assert.equal(await page.locator("[data-screenplay-scene-title]").first().innerText(), "場次一");
+    for (const prefix of ["IN", "OUT", "內", "外"]) {
+      await meta.first().fill(prefix);
+      assert.equal(await meta.first().inputValue(), prefix + " / ");
+    }
+    await page.keyboard.insertText("池畔");
+    for (const field of ["time","people","body"]) {
+      await page.keyboard.press("ArrowDown");
+      assert.equal(await page.evaluate(() => document.activeElement.dataset.screenplayField), field);
+    }
+    await page.evaluate(() => ScreenplayEditor.flush());
+    assert.deepEqual(await page.evaluate(() => {
+      const {location,interiorExterior,time,people} = StoryModel.getScreenplay().scenes[0];
+      return [location,interiorExterior,time,people];
+    }), ["池畔","外","",""]);
     await body.fill("/a 小安停在池邊");
     await page.waitForFunction(() => StoryModel.getScreenplay()?.scenes[0]?.blocks[0]?.type === "action" && StoryModel.getScreenplay().scenes[0].blocks[0].text === "小安停在池邊");
     await page.locator("[data-screenplay-action=add-scene]").click();
