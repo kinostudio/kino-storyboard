@@ -998,6 +998,7 @@
   }
   document.addEventListener("input", (event) => {
     if (event.target.matches("#shot-list .shot-inline-script, #shot-list .shot-inline-super")) resizeShotText(event.target);
+    if (event.target.id === "shot-move") renderShotMoveOptions(event.target.parentElement.parentElement.parentElement);
   });
   window.addEventListener("resize", resizeShotTextFields);
   function resizeShotVisual(field, expanded) {
@@ -3020,7 +3021,31 @@
       const draft = fieldDrafts.get(draftKey(shot.id, field.dataset.shotField));
       if (draft) { field.value = draft.value; renderDraftError(field, draft); }
     });
+    renderShotMoveOptions(container);
     applyReadonlyControls();
+  }
+
+  const shotMoveOptions = [
+    ["景別", ["特寫", "近景", "中景", "遠景", "大遠景"]],
+    ["運鏡／拍攝方式", ["FIX", "穩定器", "Free Hand", "Follow", "ARC", "Dolly in", "Dolly out", "PAN L", "PAN R", "Tilt Up", "Tilt Down", "ZOOM IN", "ZOOM OUT", "Dolly Zoom", "空拍", "車拍", "搖臂"]]
+  ];
+  function shotMoveValues(value) {
+    return Array.from(new Set(String(value || "").split(/[、，,・·]/).map(part => part.trim()).filter(Boolean)));
+  }
+  function renderShotMoveOptions(container) {
+    const field = container.querySelector("#shot-move");
+    if (!field) return;
+    let picker = container.querySelector(".shot-move-options");
+    if (!picker) {
+      picker = document.createElement("div");
+      picker.className = "shot-move-options";
+      field.closest(".field-row").after(picker);
+    }
+    const selected = new Set(shotMoveValues(field.value));
+    picker.innerHTML = shotMoveOptions.map(([label, values]) =>
+      '<div class="shot-move-option-group" role="group" aria-label="' + escapeHtml(label) + '"><span class="field-label">' + escapeHtml(label) + '</span><div class="shot-move-tags">' +
+      values.map(value => '<button type="button" class="shot-move-tag" data-shot-move-tag="' + escapeHtml(value) + '" aria-pressed="' + selected.has(value) + '"' + (isReadOnly() ? ' disabled' : '') + '>' + escapeHtml(value) + '</button>').join("") + '</div></div>'
+    ).join("");
   }
 
   function syncShotFieldCounterparts(shotId, fieldName) {
@@ -8098,6 +8123,20 @@
     $("#shot-reorder-mode").addEventListener("click", () => toggleReorderMode("shots"));
     $("#schedule-reorder-mode").addEventListener("click", () => toggleReorderMode("entries"));
     document.addEventListener("click", async (event) => {
+      const moveTag = event.target.closest("[data-shot-move-tag]");
+      if (moveTag) {
+        event.preventDefault();
+        if (isReadOnly()) return;
+        const field = $("#shot-move");
+        if (!field) return;
+        const values = shotMoveValues(field.value);
+        const value = moveTag.dataset.shotMoveTag;
+        field.value = (values.includes(value) ? values.filter(item => item !== value) : values.concat(value)).join("、");
+        captureFieldDraft(field);
+        renderShotMoveOptions(field.parentElement.parentElement.parentElement);
+        await safely(() => commitDraftField(field));
+        return;
+      }
       const driveDestinationAction = event.target.closest("[data-drive-destination-action]");
       if (driveDestinationAction) {
         event.preventDefault();
