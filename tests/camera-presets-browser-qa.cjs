@@ -236,6 +236,26 @@ async function main() {
     assert.ok(previewCheck.referenceIds.length);
     assert.ok(previewCheck.referenceIds.every(id=>previewCheck.seen.includes(id)),"transform preview renders other visible layers");
     await page.screenshot({path:path.join(screenshotDir,"composite-transform-preview.png")});
+    await page.locator(".ds-de-transform-actions").getByRole("button",{name:"隱藏面板",exact:true}).click();
+    await page.waitForFunction(()=>!presetQa.editor.cameraPresetDrawer.open);
+    const savedBeforeGesture=await page.evaluate(()=>JSON.stringify(presetQa.editor.drawing.layers));
+    const selectionBox=page.locator(".ds-de-transform-box");
+    const box=await selectionBox.boundingBox();
+    const transformBefore=await page.evaluate(()=>Object.assign({},presetQa.editor.cameraPresetTransform));
+    await page.mouse.move(box.x+box.width*.7,box.y+box.height*.65);
+    await page.mouse.down();await page.mouse.move(box.x+box.width*.7+18,box.y+box.height*.65-9,{steps:3});await page.mouse.up();
+    assert.notEqual(await page.evaluate(()=>presetQa.editor.cameraPresetTransform.x),transformBefore.x,"canvas drag moves selected layer");
+    const corner=await page.locator('[data-transform-handle="se"]').boundingBox();
+    await page.mouse.move(corner.x+corner.width/2,corner.y+corner.height/2);
+    await page.mouse.down();await page.mouse.move(corner.x-24,corner.y-18,{steps:3});await page.mouse.up();
+    assert.notEqual(await page.evaluate(()=>presetQa.editor.cameraPresetTransform.scale),transformBefore.scale,"corner drag scales layer");
+    const rotation=await page.locator('[data-transform-handle="rotate"]').boundingBox();
+    await page.mouse.move(rotation.x+rotation.width/2,rotation.y+rotation.height/2);
+    await page.mouse.down();await page.mouse.move(rotation.x+55,rotation.y+25,{steps:3});await page.mouse.up();
+    assert.notEqual(await page.evaluate(()=>presetQa.editor.cameraPresetTransform.rotation),0,"rotation handle changes rotation");
+    assert.equal(await page.evaluate(()=>JSON.stringify(presetQa.editor.drawing.layers)),savedBeforeGesture,"canvas gestures preview without committing changes");
+    await page.screenshot({path:path.join(screenshotDir,"canvas-transform-handles.png")});
+    await page.locator(".ds-de-camera-preset-toggle").click();
     const beforeTransform = await page.evaluate(drawingId => {
       const drawing = StoryModel.getDrawing(drawingId);
       const layer = drawing.layers.find(item => item.name === "運鏡 PAN R");
