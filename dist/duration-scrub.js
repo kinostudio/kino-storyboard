@@ -8,20 +8,19 @@
     if (hud) hud.hidden = true;
   }
 
-  function showHud(field, gear) {
+  function showHud(field, scale) {
     if (!hud) {
       hud = document.createElement("div");
       hud.className = "duration-scrub-hud";
       hud.setAttribute("aria-hidden", "true");
-      ["1×", "½×", "¼×"].forEach(label => {
-        const span = document.createElement("span");
-        span.textContent = label;
-        hud.appendChild(span);
-      });
+      hud.innerHTML = '<svg viewBox="0 0 108 28"><g fill="currentColor">' +
+        Array.from({length:9},(_,index)=>'<rect x="'+(10+index*11)+'" y="'+(5+index*.8)+'" width="3" height="'+(18-index*1.6)+'" rx="1"/>').join("") +
+        '</g><circle class="duration-scrub-position" cy="14" r="4"/></svg>';
       document.body.appendChild(hud);
     }
     hud.hidden = false;
-    Array.from(hud.children).forEach((span, index) => span.classList.toggle("is-active", index === gear));
+    hud.dataset.scale = String(scale);
+    hud.querySelector("circle").setAttribute("cx",String(11+(1-scale)/.75*88));
     const box = field.getBoundingClientRect();
     hud.style.left = Math.max(8, Math.min(window.innerWidth - 132, box.right - 124)) + "px";
     hud.style.top = Math.max(8, Math.min(window.innerHeight - 44, box.top > 48 ? box.top - 42 : box.bottom + 6)) + "px";
@@ -53,7 +52,7 @@
     handle.type = "button";
     handle.className = "duration-scrub-handle";
     handle.setAttribute("aria-label", "拖曳調整秒數");
-    handle.title = "左右拖曳；向下拉切換 ½×、¼× 細調";
+    handle.title = "左右拖曳，向下拉細調";
     handle.innerHTML = '<svg viewBox="0 0 20 20" aria-hidden="true"><path d="M3 10h14M6 7l-3 3 3 3M14 7l3 3-3 3"/></svg>';
     field.parentElement.appendChild(handle);
     [field, handle].forEach(target => {
@@ -65,7 +64,7 @@
         event.preventDefault();
         event.stopPropagation();
         gesture = {field, target, options, context: options.context(), pointerId: event.pointerId,
-          original, raw: initial, startX: event.clientX, startY: event.clientY, lastX: event.clientX, gear: 0, dragging: false};
+          original, raw: initial, startX: event.clientX, startY: event.clientY, lastX: event.clientX, dragging: false};
         target.setPointerCapture(event.pointerId);
       });
       target.addEventListener("pointermove", event => {
@@ -80,15 +79,12 @@
           field.classList.add("is-duration-scrubbing");
         }
         const depth = Math.max(0, event.clientY - current.startY);
-        if (current.gear === 0 && depth >= 62) current.gear = 1;
-        if (current.gear === 1 && depth >= 132) current.gear = 2;
-        if (current.gear === 2 && depth < 120) current.gear = 1;
-        if (current.gear === 1 && depth < 50) current.gear = 0;
-        const delta = (event.clientX - current.lastX) / 8 * [1, .5, .25][current.gear];
+        const scale = Math.max(.25, 1 - depth / 192);
+        const delta = (event.clientX - current.lastX) / 8 * scale;
         current.lastX = event.clientX;
         current.raw = Math.max(0, current.raw + delta);
-        field.value = String(Math.round(current.raw * 10) / 10);
-        showHud(field, current.gear);
+        field.value = String(Math.round(current.raw));
+        showHud(field, scale);
       });
       target.addEventListener("pointerup", event => {if (gesture?.pointerId === event.pointerId) finish(false);});
       target.addEventListener("pointercancel", event => {if (gesture?.pointerId === event.pointerId) finish(true);});

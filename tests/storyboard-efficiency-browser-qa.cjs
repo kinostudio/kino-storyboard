@@ -49,7 +49,7 @@ async function main(){
  assert.equal(await page.getByText("INVALID_DURATION",{exact:false}).count(),0);
  await page.locator("#shot-duration").fill("7.5");
  await page.locator("#shot-duration").press("Tab");
- await page.waitForFunction(()=>StoryModel.getState().shots.some(s=>s.duration===7.5));
+ await page.waitForFunction(()=>StoryModel.getState().shots.some(s=>s.duration===8));
  await page.getByRole("button",{name:"檢視全片台詞／旁白稿",exact:true}).click();
  await page.getByRole("button",{name:"複製全文",exact:true}).click();
  assert.equal((await page.evaluate(()=>navigator.clipboard.readText())).split(String.fromCharCode(13)).join(""),vo);
@@ -106,6 +106,15 @@ async function main(){
  await page.waitForFunction(()=>document.querySelector("#inspector").scrollTop>0);
  assert.equal(await panel.evaluate(e=>e.scrollTop),position);
  assert.equal(await page.evaluate(()=>document.scrollingElement.scrollTop),0);
+ const inspectorPosition=await inspector.evaluate(e=>e.scrollTop);
+ await page.evaluate(async()=>{
+   const shot=StoryModel.getProject().shots[0];
+   await StoryModel.updateShot(shot.id,{title:shot.title+" saved"});
+ });
+ await page.waitForTimeout(250);
+ assert.equal(await panel.evaluate(e=>e.scrollTop),position,"saving must preserve storyboard scroll");
+ assert.equal(await inspector.evaluate(e=>e.scrollTop),inspectorPosition,"saving must preserve inspector scroll");
+
  assert.deepEqual(errors,[]);
  console.log("PASS text-first shots, direct seconds, VO copy/TXT, visible multi-selection, group drag and independent scroll");
  }finally{await browser.close();server.close();}

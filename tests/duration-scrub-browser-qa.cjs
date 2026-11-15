@@ -30,6 +30,7 @@ const server=http.createServer((request,response)=>{
   await page.locator("#shot-duration").fill("8");
   await page.locator("#shot-duration").press("Tab");
   await page.waitForFunction(()=>StoryModel.getProject().shots[0].durationSeconds===8);
+  assert.equal(await page.locator('[data-shot-select]:visible').count(),0,"checkboxes only appear in multi-select mode");
   const getDuration=()=>page.evaluate(()=>{const shot=StoryModel.getProject().shots[0];return shot.durationSeconds;});
   const cdp=touch?await context.newCDPSession(page):null;
   async function pointer(type,x,y){
@@ -50,6 +51,7 @@ const server=http.createServer((request,response)=>{
    await page.waitForFunction(()=>!document.querySelector(".duration-scrub-hud").hidden);
    assert.equal(Number(await field.inputValue()),initial+4);
    await pointer("move",x+32,y+74);
+   assert.ok(Math.abs(Number(await page.locator(".duration-scrub-hud").getAttribute("data-scale"))-(1-74/192))<.001,"speed changes continuously");
    assert.equal(Number(await field.inputValue()),initial+4,"vertical gear change must not jump");
    await pointer("move",x+64,y+74);
    assert.equal(Number(await field.inputValue()),initial+6);
@@ -78,18 +80,18 @@ const server=http.createServer((request,response)=>{
   await pointer("up");
   assert.ok(await field.evaluate(element=>document.activeElement===element),"tap must focus direct numeric entry");
   await page.keyboard.type("3.7");await field.press("Tab");
-  await page.waitForFunction(()=>{const s=StoryModel.getProject().shots[0];return (s.durationSeconds)===3.7;});
+  await page.waitForFunction(()=>{const s=StoryModel.getProject().shots[0];return (s.durationSeconds)===4;});
   const handle=page.locator("#inspector .duration-scrub-handle");
   await handle.scrollIntoViewIfNeeded();
   let box=await handle.boundingBox(),x=box.x+box.width/2,y=box.y+box.height/2;
   await pointer("down",x,y);await pointer("move",x+40,y);
   if(touch)await pointer("cancel");else {await page.keyboard.press("Escape");await pointer("up");}
-  assert.equal(await getDuration(),3.7);
-  assert.equal(await field.inputValue(),"3.7");
+  assert.equal(await getDuration(),4);
+  assert.equal(await field.inputValue(),"4");
   await field.fill("bad");await field.press("Tab");
   await pointer("down",x,y);await pointer("move",x+40,y);await pointer("up");
   assert.equal(await field.inputValue(),"bad","invalid manual input must be retained");
-  assert.equal(await getDuration(),3.7);
+  assert.equal(await getDuration(),4);
   await field.fill("3.7");await field.press("Tab");
   const placeholder=page.locator("#shot-list [data-shot-placeholder] .duration-scrub-handle");
   await placeholder.scrollIntoViewIfNeeded();
@@ -98,8 +100,15 @@ const server=http.createServer((request,response)=>{
   await pointer("down",px,py);await pointer("move",px+16,py);await pointer("up");
   await page.waitForFunction(()=>StoryModel.getProject().shots.length===2);
   assert.equal(await page.evaluate(()=>StoryModel.getProject().shots[1].durationSeconds),2,"placeholder scrubbing creates one real shot");
+  await page.locator('[data-shot-move-tag="特寫"]').click();
+  await page.locator('[data-shot-move-tag="大特"]').click();
+  await page.waitForFunction(()=>document.querySelector('#shot-move').value.includes("大特"));
+  assert.ok(!(await page.locator("#shot-move").inputValue()).split("、").includes("特寫"));
+  await page.locator('[data-shot-move-tag="過肩"]').click();
+  assert.ok((await page.locator("#shot-move").inputValue()).includes("過肩"));
+  assert.ok(await page.getByText("用於分類與搜尋",{exact:false}).count());
   assert.deepEqual(errors,[]);
-  console.log("PASS duration scrubbing "+(touch?"touch":"desktop")+", direct decimals, gear no-jump, one save, cancel and invalid input");
+  console.log("PASS duration scrubbing "+(touch?"touch":"desktop")+", integer rounding, gear no-jump, one save, cancel and invalid input");
   await context.close();
  }
  }finally{await browser.close();await new Promise(resolve=>server.close(resolve));}

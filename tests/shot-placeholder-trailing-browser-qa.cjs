@@ -184,17 +184,17 @@ async function main() {
     const anchorTitle = page.locator('#shot-list [data-shot-placeholder-field="title"]');
     await anchorTitle.fill("Anchor field rebasing");
     await page.evaluate(() => window.__waitForAnchorWriteGate());
-    await page.locator('#shot-list [data-shot-placeholder-field="duration"]').fill("1.23");
+    await page.locator('#shot-list [data-shot-placeholder-field="duration"]').fill("-1");
     await page.evaluate(() => { window.__restoreAnchorWriteGate(); window.__releaseAnchorWriteGate(); });
     await page.waitForFunction(() => window.StoryModel.getProject().shots.some((shot) => shot.title === "Anchor field rebasing"));
     const retainedInvalidDraft = page.locator('#shot-list [data-shot-placeholder-field="duration"]');
-    assert.equal(await retainedInvalidDraft.inputValue(), "1.23", "An invalid in-flight edit remains visible beside its newly created anchor Shot.");
+    assert.equal(await retainedInvalidDraft.inputValue(), "-1", "An invalid in-flight edit remains visible beside its newly created anchor Shot.");
     const anchorShotId = await page.evaluate(() => window.StoryModel.getProject().shots.find((shot) => shot.title === "Anchor field rebasing").id);
     await page.evaluate(async (shotId) => window.StoryModel.updateShot(shotId, { visual: "Edited elsewhere" }), anchorShotId);
     await retainedInvalidDraft.fill("1.2");
     await page.waitForFunction((shotId) => {
       const shot = window.StoryModel.getProject().shots.find((item) => item.id === shotId);
-      return shot && shot.durationSeconds === 1.2;
+      return shot && shot.durationSeconds === 1;
     }, anchorShotId);
     const rebasedAnchor = await page.evaluate((shotId) => {
       const project = window.StoryModel.getProject();
@@ -203,7 +203,7 @@ async function main() {
     assert.equal(rebasedAnchor.shotCount, afterSlowSave.shotCount + 1, "Correcting an invalid retained draft updates its anchor without creating another Shot.");
     assert.equal(rebasedAnchor.shot.title, "Anchor field rebasing");
     assert.equal(rebasedAnchor.shot.visual, "Edited elsewhere", "Anchor reconciliation does not overwrite fields edited elsewhere.");
-    assert.equal(rebasedAnchor.shot.durationSeconds, 1.2);
+    assert.equal(rebasedAnchor.shot.durationSeconds, 1);
 
     const beforeClearWhileSaving = await page.evaluate(() => {
       const project = window.StoryModel.getProject();
@@ -306,7 +306,7 @@ async function main() {
     await galleryPlaceholder.locator('[data-shot-placeholder-field="duration"]').fill("1.5");
     await page.waitForFunction((count) => window.StoryModel.getProject().shots.length === count + 1, beforeDuration.shotCount);
     const durationShot = await page.evaluate(() => window.StoryModel.getProject().shots.at(-1));
-    assert.equal(durationShot.durationSeconds, 1.5, "Positive fractional seconds create a real Shot.");
+    assert.equal(durationShot.durationSeconds, 2, "Fractional input is rounded when creating a real Shot.");
     assert.equal(await page.evaluate(() => window.StoryModel.getProject().revision), beforeDuration.revision + 1, "Duration promotion uses one revision.");
 
     const beforeComposition = await page.evaluate(() => window.StoryModel.getProject().shots.length);
