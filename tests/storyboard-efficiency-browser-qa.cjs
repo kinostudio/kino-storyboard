@@ -31,7 +31,7 @@ async function main(){
  const context=await browser.newContext({viewport:{width:1440,height:1400},permissions:["clipboard-read","clipboard-write"]});
  const page=await context.newPage();
  const errors=[];page.on("pageerror",e=>errors.push(e.message));
- await page.goto("http://127.0.0.1:"+server.address().port);
+ await page.goto(process.env.KINO_QA_URL||"http://127.0.0.1:"+server.address().port);
  await page.getByRole("button",{name:"新建專案",exact:true}).click();
  await page.locator("body.project-ready").waitFor();
  for(let i=1;i<=3;i++){
@@ -51,6 +51,9 @@ async function main(){
  await page.locator("#shot-duration").press("Tab");
  await page.waitForFunction(()=>StoryModel.getState().shots.some(s=>s.duration===8));
  await page.getByRole("button",{name:"檢視全片台詞／旁白稿",exact:true}).click();
+ const heights=await page.locator(".voiceover-actions button").evaluateAll(buttons=>buttons.map(b=>b.getBoundingClientRect().height));
+ assert.equal(new Set(heights).size,1,"VO actions must have equal height");
+ await page.screenshot({path:path.join(root,"tmp","voiceover-actions-layout.png")});
  await page.getByRole("button",{name:"複製全文",exact:true}).click();
  assert.equal((await page.evaluate(()=>navigator.clipboard.readText())).split(String.fromCharCode(13)).join(""),vo);
  const download=page.waitForEvent("download");
@@ -58,6 +61,17 @@ async function main(){
  const file=await download;
  assert.equal(fs.readFileSync(await file.path(),"utf8").replace(/^﻿/,""),vo);
  await page.getByRole("button",{name:"返回分鏡",exact:true}).click();
+ assert.equal(await page.locator("#screenplay-compare-toggle,#screenplay-compare-host").count(),0);
+ for(const width of [1042,1703]) {
+   await page.setViewportSize({width,height:772});
+   const geometry=await page.locator("#shot-list .shot-card[data-shot]").first().evaluate(card=>{
+     const box=s=>card.querySelector(s).getBoundingClientRect();
+     return {vo:box(".shot-card-script-preview").right,visual:box(".shot-visual-field").right,super:box(".shot-card-super-preview").right,duration:box(".shot-duration-field").right};
+   });
+   for(const key of ["vo","visual","super"]) assert.ok(geometry[key]>=geometry.duration-2,"duration must not reserve story-text width: "+JSON.stringify(geometry));
+   await page.screenshot({path:path.join(root,"tmp","shot-text-width-"+width+".png")});
+ }
+ await page.setViewportSize({width:1440,height:1400});
  await page.getByRole("button",{name:"多選鏡頭",exact:true}).click();
  assert.equal(await page.locator('[data-shot-select][aria-checked="true"]').count(),0);
  const cards=page.locator("#shot-list .shot-card[data-shot]");

@@ -780,9 +780,9 @@ body.is-read-only .shot-photo-readonly-note{display:block}
     grid-template-columns: minmax(132px, min(28%, 230px)) max-content minmax(0, 1fr) 102px;
     grid-template-areas:
       "art number title duration"
-      "art visual visual duration"
-      "art voiceover voiceover duration"
-      "art super super duration"
+      "art visual visual visual"
+      "art voiceover voiceover voiceover"
+      "art super super super"
       "photo-actions photo-actions photo-actions photo-actions"
       "photo-status photo-status photo-status photo-status";
     align-items: start;
@@ -796,10 +796,10 @@ body.is-read-only .shot-photo-readonly-note{display:block}
     grid-template-columns: minmax(100px, 28%) minmax(0, 1fr) 102px;
     grid-template-areas:
       "art number duration"
-      "art title duration"
-      "art visual duration"
-      "art voiceover duration"
-      "art super duration"
+      "art title title"
+      "art visual visual"
+      "art voiceover voiceover"
+      "art super super"
       "photo-actions photo-actions photo-actions"
       "photo-status photo-status photo-status";
     align-items: start;
@@ -1500,7 +1500,8 @@ body.is-read-only #shot-list .shot-card.is-gallery .shot-card-text-preview:focus
 .shot-move-tag:disabled { opacity: .5; cursor: default; }
 @media (pointer: coarse) { .shot-move-tag { min-height: 44px; } }
 
-.voiceover-actions { display: flex; flex-wrap: wrap; gap: 8px; }
+.voiceover-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.voiceover-actions > .outline-button { height:44px; min-height:44px; }
 
 @media screen and (min-width:781px) {
  .app-main:has(#view-storyboard.is-active) { height:100dvh; overflow:hidden; }

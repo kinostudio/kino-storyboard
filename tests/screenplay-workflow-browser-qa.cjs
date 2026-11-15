@@ -138,9 +138,7 @@ async function main() {
     await page.locator("button[data-screenplay-format=tw]").click();
     await navigate("storyboard");
     await page.locator("#chapter-list [data-chapter=" + JSON.stringify(sceneId) + "]").click();
-    await page.locator("#screenplay-compare-toggle").click();
-    await page.locator("#screenplay-compare-host").waitFor({state:"visible"});
-    await page.locator("#screenplay-compare-toggle").click();
+    assert.equal(await page.locator("#screenplay-compare-toggle,#screenplay-compare-host").count(),0);
     const copyId = await page.evaluate(async () => {
       const model = window.StoryModel;
       const doc = model.getScreenplay();
