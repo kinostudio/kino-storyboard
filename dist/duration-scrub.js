@@ -2,30 +2,6 @@
   "use strict";
   const attached = new WeakSet();
   let gesture = null;
-  let hud = null;
-
-  function hideHud() {
-    if (hud) hud.hidden = true;
-  }
-
-  function showHud(field, scale) {
-    if (!hud) {
-      hud = document.createElement("div");
-      hud.className = "duration-scrub-hud";
-      hud.setAttribute("aria-hidden", "true");
-      hud.innerHTML = '<svg viewBox="0 0 108 28"><g fill="currentColor">' +
-        Array.from({length:9},(_,index)=>'<rect x="'+(10+index*11)+'" y="'+(5+index*.8)+'" width="3" height="'+(18-index*1.6)+'" rx="1"/>').join("") +
-        '</g><circle class="duration-scrub-position" cy="14" r="4"/></svg>';
-      document.body.appendChild(hud);
-    }
-    hud.hidden = false;
-    hud.dataset.scale = String(scale);
-    hud.querySelector("circle").setAttribute("cx",String(11+(1-scale)/.75*88));
-    const box = field.getBoundingClientRect();
-    hud.style.left = Math.max(8, Math.min(window.innerWidth - 132, box.right - 124)) + "px";
-    hud.style.top = Math.max(8, Math.min(window.innerHeight - 44, box.top > 48 ? box.top - 42 : box.bottom + 6)) + "px";
-  }
-
   function finish(cancel) {
     const current = gesture;
     if (!current) return;
@@ -34,7 +10,8 @@
     const valid = field.isConnected && options.context() === current.context && options.canEdit() && !field.disabled && !field.readOnly;
     if (cancel || !valid || !current.dragging) field.value = current.original;
     field.classList.remove("is-duration-scrubbing");
-    hideHud();
+    current.handle.style.removeProperty("--scrub-fill");
+    current.handle.dataset.scale = "1";
     if (target.hasPointerCapture(current.pointerId)) target.releasePointerCapture(current.pointerId);
     if (!current.dragging && !cancel && valid) {
       field.focus({preventScroll: true});
@@ -52,8 +29,9 @@
     handle.type = "button";
     handle.className = "duration-scrub-handle";
     handle.setAttribute("aria-label", "拖曳調整秒數");
-    handle.title = "左右拖曳，向下拉細調";
-    handle.innerHTML = '<svg viewBox="0 0 20 20" aria-hidden="true"><path d="M3 10h14M6 7l-3 3 3 3M14 7l3 3-3 3"/></svg>';
+    handle.title = "上下拖曳，往上增加；橫向拉開細調";
+    handle.dataset.scale = "1";
+    handle.innerHTML = '<svg viewBox="0 0 20 20" aria-hidden="true"><path class="duration-scrub-base" d="M10 2 5 7h3.5v6H5l5 5 5-5h-3.5V7H15Z"/><path class="duration-scrub-fill" d="M10 2 5 7h3.5v6H5l5 5 5-5h-3.5V7H15Z"/></svg>';
     field.parentElement.appendChild(handle);
     [field, handle].forEach(target => {
       target.addEventListener("pointerdown", event => {
@@ -64,7 +42,7 @@
         event.preventDefault();
         event.stopPropagation();
         gesture = {field, target, options, context: options.context(), pointerId: event.pointerId,
-          original, raw: initial, startX: event.clientX, startY: event.clientY, lastX: event.clientX, dragging: false};
+          handle, original, raw: initial, startX: event.clientX, startY: event.clientY, lastY: event.clientY, dragging: false};
         target.setPointerCapture(event.pointerId);
       });
       target.addEventListener("pointermove", event => {
@@ -78,13 +56,14 @@
           current.dragging = true;
           field.classList.add("is-duration-scrubbing");
         }
-        const depth = Math.max(0, event.clientY - current.startY);
+        const depth = Math.abs(event.clientX - current.startX);
         const scale = Math.max(.25, 1 - depth / 192);
-        const delta = (event.clientX - current.lastX) / 8 * scale;
-        current.lastX = event.clientX;
+        const delta = (current.lastY - event.clientY) / 8 * scale;
+        current.lastY = event.clientY;
         current.raw = Math.max(0, current.raw + delta);
         field.value = String(Math.round(current.raw));
-        showHud(field, scale);
+        handle.dataset.scale = String(scale);
+        handle.style.setProperty("--scrub-fill", String(scale * 100) + "%");
       });
       target.addEventListener("pointerup", event => {if (gesture?.pointerId === event.pointerId) finish(false);});
       target.addEventListener("pointercancel", event => {if (gesture?.pointerId === event.pointerId) finish(true);});

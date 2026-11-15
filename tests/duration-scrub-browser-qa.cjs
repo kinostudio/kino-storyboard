@@ -46,21 +46,27 @@ const server=http.createServer((request,response)=>{
    const box=await handle.boundingBox(),x=box.x+box.width/2,y=box.y+box.height/2;
    const initial=await getDuration();
    const revision=await page.evaluate(()=>StoryModel.getProject().revision);
-   await pointer("down",x,y);await pointer("move",x+32,y);
+   await pointer("down",x,y);await pointer("move",x,y-32);
    const field=handle.locator("..").locator("input");
-   await page.waitForFunction(()=>!document.querySelector(".duration-scrub-hud").hidden);
+   assert.equal(await handle.getAttribute("data-scale"),"1");
    assert.equal(Number(await field.inputValue()),initial+4);
-   await pointer("move",x+32,y+74);
-   assert.ok(Math.abs(Number(await page.locator(".duration-scrub-hud").getAttribute("data-scale"))-(1-74/192))<.001,"speed changes continuously");
-   assert.equal(Number(await field.inputValue()),initial+4,"vertical gear change must not jump");
-   await pointer("move",x+64,y+74);
+   await pointer("move",x-74,y-32);
+   assert.ok(Math.abs(Number(await handle.getAttribute("data-scale"))-(1-74/192))<.001,"speed changes continuously");
+   assert.equal(Number(await field.inputValue()),initial+4,"horizontal gear change must not jump");
+   await pointer("move",x-74,y-64);
    assert.equal(Number(await field.inputValue()),initial+6);
-   await pointer("move",x+64,y+144);await pointer("move",x+96,y+144);
+   await pointer("move",x-144,y-64);await pointer("move",x-144,y-96);
    assert.equal(Number(await field.inputValue()),initial+7);
+   assert.equal(await handle.evaluate(e=>e.style.getPropertyValue("--scrub-fill")),"25%");
+   await page.screenshot({path:path.join(root,"tmp","duration-fine-fill-"+(touch?"touch":"desktop")+".png")});
+   await pointer("move",x,y-96);
+   assert.equal(Number(await field.inputValue()),initial+7,"changing precision does not change the value");
+   await pointer("move",x,y-80);
+   assert.equal(Number(await field.inputValue()),initial+5,"dragging down decreases seconds");
    assert.equal(await getDuration(),initial,"drag does not persist intermediate values");
    await page.screenshot({path:path.join(root,"tmp","duration-scrub-"+(touch?"touch":"desktop")+".png")});
    await pointer("up");
-   await page.waitForFunction(expected=>{const shot=StoryModel.getProject().shots[0];return (shot.durationSeconds)===expected;},initial+7);
+   await page.waitForFunction(expected=>{const shot=StoryModel.getProject().shots[0];return (shot.durationSeconds)===expected;},initial+5);
    assert.equal(await page.evaluate(()=>StoryModel.getProject().revision),revision+1,"one gesture saves once");
   }
   await page.locator('[data-shot-view="gallery"]').click();
@@ -69,7 +75,7 @@ const server=http.createServer((request,response)=>{
   const galleryBox=await galleryHandle.boundingBox();
   const galleryStart=await getDuration();
   await pointer("down",galleryBox.x+16,galleryBox.y+22);
-  await pointer("move",galleryBox.x+32,galleryBox.y+22);
+  await pointer("move",galleryBox.x+16,galleryBox.y+6);
   await pointer("up");
   await page.waitForFunction(expected=>StoryModel.getProject().shots[0].durationSeconds===expected,galleryStart+2);
   await page.locator('[data-shot-view="list"]').click();
@@ -84,12 +90,12 @@ const server=http.createServer((request,response)=>{
   const handle=page.locator("#inspector .duration-scrub-handle");
   await handle.scrollIntoViewIfNeeded();
   let box=await handle.boundingBox(),x=box.x+box.width/2,y=box.y+box.height/2;
-  await pointer("down",x,y);await pointer("move",x+40,y);
+  await pointer("down",x,y);await pointer("move",x,y-40);
   if(touch)await pointer("cancel");else {await page.keyboard.press("Escape");await pointer("up");}
   assert.equal(await getDuration(),4);
   assert.equal(await field.inputValue(),"4");
   await field.fill("bad");await field.press("Tab");
-  await pointer("down",x,y);await pointer("move",x+40,y);await pointer("up");
+  await pointer("down",x,y);await pointer("move",x,y-40);await pointer("up");
   assert.equal(await field.inputValue(),"bad","invalid manual input must be retained");
   assert.equal(await getDuration(),4);
   await field.fill("3.7");await field.press("Tab");
@@ -97,7 +103,7 @@ const server=http.createServer((request,response)=>{
   await placeholder.scrollIntoViewIfNeeded();
   const placeholderBox=await placeholder.boundingBox();
   const px=placeholderBox.x+placeholderBox.width/2,py=placeholderBox.y+placeholderBox.height/2;
-  await pointer("down",px,py);await pointer("move",px+16,py);await pointer("up");
+  await pointer("down",px,py);await pointer("move",px,py-16);await pointer("up");
   await page.waitForFunction(()=>StoryModel.getProject().shots.length===2);
   assert.equal(await page.evaluate(()=>StoryModel.getProject().shots[1].durationSeconds),2,"placeholder scrubbing creates one real shot");
   await page.locator('[data-shot-move-tag="特寫"]').click();

@@ -1602,19 +1602,18 @@ body.is-read-only #shot-list .shot-card.is-gallery .shot-card-text-preview:focus
 
 @media (max-width: 1000px) { .app-shell > .app-rail { position: relative; top: auto; inset-block-start: auto; } }
 
-.duration-input-wrap .duration-scrub-handle,.shot-duration-control .duration-scrub-handle { position:absolute; left:0; top:50%; transform:translateY(-50%); width:32px; height:44px; padding:7px; border:0; background:transparent; color:#8191a8; touch-action:none; cursor:ew-resize; display:grid; place-items:center; }
+.duration-input-wrap .duration-scrub-handle,.shot-duration-control .duration-scrub-handle { position:absolute; left:0; top:50%; transform:translateY(-50%); width:32px; height:44px; padding:7px; border:0; background:transparent; color:#8191a8; touch-action:none; cursor:ns-resize; display:grid; place-items:center; }
 .duration-scrub-handle svg { width:16px; height:16px; fill:none; stroke:currentColor; stroke-width:1.5; stroke-linecap:round; stroke-linejoin:round; }
-.duration-scrubbable { touch-action:none; cursor:ew-resize; font-variant-numeric:tabular-nums; }
+.duration-scrubbable { touch-action:none; cursor:ns-resize; font-variant-numeric:tabular-nums; }
 .duration-scrubbable:focus { cursor:text; }
-.duration-scrubbable.is-duration-scrubbing { cursor:ew-resize; color:#365e95!important; background:#eaf0f855!important; caret-color:transparent; user-select:none; }
-.duration-scrub-hud { position:fixed; z-index:10000; display:flex; gap:3px; align-items:center; padding:4px; width:124px; height:34px; background:#fffefa; border:1px solid #dce2ea; border-radius:8px; box-shadow:0 4px 15px #15203116; pointer-events:none; color:#8a96a7; font:12px/1 system-ui,sans-serif; }
-.duration-scrub-hud[hidden] { display:none; }
+.duration-scrubbable.is-duration-scrubbing { cursor:ns-resize; color:#365e95!important; background:#eaf0f855!important; caret-color:transparent; user-select:none; }
 
 .shot-card .shot-duration-control .shot-inline-duration { min-height:44px; height:44px; font-size:14px; padding-right:25px; }
 
 .shot-select-toggle[hidden] { display:none!important; }
 .storyboard-panel,#inspector,#shot-list { overflow-anchor:none; }
 
-.duration-scrub-hud svg { width:108px; height:28px; color:#aeb9c8; }
-.duration-scrub-position { fill:#446899; stroke:#fffefa; stroke-width:1.5; }
 .storyboard-panel,#inspector { scrollbar-color:#989fa7 transparent; }
+
+.duration-scrub-handle .duration-scrub-base { fill:#d9dfe7; stroke:none; }
+.duration-scrub-handle .duration-scrub-fill { fill:currentColor; stroke:none; clip-path:inset(calc(100% - var(--scrub-fill,100%)) 0 0); }
