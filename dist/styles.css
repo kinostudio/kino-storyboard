@@ -1608,7 +1608,11 @@ body.is-read-only #shot-list .shot-card.is-gallery .shot-card-text-preview:focus
 .duration-scrubbable.is-duration-scrubbing { cursor:ew-resize; color:#365e95!important; background:#eaf0f855!important; caret-color:transparent; user-select:none; }
 .duration-scrub-hud { position:fixed; z-index:10000; display:flex; gap:3px; align-items:center; padding:4px; width:124px; height:34px; background:#fffefa; border:1px solid #dce2ea; border-radius:8px; box-shadow:0 4px 15px #15203116; pointer-events:none; color:#8a96a7; font:12px/1 system-ui,sans-serif; }
 .duration-scrub-hud[hidden] { display:none; }
-.duration-scrub-hud span { flex:1; text-align:center; padding:6px 2px; border-radius:4px; }
-.duration-scrub-hud span.is-active { color:#365e95; background:#eaf0f8; font-weight:600; }
 
 .shot-card .shot-duration-control .shot-inline-duration { min-height:44px; height:44px; font-size:14px; padding-right:25px; }
+
+.shot-select-toggle[hidden] { display:none!important; }
+.storyboard-panel,#inspector,#shot-list { overflow-anchor:none; }
+
+.duration-scrub-hud svg { width:108px; height:28px; color:#aeb9c8; }
+.duration-scrub-position { fill:#446899; stroke:#fffefa; stroke-width:1.5; }

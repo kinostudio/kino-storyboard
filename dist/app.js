@@ -2490,11 +2490,11 @@
     let positiveDuration = false;
     if (rawDuration) {
       const duration = Number(rawDuration);
-      if (!Number.isFinite(duration) || duration < 0 || Math.abs(duration * 10 - Math.round(duration * 10)) > 1e-8) {
-        return { valid: false, meaningful: false, patch, error: "秒數需為大於或等於 0 的數值，最多一位小數。" };
+      if (!Number.isFinite(duration) || duration < 0) {
+        return { valid: false, meaningful: false, patch, error: "秒數需為大於或等於 0 的數值。" };
       }
-      patch.duration = duration;
-      positiveDuration = duration > 0;
+      patch.duration = Math.round(duration);
+      positiveDuration = patch.duration > 0;
     }
     return { valid: true, meaningful: hasText || positiveDuration, patch, error: "" };
   }
@@ -2502,7 +2502,7 @@
     const patch = {};
     SHOT_PLACEHOLDER_TEXT_FIELDS.forEach((key) => { patch[key] = String(draft && draft[key] || ""); });
     const rawDuration = String(draft && draft.duration || "").trim();
-    patch.duration = rawDuration ? Number(rawDuration) : 0;
+    patch.duration = rawDuration ? Math.round(Number(rawDuration)) : 0;
     return patch;
   }
   function shotPlaceholderEmptySnapshot() {
@@ -2896,6 +2896,8 @@
     $(".shot-view-switch [data-shot-view='list']")?.setAttribute("aria-pressed", shotView === "list" ? "true" : "false");
     $(".shot-view-switch [data-shot-view='gallery']")?.setAttribute("aria-pressed", shotView === "gallery" ? "true" : "false");
     const scrollTop = list.scrollTop;
+    const panel = list.closest(".storyboard-panel");
+    const panelScrollTop = panel.scrollTop;
     const shots = activeShots();
     list.dataset.renderedProjectId = state.projectId;
     list.dataset.renderedChapterId = String(activeChapterId);
@@ -2958,6 +2960,7 @@
       if (target) { target.focus({preventScroll:true}); try { target.setSelectionRange(sequenceFocus.start,sequenceFocus.end); } catch (_) {} }
     }
     list.scrollTop = scrollTop;
+    panel.scrollTop = panelScrollTop;
     syncVisibleShotDrawings(); syncVisibleShotPhotos(); renderPhotoImportBanner();
     const visualFields = [];
     list.querySelectorAll("[data-shot-field]").forEach((field) => {
@@ -3011,6 +3014,9 @@
     });
   }
   function renderInspector() {
+    const scrollContainer = $("#inspector");
+    const previousScrollTop = scrollContainer.scrollTop;
+    try {
     const shot = byId(selectedShotId);
     window.ScreenplayEditor.compare(activeChapterId === "all" ? shot?.chapterId : activeChapterId);
     const container = $("#inspector");
@@ -3041,7 +3047,7 @@
     }
     const chapterOptions = state.chapters.map((chapter) => '<option value="' + escapeHtml(chapter.id) + '" ' + (chapter.id === shot.chapterId ? "selected" : "") + '>' + escapeHtml(sceneTitle(chapter)) + '</option>').join("");
     const arts = [["pool","泳池遠景"],["water","水下光影"],["swimmer","泳者動作"],["architecture","空間細節"],["sunset","黃昏光線"]].map(([key,label]) => '<option value="' + key + '" ' + (shot.art === key ? "selected" : "") + '>' + label + '</option>').join("");
-    container.innerHTML = '<div class="inspector-top"><p class="inspector-title">鏡頭細節</p><div class="inspector-actions"><button class="micro-icon-button" data-action="duplicate" title="複製鏡頭" aria-label="複製鏡頭">' + icon("copy") + '</button><button class="micro-icon-button danger" data-action="delete" title="刪除鏡頭" aria-label="刪除鏡頭">' + icon("trash") + '</button></div></div><div class="inspector-number">' + shotLabel(shot) + ' <span style="color:#a8adb2;font-weight:400">· ' + (globalIndex + 1) + ' / ' + state.shots.length + '</span></div><input class="inspector-shot-title" data-shot-field="title" aria-label="鏡頭標題" value="' + escapeHtml(shot.title) + '" placeholder="鏡頭標題"><div class="field-group"><label class="field-label" for="shot-visual">畫面描述</label><textarea id="shot-visual" class="textarea-field" data-shot-field="visual" placeholder="描述畫面、人物動作與視覺重點…">' + escapeHtml(shot.visual) + '</textarea></div><div class="field-group"><label class="field-label" for="shot-script">台詞／旁白</label><textarea id="shot-script" class="textarea-field tall" data-shot-field="script" placeholder="需要的台詞或旁白…">' + escapeHtml(shot.script) + '</textarea></div><div class="field-group super-field-group"><label class="field-label" for="shot-super">字卡（SUPER）</label><textarea id="shot-super" class="textarea-field" data-shot-field="super" placeholder="畫面上出現的字卡文字…">' + escapeHtml(shot.super || "") + '</textarea><span class="field-note">原文保存，換行與大小寫會保留。</span></div><div class="inspector-section-title">聲音與拍攝</div><div class="field-group"><label class="field-label" for="shot-sound">聲音設計</label><textarea id="shot-sound" class="textarea-field" data-shot-field="sound" placeholder="環境音、音樂或轉場…">' + escapeHtml(shot.sound) + '</textarea></div><div class="field-row"><div class="field-group"><label class="field-label" for="shot-move">景別／運鏡</label><input id="shot-move" class="text-field" data-shot-field="move" value="' + escapeHtml(shot.move) + '" placeholder="例如：中景・推近"></div><div class="field-group"><label class="field-label" for="shot-duration">影片秒數</label><div class="duration-input-wrap"><input id="shot-duration" class="number-field" type="number" min="0" step="0.1" inputmode="decimal" data-shot-field="duration" value="' + escapeHtml(shot.duration) + '"><span class="input-suffix">秒</span></div></div></div><span class="field-note">0 秒保留為「未估」；不會自動補入預設秒數。</span><div class="field-group" style="margin-top:14px"><label class="field-label" for="shot-tags">標籤</label><input id="shot-tags" class="text-field" data-shot-field="tags" value="' + escapeHtml(shot.tags) + '" placeholder="以頓號分隔，例如：人物、黃昏"></div><div class="field-row"><div class="field-group"><label class="field-label" for="shot-art">分鏡示意</label><select id="shot-art" class="select-control" data-shot-field="art">' + arts + '</select></div><div class="field-group"><label class="field-label" for="shot-chapter">所在場次</label><select id="shot-chapter" class="select-control" data-shot-field="chapterId">' + chapterOptions + '</select></div></div><div class="inspector-foot"><span>' + linked.length + ' 筆拍攝安排引用此鏡頭</span><div class="move-controls"><button class="small-action" data-action="move-up" ' + (groupIndex <= 0 ? "disabled" : "") + '>上移</button><button class="small-action" data-action="move-down" ' + (groupIndex >= group.length - 1 ? "disabled" : "") + '>下移</button></div></div>';
+    container.innerHTML = '<div class="inspector-top"><p class="inspector-title">鏡頭細節</p><div class="inspector-actions"><button class="micro-icon-button" data-action="duplicate" title="複製鏡頭" aria-label="複製鏡頭">' + icon("copy") + '</button><button class="micro-icon-button danger" data-action="delete" title="刪除鏡頭" aria-label="刪除鏡頭">' + icon("trash") + '</button></div></div><div class="inspector-number">' + shotLabel(shot) + ' <span style="color:#a8adb2;font-weight:400">· ' + (globalIndex + 1) + ' / ' + state.shots.length + '</span></div><input class="inspector-shot-title" data-shot-field="title" aria-label="鏡頭標題" value="' + escapeHtml(shot.title) + '" placeholder="鏡頭標題"><div class="field-group"><label class="field-label" for="shot-visual">畫面描述</label><textarea id="shot-visual" class="textarea-field" data-shot-field="visual" placeholder="描述畫面、人物動作與視覺重點…">' + escapeHtml(shot.visual) + '</textarea></div><div class="field-group"><label class="field-label" for="shot-script">台詞／旁白</label><textarea id="shot-script" class="textarea-field tall" data-shot-field="script" placeholder="需要的台詞或旁白…">' + escapeHtml(shot.script) + '</textarea></div><div class="field-group super-field-group"><label class="field-label" for="shot-super">字卡（SUPER）</label><textarea id="shot-super" class="textarea-field" data-shot-field="super" placeholder="畫面上出現的字卡文字…">' + escapeHtml(shot.super || "") + '</textarea><span class="field-note">原文保存，換行與大小寫會保留。</span></div><div class="inspector-section-title">聲音與拍攝</div><div class="field-group"><label class="field-label" for="shot-sound">聲音設計</label><textarea id="shot-sound" class="textarea-field" data-shot-field="sound" placeholder="環境音、音樂或轉場…">' + escapeHtml(shot.sound) + '</textarea></div><div class="field-row"><div class="field-group"><label class="field-label" for="shot-move">景別／運鏡</label><input id="shot-move" class="text-field" data-shot-field="move" value="' + escapeHtml(shot.move) + '" placeholder="例如：中景・推近"></div><div class="field-group"><label class="field-label" for="shot-duration">影片秒數</label><div class="duration-input-wrap"><input id="shot-duration" class="number-field" type="number" min="0" step="0.1" inputmode="decimal" data-shot-field="duration" value="' + escapeHtml(shot.duration) + '"><span class="input-suffix">秒</span></div></div></div><span class="field-note">0 秒保留為「未估」；不會自動補入預設秒數。</span><div class="field-group" style="margin-top:14px"><label class="field-label" for="shot-tags">標籤</label><input id="shot-tags" class="text-field" data-shot-field="tags" value="' + escapeHtml(shot.tags) + '" placeholder="以頓號分隔，例如：人物、黃昏"><span class="field-note">用於分類與搜尋，可在左側搜尋框查找；顯示於鏡頭細節，不列入分鏡文件。</span></div><div class="field-row"><div class="field-group"><label class="field-label" for="shot-art">分鏡示意</label><select id="shot-art" class="select-control" data-shot-field="art">' + arts + '</select></div><div class="field-group"><label class="field-label" for="shot-chapter">所在場次</label><select id="shot-chapter" class="select-control" data-shot-field="chapterId">' + chapterOptions + '</select></div></div><div class="inspector-foot"><span>' + linked.length + ' 筆拍攝安排引用此鏡頭</span><div class="move-controls"><button class="small-action" data-action="move-up" ' + (groupIndex <= 0 ? "disabled" : "") + '>上移</button><button class="small-action" data-action="move-down" ' + (groupIndex >= group.length - 1 ? "disabled" : "") + '>下移</button></div></div>';
     container.dataset.shotId = shot.id;
     syncShotNumberManagement(shot, container);
     container.querySelectorAll("[data-action='move-up'],[data-action='move-down']").forEach((button) => { button.disabled = !canMoveReorderSelection("shots", shot.chapterId, shot.id, button.dataset.action === "move-up" ? -1 : 1); });
@@ -3053,11 +3059,14 @@
     renderShotMoveOptions(container);
     decorateDurationFields();
     applyReadonlyControls();
+    } finally {
+      scrollContainer.scrollTop = previousScrollTop;
+    }
   }
 
   const shotMoveOptions = [
-    ["景別", ["特寫", "近景", "中景", "遠景", "大遠景"]],
-    ["運鏡／拍攝方式", ["FIX", "穩定器", "Free Hand", "Follow", "ARC", "Dolly in", "Dolly out", "PAN L", "PAN R", "Tilt Up", "Tilt Down", "ZOOM IN", "ZOOM OUT", "Dolly Zoom", "空拍", "車拍", "搖臂"]]
+    ["景別", ["大特", "特寫", "近景", "中景", "遠景", "大遠景"]],
+    ["運鏡／拍攝方式", ["FIX", "穩定器", "Free Hand", "Follow", "ARC", "Dolly in", "Dolly out", "PAN L", "PAN R", "Tilt Up", "Tilt Down", "ZOOM IN", "ZOOM OUT", "Dolly Zoom", "空拍", "車拍", "搖臂", "過肩"]]
   ];
   function shotMoveValues(value) {
     return Array.from(new Set(String(value || "").split(/[、，,・·]/).map(part => part.trim()).filter(Boolean)));
@@ -3166,7 +3175,7 @@
   }
   function decorateDurationFields() {
     $$("#shot-list [data-shot-field='duration'], #shot-list [data-shot-placeholder-field='duration'], #inspector [data-shot-field='duration']").forEach(field => {
-      field.type = "text"; field.inputMode = "decimal"; field.placeholder = "0";
+      field.type = "text"; field.inputMode = "numeric"; field.placeholder = "0";
       if (field.value === "0" && document.activeElement !== field && !fieldDraftFor(field)) field.value = "";
       window.DurationScrub.attach(field, {
         canEdit: () => !isReadOnly(),
@@ -6336,7 +6345,8 @@
     if (draft.entityType === "shot" && key === "duration") {
       if (String(value).trim() === "") value = 0;
       value = Number(value);
-      if (!Number.isFinite(value) || value < 0 || field && field.validity && field.validity.stepMismatch || Math.abs(value * 10 - Math.round(value * 10)) > 1e-8) throw fieldFailure("INVALID_DURATION", "影片秒數請使用 0.1 秒刻度，且不可小於 0。");
+      if (!Number.isFinite(value) || value < 0) throw fieldFailure("INVALID_DURATION", "影片秒數請輸入大於或等於 0 的數值。");
+      value = Math.round(value);
     }
     if (draft.entityType === "entry" && key === "minutes") {
       if (String(value).trim() === "") throw fieldFailure("INVALID_MINUTES", "空白分鐘數尚未提交；請輸入 0 或有效分鐘數。");
@@ -7562,7 +7572,7 @@
         toggle.className = "shot-select-toggle"; toggle.setAttribute("role","checkbox");
         card.appendChild(toggle);
       }
-      toggle.hidden = false;
+      toggle.hidden = !shotMultiSelectMode;
       const selectionLabel = shotNumberWithTitle(byId(card.dataset.shot));
       const actionLabel = (selected ? "取消選取 " : "選取 ") + selectionLabel;
       toggle.setAttribute("aria-label", actionLabel);
@@ -8440,7 +8450,10 @@
         if (!field) return;
         const values = shotMoveValues(field.value);
         const value = moveTag.dataset.shotMoveTag;
-        field.value = (values.includes(value) ? values.filter(item => item !== value) : values.concat(value)).join("、");
+        const isSize = shotMoveOptions[0][1].includes(value);
+        const next = isSize ? values.filter(item => !shotMoveOptions[0][1].includes(item)) : values.filter(item => item !== value);
+        if (!values.includes(value) || isSize) next.push(value);
+        field.value = next.join("、");
         captureFieldDraft(field);
         renderShotMoveOptions(field.parentElement.parentElement.parentElement);
         await safely(() => commitDraftField(field));
