@@ -3018,7 +3018,6 @@
     const previousScrollTop = scrollContainer.scrollTop;
     try {
     const shot = byId(selectedShotId);
-    window.ScreenplayEditor.compare(activeChapterId === "all" ? shot?.chapterId : activeChapterId);
     const container = $("#inspector");
     if (!shot) { container.dataset.shotId = ""; container.innerHTML = '<div class="empty-state"><div class="empty-icon">' + icon("info", 16) + '</div><strong>尚未選取鏡頭</strong><p>從分鏡清單選擇一個鏡頭，即可在這裡編輯。</p></div>'; applyReadonlyControls(); return; }
     const shotIndex = currentShotIndex(); const globalIndex = shotIndex.globalPositionsById.get(shot.id); const group = shotIndex.shotsByChapter.get(shot.chapterId) || []; const groupIndex = shotIndex.shotPositionsById.get(shot.id) - 1; const linked = state.entries.filter((entry) => entry.type === "shot" && entry.shotId === shot.id);
