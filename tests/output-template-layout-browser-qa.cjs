@@ -328,12 +328,14 @@ async function main() {
           report.screenshots.push(file);
         }
         await page.emulateMedia({media:"print"});
+        await waitForOutputReady(page);
         const printState=await readState(page,`${template}-${orientation}-density-4-print-media`);
         assert.equal(printState.pages.length,state.pages.length,`${printState.label}: print media should keep the preview page count`);
         assert.deepEqual(printState.pages.map((outputPage)=>outputPage.layout),state.pages.map((outputPage)=>outputPage.layout),`${printState.label}: print media should preserve template layout`);
         assert.deepEqual(printState.pages.flatMap((outputPage)=>outputPage.records.map((record)=>record.id)),state.pages.flatMap((outputPage)=>outputPage.records.map((record)=>record.id)),`${printState.label}: print media should preserve every Shot id and order`);
         assert.ok(printState.pages.every((outputPage)=>outputPage.orientation===orientation&&!outputPage.overflow),`${printState.label}: print media should preserve orientation without page overflow`);
         await page.emulateMedia({media:"screen"});
+        await waitForOutputReady(page);
         report.cases.push({name:`${template}-${orientation}-density-${state.requestedDensity}`,requestedDensity:state.requestedDensity,pageCount:state.pages.length,split:state.pages.map((outputPage)=>outputPage.records.length),pageSize:state.pages[0].pageSize});
       }
     }
