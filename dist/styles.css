@@ -1616,3 +1616,4 @@ body.is-read-only #shot-list .shot-card.is-gallery .shot-card-text-preview:focus
 
 .duration-scrub-hud svg { width:108px; height:28px; color:#aeb9c8; }
 .duration-scrub-position { fill:#446899; stroke:#fffefa; stroke-width:1.5; }
+.storyboard-panel,#inspector { scrollbar-color:#989fa7 transparent; }
