@@ -276,3 +276,16 @@
 .output-screenplay-continuation>small{display:block;margin-bottom:calc(.4mm * var(--page-scale));font-size:calc(8pt * var(--page-scale));color:#798591}
 .output-screenplay-continuation>span{white-space:pre-wrap}
 @media print{.output-page[data-layout="screenplay"] .output-page-body{display:grid!important}}
+
+/* Watermarks overlay every page without participating in pagination. */
+.output-watermark{position:absolute;inset:0;overflow:hidden;pointer-events:none;z-index:2;print-color-adjust:exact;-webkit-print-color-adjust:exact}
+.output-watermark-content{position:absolute;max-width:95%;max-height:85%;object-fit:contain;object-position:center;transform-origin:center;font-weight:700;line-height:1.2;white-space:pre-wrap;overflow-wrap:anywhere;text-align:center}
+#watermark-settings{display:grid;gap:12px}
+#watermark-options{display:grid;gap:12px}
+#watermark-options[hidden],#watermark-text-options[hidden],#watermark-image-options[hidden]{display:none}
+#watermark-text-options{display:grid;gap:8px}
+.watermark-range{display:grid;grid-template-columns:5em minmax(0,1fr) 3.5em;align-items:center;gap:8px;font-size:11px;color:#657188}
+.watermark-range input{min-width:0;width:100%;accent-color:#647ca9}
+.watermark-range output{text-align:right;font-variant-numeric:tabular-nums}
+.watermark-image-actions{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+#watermark-preview{width:48px;height:48px;object-fit:contain;background:#edf0f0;border-radius:6px}

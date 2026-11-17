@@ -200,7 +200,7 @@
     "#shot-pool [data-action='schedule-shot']", "#shot-list [data-shot-field]", "#inspector input", "#inspector textarea", "#inspector select", "#inspector button:not([data-action='preview-shot-number-renumber'])",
     "#schedule-inspector input", "#schedule-inspector textarea", "#schedule-inspector select", "#schedule-inspector button",
     "#day-summary [data-day-field]", "#day-callsheet-fields [data-day-field]", "#day-callsheet-fields [data-callsheet-action]", "#output-show-estimated-wrap", "[data-schedule-pref]", "#output-items-per-page", "#output-density-less", "#output-density-more",
-    "#output-template", "#output-include-details", "[data-output-field]", "[data-orientation]", "#undo-btn", "#redo-btn",
+    "[data-watermark-field]", "[data-watermark-action]", "#watermark-image", "#output-template", "#output-include-details", "[data-output-field]", "[data-orientation]", "#undo-btn", "#redo-btn",
     "#shot-list .shot-photo-write-action", "#shot-photo-import-banner .shot-photo-write-action", "#shot-photo-picker",
     "#project-popover #project-aspect-ratio", "#project-popover [data-project-field]", "#project-popover [data-project-metadata-save]", "#scene-dialog input", "#scene-dialog button[type='submit']",
     "#day-dialog input", "#day-dialog button[type='submit']", "#shot-number-preview-dialog [data-action='apply-shot-number-renumber']"
@@ -3705,6 +3705,7 @@
   function outputPreferenceSnapshot() {
     const base = state && state.outputPreferences || {};
     return {
+      watermark: Object.assign({},OutputWatermark.defaults,base.watermark),
       schemaVersion: base.schemaVersion || 2,
       revision: Number(base.revision) || 0,
       mode: activeOutputMode(),
@@ -3928,6 +3929,7 @@
     if (preferences.mode !== expected.mode || preferences.template !== expected.template || preferences.orientation !== expected.orientation ||
         JSON.stringify(preferences.densityByMode) !== JSON.stringify(expected.densityByMode) ||
         JSON.stringify(preferences.densityByTemplate) !== JSON.stringify(expected.densityByTemplate) ||
+        JSON.stringify(preferences.watermark) !== JSON.stringify(expected.watermark) ||
         JSON.stringify(preferences.fields) !== JSON.stringify(expected.fields) ||
         JSON.stringify(preferences.schedule) !== JSON.stringify(expected.schedule)) return false;
     context.project = project;
@@ -3940,6 +3942,7 @@
     return true;
   }
   function ensureOutputSettings(scheduleMode) {
+    bindWatermark();
     const estimatedWrapToggle = ensureEstimatedWrapControl();
     const effectiveTemplate = outputTemplateForType();
     const slider = $("#output-items-per-page");
@@ -4349,7 +4352,7 @@
     const pageSubtitle = context.outputType === "combined" ? context.subtitle || "" : section === "screenplay" ? (context.subtitle || "") : context.kind === "schedule" ? scheduleSectionLabel(section) + "　·　" + (context.subtitle || "") : pageDay ? (context.subtitle || "") + "　·　" + formatDate(pageDay.date,true) + "　·　" + pageDay.title : context.subtitle || "";
     const pageFooter = pageDay ? (pageDay.title || "拍攝日") + " · " + pageDay.date : context.footer || context.projectTitle || state.title;
     const layout = context.outputType === "combined" ? context.template || "worksheet" : section === "screenplay" ? "screenplay" : context.kind === "schedule" ? (section === "timeline" ? "schedule-timeline" : section === "storyboard" ? "images" : "schedule") : context.template || "worksheet";
-    return '<section class="output-page ' + (context.orientation === "portrait" ? "is-portrait" : "is-landscape") + '" data-section="' + escapeHtml(section) + '" data-layout="' + layout + '"' + (context.template ? ' data-template="' + escapeHtml(context.template) + '"' : "") + ' data-density="' + context.density + '"><header class="output-page-header"><div class="output-page-heading"><div class="output-page-brand">KINO STORYBOARD　·　' + escapeHtml(context.brand || "OUTPUT") + '</div><h1>' + escapeHtml(context.projectTitle || state.title) + '</h1><p>' + escapeHtml(pageSubtitle) + '</p></div><div class="output-page-summary"><strong>' + escapeHtml(context.scope || "") + '</strong><span>' + escapeHtml(context.summary || "") + '</span></div></header><div class="output-page-body">' + body + '</div><footer class="output-page-footer"><span>' + escapeHtml(pageFooter) + ' · Project revision ' + escapeHtml(context.projectRevision == null ? "—" : context.projectRevision) + ' · Preference revision ' + escapeHtml(context.preferenceRevision == null ? "—" : context.preferenceRevision) + '</span><span>第 ' + (pageIndex + 1) + ' 頁／共 ' + pageCount + ' 頁</span></footer></section>';
+    return '<section class="output-page ' + (context.orientation === "portrait" ? "is-portrait" : "is-landscape") + '" data-section="' + escapeHtml(section) + '" data-layout="' + layout + '"' + (context.template ? ' data-template="' + escapeHtml(context.template) + '"' : "") + ' data-density="' + context.density + '"><header class="output-page-header"><div class="output-page-heading"><div class="output-page-brand">KINO STORYBOARD　·　' + escapeHtml(context.brand || "OUTPUT") + '</div><h1>' + escapeHtml(context.projectTitle || state.title) + '</h1><p>' + escapeHtml(pageSubtitle) + '</p></div><div class="output-page-summary"><strong>' + escapeHtml(context.scope || "") + '</strong><span>' + escapeHtml(context.summary || "") + '</span></div></header><div class="output-page-body">' + body + '</div><footer class="output-page-footer"><span>' + escapeHtml(pageFooter) + ' · Project revision ' + escapeHtml(context.projectRevision == null ? "—" : context.projectRevision) + ' · Preference revision ' + escapeHtml(context.preferenceRevision == null ? "—" : context.preferenceRevision) + '</span><span>第 ' + (pageIndex + 1) + ' 頁／共 ' + pageCount + ' 頁</span></footer>' + OutputWatermark.html(context.preferences.watermark) + '</section>';
   }
   function paginateOutputRecords(records, pageSize) {
     const pages = [];
@@ -5456,13 +5459,83 @@
     document.body.classList.toggle("is-portrait",resolved === "portrait");
     $$(".orientation-button").forEach((button) => button.classList.toggle("is-active",button.dataset.orientation === orientation));
     applyOutputPageOrientation(resolved);
-    if (state && $("#print-document")) renderOutput();
   }
   async function setOrientation(next) {
     if (!["auto","portrait","landscape"].includes(next)) return;
     if (isReadOnly()) { message("目前為唯讀瀏覽；紙張方向未更改或保存。", true); return; }
     setOrientationUI(next);
+    renderOutput();
     await saveOutputPreference({ orientation: next });
+  }
+  function hydrateWatermark(mark) {
+    $$('[data-watermark-field]').forEach(input => {
+      const value = mark[input.dataset.watermarkField];
+      if (input.type === "checkbox") input.checked = value;
+      else input.value = value;
+      const output = input.parentElement.querySelector("output");
+      if (output) output.value = value + (input.dataset.watermarkField === "rotation" ? "°" : "%");
+    });
+    $("#watermark-options").hidden = !mark.enabled;
+    $("#watermark-text-options").hidden = mark.type !== "text";
+    $("#watermark-image-options").hidden = mark.type !== "image";
+    const preview = $("#watermark-preview");
+    preview.hidden = !mark.image;
+    if (mark.image) preview.src = mark.image;
+    else preview.removeAttribute("src");
+  }
+  function previewWatermark(patch) {
+    stageOutputPreference({watermark:patch});
+    const mark = normalizeOutputPreferences(pendingPreferencePatch || state.outputPreferences).watermark;
+    hydrateWatermark(mark);
+    if (activeOutputContext) activeOutputContext.preferences.watermark = mark;
+    $$("#print-document > .output-page").forEach(page => {
+      page.querySelector(".output-watermark")?.remove();
+      page.insertAdjacentHTML("beforeend",OutputWatermark.html(mark));
+    });
+  }
+  async function saveWatermark() {
+    const context = activeOutputContext;
+    if (context && !context.capturePending) {
+      // The preview resolves a default shooting day; retain the stored preference for commit comparison.
+      context.preferences.schedule = normalizeOutputPreferences(pendingPreferencePatch || state.outputPreferences).schedule;
+      outputDensityPreferenceSaveContext = context;
+    }
+    try { return await saveOutputPreference({}); }
+    finally { if (outputDensityPreferenceSaveContext === context) outputDensityPreferenceSaveContext = null; }
+  }
+  function bindWatermark() {
+    const host = $("#watermark-settings");
+    if (!host || host.dataset.bound) return;
+    host.dataset.bound = "true";
+    host.addEventListener("input",event => {
+      const input = event.target;
+      const key = input.dataset.watermarkField;
+      if (!key || isReadOnly()) return;
+      previewWatermark({[key]:input.type === "checkbox" ? input.checked : input.type === "range" ? Number(input.value) : input.value});
+    });
+    host.addEventListener("change",event => {
+      if (event.target.dataset.watermarkField && !isReadOnly()) void saveWatermark();
+    });
+    host.querySelector('[data-watermark-action="upload"]').addEventListener("click",() => { if (!isReadOnly()) $("#watermark-image").click(); });
+    host.querySelector('[data-watermark-action="remove"]').addEventListener("click",() => {
+      if (isReadOnly()) return;
+      previewWatermark({image:""}); void saveWatermark();
+    });
+    $("#watermark-image").addEventListener("change",async event => {
+      const file = event.target.files[0]; event.target.value = "";
+      if (!file || isReadOnly()) return;
+      const projectId = state.projectId;
+      const button = host.querySelector('[data-watermark-action="upload"]');
+      if (button.disabled) return;
+      button.disabled = true;
+      try {
+        const image = await OutputWatermark.readImage(file);
+        if (state.projectId !== projectId || isReadOnly()) return;
+        previewWatermark({image,type:"image",enabled:true});
+        await saveWatermark();
+      } catch (error) { message(error.message || "浮水印圖片匯入失敗。",true); }
+      finally { button.disabled = isReadOnly(); }
+    });
   }
   function normalizeOutputPreferences(preferences) {
     const prefs = preferences || {};
@@ -5494,7 +5567,7 @@
       orientation:["auto","portrait","landscape"].includes(prefs.orientation) ? prefs.orientation : "landscape",
       density:density, densityByMode:densityByMode, densityByTemplate:densityByTemplate,
       fields:{images:images,details:details},
-      schedule:schedule
+      schedule:schedule, watermark:Object.assign({},OutputWatermark.defaults,prefs.watermark)
     };
   }
   function mergeOutputPreferencePatch(baseInput, priorInput, requestInput) {
@@ -5512,6 +5585,7 @@
     merged.densityByMode = Object.assign({},base.densityByMode,prior.densityByMode,request.densityByMode || {});
     merged.densityByTemplate = Object.assign({},base.densityByTemplate,prior.densityByTemplate,request.densityByTemplate || {});
     merged.schedule = Object.assign({},base.schedule,prior.schedule,request.schedule || {});
+    merged.watermark = Object.assign({},base.watermark,prior.watermark,request.watermark || {});
     merged.mode = merged.template === "contact" ? "images" : "details";
     if (request.density != null) merged.densityByTemplate[merged.template] = Number(request.density);
     merged.density = Number(merged.densityByTemplate[merged.template]) || Number(merged.densityByMode[merged.mode]) || 4;
@@ -5531,6 +5605,7 @@
   function hydrateOutputPreferences(preferences) {
     if (!preferences) return;
     const normalized = normalizeOutputPreferences(preferences);
+    hydrateWatermark(normalized.watermark);
     outputTemplate = normalized.template;
     outputIncludeDetails = normalized.template !== "contact";
     orientation = normalized.orientation;
@@ -5572,7 +5647,7 @@
         template:captured.template,
         densityByTemplate:captured.densityByTemplate,
         fields:captured.fields,
-        schedule:captured.schedule
+        schedule:captured.schedule, watermark:captured.watermark
       };
       await withMutation(() => model.updateOutputPreferences(persistencePatch));
       if (pendingPreferenceVersion === version) { pendingPreferencePatch = null; syncDraftSnapshot(); }

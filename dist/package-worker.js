@@ -3,11 +3,11 @@
 
   const base = self.location.href;
   importScripts(
-    new URL("project-schema.js?v=20261029v48", base).href,
+    new URL("project-schema.js?v=20261117watermark", base).href,
     new URL("vendor/fflate/fflate-0.8.3.umd.js", base).href,
     new URL("zip-adapter.js", base).href,
-    new URL("project-package.js?v=20261029v48", base).href,
-    new URL("package-copy.js?v=20261029v48", base).href
+    new URL("project-package.js?v=20261117watermark", base).href,
+    new URL("package-copy.js?v=20261117watermark", base).href
   );
 
   const Schema = self.DirectorStoryboardProjectSchema;

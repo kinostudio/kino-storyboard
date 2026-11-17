@@ -207,8 +207,26 @@
     return fields;
   }
 
+  function validateWatermark(value, path) {
+    const mark = record(value,path);
+    const invalid = () => fail("INVALID_WATERMARK",path,"浮水印設定無效。");
+    if (Object.keys(mark).some(key => !["enabled","type","text","image","color","opacity","size","x","y","rotation"].includes(key))) invalid();
+    if (typeof mark.enabled !== "boolean" || !["text","image"].includes(mark.type)) invalid();
+    if (typeof mark.text !== "string" || mark.text.length > 200 || typeof mark.image !== "string" || mark.image.length > 1048576 || !/^#[0-9a-f]{6}$/i.test(mark.color)) invalid();
+    [["opacity",0,100],["size",10,100],["x",0,100],["y",0,100],["rotation",-180,180]].forEach(([key,min,max]) => {
+      if (!Number.isFinite(mark[key]) || mark[key] < min || mark[key] > max) invalid();
+    });
+    if (mark.image) {
+      if (!/^data:image\/png;base64,iVBORw0KGgo[A-Za-z0-9+/]*={0,2}$/.test(mark.image) || mark.image.slice(22).length % 4) invalid();
+      const bytes = atob(mark.image.slice(22,66));
+      const width = (offset) => Array.from(bytes.slice(offset,offset+4)).reduce((n,c) => n * 256 + c.charCodeAt(0),0);
+      if (bytes.slice(12,16) !== "IHDR" || width(16) < 1 || width(20) < 1 || width(16) > 1024 || width(20) > 1024) invalid();
+    }
+  }
+
   function validateOutputPreferences(value, path, shootingDayIds) {
     const prefs = record(value, path);
+    if (Object.prototype.hasOwnProperty.call(prefs,"watermark")) validateWatermark(prefs.watermark,path + ".watermark");
     if (prefs.schemaVersion !== PREFERENCE_SCHEMA_VERSION && prefs.schemaVersion !== LEGACY_PREFERENCE_SCHEMA_VERSION) {
       fail("UNSUPPORTED_PREFERENCE_SCHEMA", path + ".schemaVersion", "不支援此輸出偏好 schemaVersion。");
     }

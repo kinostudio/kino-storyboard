@@ -655,7 +655,7 @@
   }
 
   function packageWorkerUrl() {
-    return new URL("package-worker.js?v=20261029v48", packageScriptBase || root.document.baseURI).href;
+    return new URL("package-worker.js?v=20261117watermark", packageScriptBase || root.document.baseURI).href;
   }
 
   function rejectWorkerJobs(error, abortingJob) {
