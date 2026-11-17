@@ -8,25 +8,25 @@
   <meta name="theme-color" content="#18243b">
   <title>KINO Storyboard｜光落下的地方</title>
   <link rel="icon" type="image/svg+xml" href="kino-storyboard.svg">
-  <link rel="stylesheet" href="styles.css?v=20261115vertical">
-  <link rel="stylesheet" href="output.css?v=20261114script1">
+  <link rel="stylesheet" href="styles.css?v=20261117watermark">
+  <link rel="stylesheet" href="output.css?v=20261117watermark">
   <link rel="stylesheet" href="drawing-editor.css?v=20261115handles">
   <link rel="stylesheet" href="photo-crop-editor.css?v=20261029v38">
   <link rel="stylesheet" href="production-timeline.css?v=20261029g">
   <link rel="stylesheet" href="project-metadata.css?v=20261028b">
   <link rel="stylesheet" href="time-input.css">
-  <script defer src="project-schema.js?v=20261114script1"></script>
+  <script defer src="project-schema.js?v=20261117watermark"></script>
   <script defer src="history-engine.js?v=20261029v36"></script>
   <script defer src="storage-contract.js"></script>
   <script defer src="project-migrations.js?v=20261101out5"></script>
   <script defer src="project-bootstrap.js"></script>
   <script defer src="idb-repository.js?v=20261029c"></script>
-  <script defer src="project-bridge.js?v=20261114sequence1"></script>
+  <script defer src="project-bridge.js?v=20261117watermark"></script>
   <script defer src="photo-import.js?v=20261104limits2"></script>
   <script defer src="vendor/fflate/fflate-0.8.3.umd.js"></script>
   <script defer src="zip-adapter.js?v=20261028k"></script>
-  <script defer src="project-package.js?v=20261114sequence1"></script>
-  <script defer src="package-copy.js?v=20261114script1"></script>
+  <script defer src="project-package.js?v=20261117watermark"></script>
+  <script defer src="package-copy.js?v=20261117watermark"></script>
   <script defer src="model.js?v=20261114script1"></script>
   <script defer src="storyboard-renderer.js?v=20261107drawing3"></script>
   <script defer src="photo-crop-renderer.js?v=20261029v38"></script>
@@ -40,12 +40,13 @@
   <script defer src="shot-index.js?v=20261106scan1"></script>
   <link rel="stylesheet" href="sequence-editor.css?v=20261114sequence2">
   <script defer src="sequence-editor.js?v=20261114sequence2"></script>
-  <link rel="stylesheet" href="screenplay-editor.css?v=20261115vertical">
+  <link rel="stylesheet" href="screenplay-editor.css?v=20261117watermark">
   <script defer src="screenplay-markdown.js?v=20261114script2"></script>
-  <script defer src="screenplay-markdown-ui.js?v=20261115vertical"></script>
-  <script defer src="screenplay-editor.js?v=20261115vertical"></script>
-  <script defer src="duration-scrub.js?v=20261115vertical"></script>
-  <script defer src="app.js?v=20261115vertical"></script>
+  <script defer src="screenplay-markdown-ui.js?v=20261117watermark"></script>
+  <script defer src="screenplay-editor.js?v=20261117watermark"></script>
+  <script defer src="duration-scrub.js?v=20261117watermark"></script>
+  <script defer src="output-watermark.js?v=20261117watermark"></script>
+  <script defer src="app.js?v=20261117watermark"></script>
 </head>
 <body>
   <section class="lifecycle-gate" id="lifecycle-gate" aria-live="polite" aria-labelledby="lifecycle-title">
@@ -197,6 +198,20 @@
             <div class="field-gap"></div>
             <div class="output-density-heading"><label class="field-label" id="output-page-density-label" for="output-items-per-page">每頁分鏡張數</label><output id="output-density-value" for="output-items-per-page">4 張／頁</output></div>
             <div class="output-density-control"><button type="button" class="density-step" id="output-density-less" aria-label="每頁減少一張">−</button><input type="range" id="output-items-per-page" min="1" max="12" step="1" value="4" aria-label="每頁分鏡張數" aria-describedby="output-density-hint output-density-limit-note"><button type="button" class="density-step" id="output-density-more" aria-label="每頁增加一張">＋</button></div><div class="output-range-limits"><span>1</span><span id="output-density-limit-value">12</span></div><span class="field-note" id="output-density-hint">可設定每頁 1–12 張；長文會依原序續頁，最後一頁版面維持所選容量。</span><span class="output-density-limit-note" id="output-density-limit-note" aria-live="polite"></span>
+            <div class="form-divider"></div>
+            <section id="watermark-settings" aria-label="浮水印設定">
+              <label class="schedule-output-option"><span>浮水印</span><input type="checkbox" role="switch" data-watermark-field="enabled" aria-label="浮水印"><span class="toggle-track" aria-hidden="true"></span></label>
+              <div id="watermark-options" hidden>
+                <label class="field-label" for="watermark-type">浮水印類型</label><select id="watermark-type" class="select-control" data-watermark-field="type"><option value="text">文字</option><option value="image">圖片</option></select>
+                <div id="watermark-text-options"><label class="field-label" for="watermark-text">文字內容</label><input id="watermark-text" type="text" class="text-field" maxlength="200" data-watermark-field="text"><label class="field-label" for="watermark-color">文字顏色</label><input id="watermark-color" type="color" data-watermark-field="color"></div>
+                <div id="watermark-image-options" hidden><div class="watermark-image-actions"><img id="watermark-preview" alt="浮水印圖片預覽" hidden><button type="button" class="outline-button" data-watermark-action="upload">上傳圖片</button><button type="button" class="micro-icon-button" data-watermark-action="remove" aria-label="移除浮水印圖片" title="移除圖片">×</button></div><input id="watermark-image" type="file" accept="image/png,image/jpeg,image/webp" hidden><span class="field-note">PNG、JPEG、WebP；建議使用透明背景 LOGO。</span></div>
+                <label class="watermark-range"><span>大小</span><input type="range" min="10" max="100" step="1" data-watermark-field="size" aria-label="浮水印大小"><output></output></label>
+                <label class="watermark-range"><span>不透明度</span><input type="range" min="0" max="100" step="1" data-watermark-field="opacity" aria-label="浮水印不透明度"><output></output></label>
+                <label class="watermark-range"><span>水平位置</span><input type="range" min="0" max="100" step="1" data-watermark-field="x" aria-label="浮水印水平位置"><output></output></label>
+                <label class="watermark-range"><span>垂直位置</span><input type="range" min="0" max="100" step="1" data-watermark-field="y" aria-label="浮水印垂直位置"><output></output></label>
+                <label class="watermark-range"><span>旋轉</span><input type="range" min="-180" max="180" step="1" data-watermark-field="rotation" aria-label="浮水印旋轉"><output></output></label>
+              </div>
+            </section>
             <div class="form-divider"></div>
             <div class="output-scope-note" id="scope-note"></div>
             <button class="primary-button print-button" id="print-output" disabled><svg viewBox="0 0 20 20" aria-hidden="true"><path d="M6 7V3.5h8V7M5 14H3.5V8.5h13V14H15M6 11.5h8v5H6z"/><path d="M14 10.5h.1"/></svg><span>列印 / 另存 PDF</span></button>

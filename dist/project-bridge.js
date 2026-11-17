@@ -2097,12 +2097,13 @@
         assertArgs(type, values, 1, 1);
         const patch = assertPatch(
           values[0],
-          ["mode", "orientation", "density", "densityByMode", "densityByTemplate", "template", "fields", "schedule"],
+          ["mode", "orientation", "density", "densityByMode", "densityByTemplate", "template", "fields", "schedule", "watermark"],
           "輸出偏好",
           "$.args[0]"
         );
         const current = draft.outputPreferences;
         const next = upgradeOutputPreferences(current);
+        if (own(patch,"watermark")) next.watermark = clone(patch.watermark);
         if (own(patch, "fields")) {
           if (isRecord(next.fields.images) && isRecord(next.fields.details)) {
             mergeOutputFieldPatch(next.fields, patch.fields);

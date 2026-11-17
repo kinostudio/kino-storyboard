@@ -81,7 +81,7 @@
   const LAYER_KEYS = shape("projectId drawingId id kind name visible locked opacity order strokes");
   const STROKE_KEYS = shape("id kind color baseWidth points");
   const POINT_KEYS = shape("x y t pressure tiltX tiltY");
-  const PREFERENCES_KEYS = shape("schemaVersion revision mode orientation density fields schedule densityByMode template densityByTemplate");
+  const PREFERENCES_KEYS = shape("schemaVersion revision mode orientation density fields schedule densityByMode template densityByTemplate watermark");
   const FLAT_PREFERENCE_FIELDS_KEYS = shape("visual script super sound move duration");
   const GROUPED_PREFERENCE_FIELDS_KEYS = shape("visual script super sound move duration images details");
   const SCHEDULE_PREFERENCE_KEYS = shape("dayScope selectedDayId showEstimatedWrap rundownThumbnails rundownNotes rundownStatus storyboardShotNumber storyboardTitle");
@@ -141,6 +141,7 @@
 
     const preferences = project.outputPreferences;
     exactShape(preferences, PREFERENCES_KEYS, "project.outputPreferences");
+    if (preferences.watermark) exactShape(preferences.watermark,shape("enabled type text image color opacity size x y rotation"),"project.outputPreferences.watermark");
     const fields = requireRecord(preferences.fields, "project.outputPreferences.fields");
     const groupedFields = preferences.schemaVersion === 2 &&
       (Object.prototype.hasOwnProperty.call(fields, "images") || Object.prototype.hasOwnProperty.call(fields, "details"));
